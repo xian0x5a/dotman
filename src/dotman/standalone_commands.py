@@ -11,7 +11,7 @@ from dotman.interaction_policy import InteractionRequiredError
 class StandaloneCommandRunner:
     """Run commands that do not need manager configuration or an engine."""
 
-    command_names = frozenset({"rewrite", "transform", "elevation", "capture", "reconcile", "render"})
+    command_names = frozenset({"rewrite", "transform", "capture", "reconcile", "render"})
 
     def run(self, args: Any) -> int:
         if args.command == "reconcile" and getattr(args, "no_confirm", False):
