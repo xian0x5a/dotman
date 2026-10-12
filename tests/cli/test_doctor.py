@@ -35,9 +35,9 @@ def test_push_cli_reports_missing_default_config_with_hint(
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(config_home))
 
-    exit_code = main(["--unattended", "push", "--dry-run"])
+    exit_code = main(["--no-confirm", "push", "--dry-run"])
 
-    # The CLI reports unattended configuration failures with exit 1.
+    # The CLI reports --no-confirm configuration failures with exit 1.
     assert exit_code == 1
     error_output = capsys.readouterr().err
     assert "Traceback" not in error_output

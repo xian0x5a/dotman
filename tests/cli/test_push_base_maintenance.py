@@ -18,7 +18,7 @@ def test_real_push_discards_ineligible_base_before_failing_guard(tmp_path, monke
     manifest = tmp_path / 'repo/packages/app/package.toml'
     manifest.write_text(manifest.read_text().replace('sync_policy = "both"', f'sync_policy = "{policy}"')
                         + '\n[targets.unit.hooks]\nguard_push = "exit 9"')
-    args = ['--config', str(engine.config.config_path), '--json', '--unattended', 'push']
+    args = ['--config', str(engine.config.config_path), '--json', '--no-confirm', 'push']
     if preview:
         args.append('--dry-run')
     assert main(args) != 0
@@ -49,7 +49,7 @@ def test_push_query_retains_unselected_and_eligible_bases(tmp_path, monkeypatch,
                         + '\n[targets.selected.hooks]\nguard_push = "exit 9"')
     peer_manifest = peer / 'package.toml'
     peer_manifest.write_text(peer_manifest.read_text().replace('sync_policy = "both"', 'sync_policy = "push-only"'))
-    assert main(['--config', str(engine.config.config_path), '--json', '--unattended', 'push', 'main:app']) != 0
+    assert main(['--config', str(engine.config.config_path), '--json', '--no-confirm', 'push', 'main:app']) != 0
     capsys.readouterr()
     with SyncBaseStore.open(engine._tracked_state_context.state_root, 'main', read_only=True) as store:
         assert store.read(b'main:app.selected') is None
@@ -60,7 +60,7 @@ def test_push_query_retains_unselected_and_eligible_bases(tmp_path, monkeypatch,
 def test_push_invalid_static_resolution_preserves_base(tmp_path, monkeypatch, capsys):
     engine = make_engine(tmp_path, monkeypatch, [('unit', 'both', b'same', b'same', '')])
     store_record(engine)
-    assert main(['--config', str(engine.config.config_path), '--json', '--unattended', 'push', 'main:app.unknown']) != 0
+    assert main(['--config', str(engine.config.config_path), '--json', '--no-confirm', 'push', 'main:app.unknown']) != 0
     capsys.readouterr()
     with SyncBaseStore.open(engine._tracked_state_context.state_root, 'main', read_only=True) as store:
         assert store.read(b'main:app.unit') is not None
@@ -68,7 +68,7 @@ def test_push_invalid_static_resolution_preserves_base(tmp_path, monkeypatch, ca
 
 def test_push_without_bases_does_not_create_base_store(tmp_path, monkeypatch, capsys):
     engine = make_engine(tmp_path, monkeypatch, [('unit', 'push-only', b'same', b'same', '')])
-    assert main(['--config', str(engine.config.config_path), '--json', '--unattended', 'push']) == 0
+    assert main(['--config', str(engine.config.config_path), '--json', '--no-confirm', 'push']) == 0
     capsys.readouterr()
     from dotman.sync_base_store import BASES_DIRECTORY_NAME, LOCK_FILE_NAME
     assert not list(engine._tracked_state_context.state_root.rglob(BASES_DIRECTORY_NAME))
@@ -100,7 +100,7 @@ sync_policy = "push-only"
 [targets.tree.hooks]
 guard_push = "exit 9"
 ''')
-    assert main(['--config', str(engine.config.config_path), '--json', '--unattended', 'push']) != 0
+    assert main(['--config', str(engine.config.config_path), '--json', '--no-confirm', 'push']) != 0
     capsys.readouterr()
     # Ineligibility is configured, so exclusion or absence cannot keep a stale Base.
     with SyncBaseStore.open(engine._tracked_state_context.state_root, 'main', read_only=True) as store:
@@ -118,7 +118,7 @@ def test_push_ineligible_base_maintenance_failure_warns_without_blocking(tmp_pat
     # A hard link is unrepairable; loose modes would self-heal on writable open.
     os.link(lock, tmp_path / 'lock-alias')
     before = record.read_bytes()
-    assert main(['--config', str(engine.config.config_path), '--json', '--unattended', 'push']) == 0
+    assert main(['--config', str(engine.config.config_path), '--json', '--no-confirm', 'push']) == 0
     unit = json.loads(capsys.readouterr().out)['sync_units'][0]
     assert unit['identity'] == 'main:app.unit'
     assert unit['result'] == 'converged'
@@ -135,7 +135,7 @@ def test_push_lock_contention_never_cleans_bases(tmp_path, monkeypatch, capsys):
     engine = make_engine(tmp_path, monkeypatch, [('unit', 'push-only', b'same', b'same', '')])
     store_record(engine)
     with OperationLock.acquire(engine._tracked_state_context.state_root):
-        assert main(['--config', str(engine.config.config_path), '--json', '--unattended', 'push']) != 0
+        assert main(['--config', str(engine.config.config_path), '--json', '--no-confirm', 'push']) != 0
     capsys.readouterr()
     with SyncBaseStore.open(engine._tracked_state_context.state_root, 'main', read_only=True) as store:
         assert store.read(b'main:app.unit') is not None

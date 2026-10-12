@@ -72,14 +72,14 @@ For a larger real-world example repo, see [ewgdg/dotfiles](https://github.com/ew
 - **Three-way merge**: dotman remembers the last state both sides agreed on, so Merge knows which side changed.
 - **What you review is what gets written**: dotman reads everything once, up front.
 - **Nothing written until you confirm**: open any row for its diff, edit the outcome, then confirm.
-- **Scriptable**: `--dry-run`, `--json`, and `--unattended` for previews and automation.
+- **Scriptable**: `--dry-run`, `--json`, and `--no-confirm` for previews and automation.
 
 `push` (repo → live) and `pull` (live → repo) remain as one-way shortcuts on the same screen.
 
 ```sh
 dotman sync
 dotman sync example:note
-dotman --json --unattended sync --dry-run
+dotman --json --no-confirm sync --dry-run
 ```
 
 ### More

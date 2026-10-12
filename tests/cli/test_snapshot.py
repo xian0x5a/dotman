@@ -168,7 +168,7 @@ def test_push_execute_creates_snapshot_and_restore_restores_latest_snapshot(
     live_path.parent.mkdir(parents=True, exist_ok=True)
     live_path.write_text("before push\n", encoding="utf-8")
 
-    push_exit_code = main(["--unattended", "--config", str(config_path), "push"])
+    push_exit_code = main(["--no-confirm", "--config", str(config_path), "push"])
 
     assert push_exit_code == 0
     assert live_path.read_text(encoding="utf-8") == "repo value\n"
@@ -184,7 +184,7 @@ def test_push_execute_creates_snapshot_and_restore_restores_latest_snapshot(
     live_path.write_text("mutated after push\n", encoding="utf-8")
 
     capsys.readouterr()
-    dry_run_exit_code = main(["--unattended", "--config", str(config_path), "--json", "restore", "--dry-run"])
+    dry_run_exit_code = main(["--no-confirm", "--config", str(config_path), "--json", "restore", "--dry-run"])
 
     assert dry_run_exit_code == 0
     dry_run_output = capsys.readouterr().out
@@ -193,7 +193,7 @@ def test_push_execute_creates_snapshot_and_restore_restores_latest_snapshot(
     assert ("roll" + "back") not in dry_run_output
     assert live_path.read_text(encoding="utf-8") == "mutated after push\n"
 
-    restore_exit_code = main(["--unattended", "--config", str(config_path), "restore"])
+    restore_exit_code = main(["--no-confirm", "--config", str(config_path), "restore"])
 
     assert restore_exit_code == 0
     assert live_path.read_text(encoding="utf-8") == "before push\n"
@@ -231,7 +231,7 @@ def test_push_execute_creates_snapshot_only_when_first_live_mutation_begins(
     mutating_live_path.parent.mkdir(parents=True, exist_ok=True)
     mutating_live_path.write_text("before beta\n", encoding="utf-8")
 
-    push_exit_code = main(["--unattended", "--config", str(config_path), "push"])
+    push_exit_code = main(["--no-confirm", "--config", str(config_path), "push"])
 
     assert push_exit_code == 0
     assert guarded_live_path.read_text(encoding="utf-8") == "before alpha\n"
@@ -275,7 +275,7 @@ def test_push_execute_replaces_symlinked_target_and_restore_restores_link(
     assert snapshots[0].entries[0].symlink_target == str(real_live_path)
 
     capsys.readouterr()
-    restore_exit_code = main(["--config", str(config_path), "--unattended", "--json", "restore"])
+    restore_exit_code = main(["--config", str(config_path), "--no-confirm", "--json", "restore"])
 
     assert restore_exit_code == 0
     assert live_path.is_symlink()
@@ -306,7 +306,7 @@ def test_push_execute_follows_symlinked_target_and_restore_restores_target_file(
     real_live_path.write_text("before push\n", encoding="utf-8")
     live_path.symlink_to(real_live_path)
 
-    push_exit_code = main(["--unattended", "--config", str(config_path), "--file-symlink-mode", "follow", "push"])
+    push_exit_code = main(["--no-confirm", "--config", str(config_path), "--file-symlink-mode", "follow", "push"])
 
     assert push_exit_code == 0
     assert live_path.is_symlink()
@@ -317,7 +317,7 @@ def test_push_execute_follows_symlinked_target_and_restore_restores_target_file(
     assert snapshots[0].entries[0].preserve_symlink_identity is False
     assert snapshots[0].entries[0].restore_path == real_live_path.resolve()
 
-    restore_exit_code = main(["--unattended", "--config", str(config_path), "restore"])
+    restore_exit_code = main(["--no-confirm", "--config", str(config_path), "restore"])
 
     assert restore_exit_code == 0
     assert live_path.is_symlink()
@@ -360,7 +360,7 @@ def test_push_execute_replaces_broken_symlink_and_restore_restores_link(
     assert entry.content_path is None
     assert entry.preserve_symlink_identity is True
 
-    restore_exit_code = main(["--config", str(config_path), "--unattended", "--json", "restore"])
+    restore_exit_code = main(["--config", str(config_path), "--no-confirm", "--json", "restore"])
 
     assert restore_exit_code == 0
     assert live_path.is_symlink()
@@ -382,7 +382,7 @@ def test_push_execute_creates_missing_file_and_restore_deletes_it(tmp_path: Path
     live_path = home / ".config" / "app" / "config.txt"
     assert not live_path.exists()
 
-    push_exit_code = main(["--unattended", "--config", str(config_path), "push"])
+    push_exit_code = main(["--no-confirm", "--config", str(config_path), "push"])
 
     assert push_exit_code == 0
     assert live_path.read_text(encoding="utf-8") == "repo value\n"
@@ -393,7 +393,7 @@ def test_push_execute_creates_missing_file_and_restore_deletes_it(tmp_path: Path
     assert snapshots[0].entries[0].push_action == "create"
     assert snapshots[0].entries[0].content_path is None
 
-    restore_exit_code = main(["--unattended", "--config", str(config_path), "restore"])
+    restore_exit_code = main(["--no-confirm", "--config", str(config_path), "restore"])
 
     assert restore_exit_code == 0
     assert not live_path.exists()
@@ -410,7 +410,7 @@ def test_push_dry_run_does_not_create_snapshot(tmp_path: Path, monkeypatch, caps
     config_path = _write_snapshot_config(tmp_path, repo_root)
     _write_tracked_binding(tmp_path / "state")
 
-    exit_code = main(["--unattended", "--config", str(config_path), "--json", "push", "--dry-run"])
+    exit_code = main(["--no-confirm", "--config", str(config_path), "--json", "push", "--dry-run"])
 
     assert exit_code == 0
     payload = json.loads(capsys.readouterr().out)
@@ -433,11 +433,11 @@ def test_push_snapshot_retention_prunes_oldest_generations(tmp_path: Path, monke
     live_path.parent.mkdir(parents=True, exist_ok=True)
 
     live_path.write_text("first\n", encoding="utf-8")
-    assert main(["--unattended", "--config", str(config_path), "push"]) == 0
+    assert main(["--no-confirm", "--config", str(config_path), "push"]) == 0
     first_snapshot = list_snapshots(tmp_path / "snapshots")[0].snapshot_id
 
     live_path.write_text("second\n", encoding="utf-8")
-    assert main(["--unattended", "--config", str(config_path), "push"]) == 0
+    assert main(["--no-confirm", "--config", str(config_path), "push"]) == 0
 
     snapshots = list_snapshots(tmp_path / "snapshots")
     assert len(snapshots) == 1
@@ -458,14 +458,14 @@ def test_restore_without_snapshot_argument_restores_latest_snapshot(tmp_path: Pa
     live_path.parent.mkdir(parents=True, exist_ok=True)
 
     live_path.write_text("first\n", encoding="utf-8")
-    assert main(["--unattended", "--config", str(config_path), "push"]) == 0
+    assert main(["--no-confirm", "--config", str(config_path), "push"]) == 0
 
     live_path.write_text("second\n", encoding="utf-8")
-    assert main(["--unattended", "--config", str(config_path), "push"]) == 0
+    assert main(["--no-confirm", "--config", str(config_path), "push"]) == 0
 
     live_path.write_text("mutated after push\n", encoding="utf-8")
 
-    restore_exit_code = main(["--unattended", "--config", str(config_path), "restore"])
+    restore_exit_code = main(["--no-confirm", "--config", str(config_path), "restore"])
 
     assert restore_exit_code == 0
     assert live_path.read_text(encoding="utf-8") == "second\n"
@@ -485,14 +485,14 @@ def test_restore_latest_argument_restores_latest_snapshot(tmp_path: Path, monkey
     live_path.parent.mkdir(parents=True, exist_ok=True)
 
     live_path.write_text("first\n", encoding="utf-8")
-    assert main(["--unattended", "--config", str(config_path), "push"]) == 0
+    assert main(["--no-confirm", "--config", str(config_path), "push"]) == 0
 
     live_path.write_text("second\n", encoding="utf-8")
-    assert main(["--unattended", "--config", str(config_path), "push"]) == 0
+    assert main(["--no-confirm", "--config", str(config_path), "push"]) == 0
 
     live_path.write_text("mutated after push\n", encoding="utf-8")
 
-    restore_exit_code = main(["--unattended", "--config", str(config_path), "restore", "latest"])
+    restore_exit_code = main(["--no-confirm", "--config", str(config_path), "restore", "latest"])
 
     assert restore_exit_code == 0
     assert live_path.read_text(encoding="utf-8") == "second\n"
@@ -512,14 +512,14 @@ def test_info_snapshot_latest_argument_resolves_latest_snapshot(tmp_path: Path, 
     live_path.parent.mkdir(parents=True, exist_ok=True)
 
     live_path.write_text("first\n", encoding="utf-8")
-    assert main(["--unattended", "--config", str(config_path), "push"]) == 0
+    assert main(["--no-confirm", "--config", str(config_path), "push"]) == 0
 
     live_path.write_text("second\n", encoding="utf-8")
-    assert main(["--unattended", "--config", str(config_path), "push"]) == 0
+    assert main(["--no-confirm", "--config", str(config_path), "push"]) == 0
     latest_snapshot = list_snapshots(tmp_path / "snapshots")[0].snapshot_id
     capsys.readouterr()
 
-    exit_code = main(["--unattended", "--config", str(config_path), "--json", "info", "snapshot", "latest"])
+    exit_code = main(["--no-confirm", "--config", str(config_path), "--json", "info", "snapshot", "latest"])
 
     assert exit_code == 0
     payload = json.loads(capsys.readouterr().out)
@@ -540,10 +540,10 @@ def test_list_snapshots_cli_emits_human_summary(tmp_path: Path, monkeypatch, cap
     live_path = home / ".config" / "app" / "config.txt"
     live_path.parent.mkdir(parents=True, exist_ok=True)
     live_path.write_text("before push\n", encoding="utf-8")
-    assert main(["--unattended", "--config", str(config_path), "push"]) == 0
+    assert main(["--no-confirm", "--config", str(config_path), "push"]) == 0
     capsys.readouterr()
 
-    exit_code = main(["--unattended", "--config", str(config_path), "list", "snapshots"])
+    exit_code = main(["--no-confirm", "--config", str(config_path), "list", "snapshots"])
 
     assert exit_code == 0
     output = capsys.readouterr().out
@@ -567,10 +567,10 @@ def test_list_snapshots_cli_emits_json(tmp_path: Path, monkeypatch, capsys) -> N
     live_path = home / ".config" / "app" / "config.txt"
     live_path.parent.mkdir(parents=True, exist_ok=True)
     live_path.write_text("before push\n", encoding="utf-8")
-    assert main(["--unattended", "--config", str(config_path), "push"]) == 0
+    assert main(["--no-confirm", "--config", str(config_path), "push"]) == 0
     capsys.readouterr()
 
-    exit_code = main(["--unattended", "--config", str(config_path), "--json", "list", "snapshots"])
+    exit_code = main(["--no-confirm", "--config", str(config_path), "--json", "list", "snapshots"])
 
     assert exit_code == 0
     payload = json.loads(capsys.readouterr().out)
@@ -595,11 +595,11 @@ def test_info_snapshot_cli_uses_full_paths_when_requested(tmp_path: Path, monkey
     live_path = home / ".config" / "very-long-app" / "config.txt"
     live_path.parent.mkdir(parents=True, exist_ok=True)
     live_path.write_text("before push\n", encoding="utf-8")
-    assert main(["--unattended", "--config", str(config_path), "push"]) == 0
+    assert main(["--no-confirm", "--config", str(config_path), "push"]) == 0
     snapshot_id = list_snapshots(tmp_path / "snapshots")[0].snapshot_id
     capsys.readouterr()
 
-    exit_code = main(["--unattended", "--config", str(config_path), "info", "snapshot", "--full-path", snapshot_id])
+    exit_code = main(["--no-confirm", "--config", str(config_path), "info", "snapshot", "--full-path", snapshot_id])
 
     assert exit_code == 0
     output = capsys.readouterr().out
@@ -626,11 +626,11 @@ def test_info_snapshot_cli_emits_json_with_recorded_paths(tmp_path: Path, monkey
     live_path = home / ".config" / "app" / "config.txt"
     live_path.parent.mkdir(parents=True, exist_ok=True)
     live_path.write_text("before push\n", encoding="utf-8")
-    assert main(["--unattended", "--config", str(config_path), "push"]) == 0
+    assert main(["--no-confirm", "--config", str(config_path), "push"]) == 0
     snapshot_id = list_snapshots(tmp_path / "snapshots")[0].snapshot_id
     capsys.readouterr()
 
-    exit_code = main(["--unattended", "--config", str(config_path), "--json", "info", "snapshot", snapshot_id])
+    exit_code = main(["--no-confirm", "--config", str(config_path), "--json", "info", "snapshot", snapshot_id])
 
     assert exit_code == 0
     payload = json.loads(capsys.readouterr().out)

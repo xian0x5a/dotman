@@ -28,7 +28,7 @@ def test_guard_skip_json_names_scope_direction_and_reason(tmp_path, monkeypatch)
 def test_guard_skip_human_result_explains_omission(tmp_path, monkeypatch, capsys):
     engine = guarded_engine(tmp_path, monkeypatch)
     args = SimpleNamespace(config=engine.config.config_path, scopes=[], no_deps=False, dry_run=True,
-                           unattended=True, json_output=False, run_noop=False, command="pull")
+                           no_confirm=True, json_output=False, run_noop=False, command="pull")
     assert PullDeckCommandRunner(engine_factory=lambda _: engine, use_color=False).run(args) == 0
     output = capsys.readouterr().out
     assert "[skipped] main:app.unit (guard_pull)" in output
@@ -75,7 +75,7 @@ def test_interactive_execution_log_leaves_guard_skips_to_the_deck(tmp_path, monk
     monkeypatch.setattr("sys.stdout.isatty", lambda: True)
     monkeypatch.setattr("dotman.sync_deck.run_command_deck", lambda session, *, use_color: True)
     args = SimpleNamespace(config=engine.config.config_path, scopes=[], no_deps=False, dry_run=False,
-                           unattended=False, json_output=False, run_noop=False, command="pull")
+                           no_confirm=False, json_output=False, run_noop=False, command="pull")
     assert PullDeckCommandRunner(engine_factory=lambda _: engine, use_color=False).run(args) == 0
     output = capsys.readouterr().out
     assert "[1/1] update" in output
@@ -86,7 +86,7 @@ def test_sync_guard_narrowing_is_reported_in_human_output(tmp_path, monkeypatch,
     from dotman.sync_deck_command import SyncDeckCommandRunner
     engine = guarded_engine(tmp_path, monkeypatch)
     args = SimpleNamespace(config=engine.config.config_path, scopes=[], no_deps=False, dry_run=True,
-                           unattended=True, json_output=False, run_noop=False, command="sync")
+                           no_confirm=True, json_output=False, run_noop=False, command="sync")
     SyncDeckCommandRunner(engine_factory=lambda _: engine, use_color=False).run(args)
     output = capsys.readouterr().out
     assert "[skipped] main:app.unit (guard_pull)" in output
@@ -104,7 +104,7 @@ def test_guard_skips_alone_log_directly_without_the_deck(tmp_path, monkeypatch, 
 
     monkeypatch.setattr("dotman.sync_deck.run_command_deck", forbidden)
     args = SimpleNamespace(config=engine.config.config_path, scopes=[], no_deps=False, dry_run=dry_run,
-                           unattended=False, json_output=False, run_noop=False, command="pull")
+                           no_confirm=False, json_output=False, run_noop=False, command="pull")
     assert PullDeckCommandRunner(engine_factory=lambda _: engine, use_color=False).run(args) == 0
     output = capsys.readouterr().out
     assert "[skipped] main:app.unit (guard_pull)" in output

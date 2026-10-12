@@ -54,7 +54,7 @@ def test_add_cli_updates_existing_package_manifest_in_json_mode(
         "--config",
         str(config_path),
         "--json",
-        "--unattended",
+        "--no-confirm",
         "add",
         str(live_path),
         "fixture:git",
@@ -102,7 +102,7 @@ def test_add_cli_creates_new_package_manifest_from_relative_live_path(
         "--config",
         str(config_path),
         "--json",
-        "--unattended",
+        "--no-confirm",
         "add",
         ".config/nvim/init.lua",
         "fixture:newpkg",
@@ -164,7 +164,7 @@ def test_add_cli_suffixes_duplicate_target_key_in_same_package(
         "--config",
         str(config_path),
         "--json",
-        "--unattended",
+        "--no-confirm",
         "add",
         str(live_path),
         "fixture:git",
@@ -240,7 +240,7 @@ def test_add_cli_strips_leading_dots_from_source_components_outside_home(
         "--config",
         str(config_path),
         "--json",
-        "--unattended",
+        "--no-confirm",
         "add",
         str(live_path),
         "fixture:ssh",
@@ -456,10 +456,10 @@ def test_add_json_does_not_authorize_manifest_write(tmp_path, monkeypatch, capsy
     assert main(["--config", str(config), "--json", "add", str(live_path), "fixture:app"]) == 1
     assert manifest.read_bytes() == before
     assert not (manifest.parent / "files").exists()
-    assert "--unattended" in capsys.readouterr().err
+    assert "--no-confirm" in capsys.readouterr().err
 
 
-def test_add_unattended_skips_editor_even_with_terminal(tmp_path, monkeypatch) -> None:
+def test_add_no_confirm_skips_editor_even_with_terminal(tmp_path, monkeypatch) -> None:
     live_path = tmp_path / "live"
     live_path.write_text("content")
     repo_root = tmp_path / "repo"
@@ -467,9 +467,9 @@ def test_add_unattended_skips_editor_even_with_terminal(tmp_path, monkeypatch) -
     config = write_named_manager_config(tmp_path, {"fixture": repo_root})
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     def unexpected_editor(*args, **kwargs):
-        raise AssertionError("unattended must not open an editor")
+        raise AssertionError("--no-confirm must not open an editor")
     monkeypatch.setattr(cli, "review_add_manifest", unexpected_editor)
     monkeypatch.setattr(cli, "add_editor_available", lambda: True)
 
-    assert main(["--config", str(config), "--unattended", "add", str(live_path), "fixture:app"]) == 0
+    assert main(["--config", str(config), "--no-confirm", "add", str(live_path), "fixture:app"]) == 0
     assert "[targets." in (repo_root / "packages/app/package.toml").read_text()

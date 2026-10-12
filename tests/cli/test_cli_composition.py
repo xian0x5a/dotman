@@ -80,15 +80,15 @@ def test_config_only_edit_uses_manager_ui_scope(
     assert "Local override path:" in capsys.readouterr().out
 
 
-def test_unattended_is_global_command_policy() -> None:
-    assert build_parser().parse_args(["--unattended", "push"]).unattended
+def test_no_confirm_is_global_command_policy() -> None:
+    assert build_parser().parse_args(["--no-confirm", "push"]).no_confirm
 
 
 @pytest.mark.parametrize("command", [["edit", "config"], ["reconcile", "editor", "--repo-path", "repo", "--live-path", "live"]])
-def test_unattended_rejects_editor_commands_before_opening(command, capsys, monkeypatch) -> None:
+def test_no_confirm_rejects_editor_commands_before_opening(command, capsys, monkeypatch) -> None:
     monkeypatch.setattr("dotman.cli_interaction.open_editor_path", lambda *a, **kw: pytest.fail("editor opened"))
-    assert main(["--unattended", *command]) == 1
-    assert "unattended" in capsys.readouterr().err
+    assert main(["--no-confirm", *command]) == 1
+    assert "--no-confirm" in capsys.readouterr().err
 
 
 def test_interaction_required_error_colors_follow_stderr(capsys, monkeypatch) -> None:
@@ -96,15 +96,15 @@ def test_interaction_required_error_colors_follow_stderr(capsys, monkeypatch) ->
     monkeypatch.delenv("NO_COLOR")
     monkeypatch.setattr("sys.stdout.isatty", lambda: True)
     monkeypatch.setattr("sys.stderr.isatty", lambda: False)
-    assert main(["--unattended", "edit", "config"]) == 1
+    assert main(["--no-confirm", "edit", "config"]) == 1
     assert "\x1b[" not in capsys.readouterr().err
 
 
-def test_unattended_disables_terminal_interaction_scope(monkeypatch) -> None:
+def test_no_confirm_disables_terminal_interaction_scope(monkeypatch) -> None:
     from dotman import cli_interaction, interaction_policy
     monkeypatch.setattr("sys.stdin", StringIO())
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
-    with interaction_policy.interaction_scope(unattended=True):
+    with interaction_policy.interaction_scope(no_confirm=True):
         assert not cli_interaction.interactive_mode_enabled(json_output=False)
     assert cli_interaction.interactive_mode_enabled(json_output=False)
 
@@ -120,7 +120,7 @@ def test_push_requires_execution_consent_without_terminal(json_output, tmp_path,
     assert main(["--config", str(config), *flags, "push"]) == 1
     # JSON reports the refusal in the result document; human output on stderr.
     captured = capsys.readouterr()
-    assert "Push requires a terminal or explicit --unattended." in (captured.out if json_output else captured.err)
+    assert "Push requires a terminal or explicit --no-confirm." in (captured.out if json_output else captured.err)
     assert not (tmp_path / "home/.gitconfig").exists()
 
 

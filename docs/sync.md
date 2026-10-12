@@ -145,7 +145,7 @@ own prerequisite.
 A file/directory transition requires explicit Approval of every managed ancestor
 or descendant deletion that blocks a writer, including siblings omitted by an
 exact-child selector. Dotman never auto-selects blockers or clears the writer.
-Confirmation is unavailable until this structural closure holds; unattended
+Confirmation is unavailable until this structural closure holds; no-confirm
 execution rejects it before mutation. An ignored, control, or otherwise unmanaged
 blocker produces a typed structural conflict instead. Ready child work uses
 normalized relative-path ordering, with prerequisite deletions before dependent
@@ -196,7 +196,7 @@ missing Base itself shows on the Sync Base line. Choosing a Resolution or editin
 Approval does not. Without a Base, nothing shows
 which side changed beyond presence. The repository is the declared configuration, and live writes
 are snapshotted while repository writes are not, so the fallback stays Use repository
-when both sides are present or both are Missing. Unattended Sync does not guess and skips
+when both sides are present or both are Missing. No-confirm Sync does not guess and skips
 this drift (see [Result log](#result-log)). Proposal Approval starts off;
 opening a review does not approve it. Review or Approval materializes the
 Proposal from frozen Observation, retaining the repository representation,
@@ -273,7 +273,7 @@ Open the Proposal Editor from the workset or Proposal Review to deliberately
 edit a drifted file unit with a surviving route. One-sided policies permit this explicit
 repository edit, including deletion-only units; they still prohibit automatic
 flow in the forbidden direction. Observation failures and Guard-blocked units
-have no Editor. Dotman never launches an Editor automatically or in unattended
+have no Editor. Dotman never launches an Editor automatically or in no-confirm
 Sync.
 
 The Editor starts from the selected Resolution's repository outcome, materializing an
@@ -437,7 +437,7 @@ shown are not repeated.
 
 Guard skips are planning results, not execution steps, so they appear where work
 is reviewed and are always dimmed: as unselectable rows in the Command Deck, or,
-without a Deck (unattended), above the timeline. Unattended Sync prints
+without a Deck (no-confirm), above the timeline. No-confirm Sync prints
 no-Base skips in the same place, `[skipped] <identity> (no Base)` with a
 first-review hint, undimmed because they need action. They are never folded
 into the `skipped: N` count.
@@ -494,7 +494,7 @@ Unapproved or excluded healthy work remains untouched. Abort does not undo Base
 maintenance already committed while opening.
 Deliberately unapproved supported drift remains `pending` without failing the
 operation. Included unsupported drift makes the result `incomplete`; diagnostics
-and execution failures remain failures. Unattended Sync rejects a blocked or
+and execution failures remain failures. No-confirm Sync rejects a blocked or
 unsupported workset before mutation.
 
 ### Symlink interpretation
@@ -502,7 +502,7 @@ unsupported workset before mutation.
 Prompt file-symlink mode observes a regular referent. A write or mode-only
 publication replaces the declared leaf link with the frozen regular-file
 outcome, but requires explicit live-link replacement authorization first. Authorization and Proposal Approval are
-separate; unattended execution rejects required authorization. Deletion unlinks
+separate; no-confirm execution rejects required authorization. Deletion unlinks
 the declared link without replacing or deleting its referent. Pull-only work
 never replaces a live link.
 
@@ -669,6 +669,6 @@ may acknowledge a Base after successful eligible publication. It never reads a
 Base for reconciliation.
 
 Interactive Pull permits a healthy approved subset after materialization failure.
-Unattended Pull aborts before Apply on initial failures, including in preview.
+No-confirm Pull aborts before Apply on initial failures, including in preview.
 Repository Apply is fail-fast, not transactional; completed effects remain
 reported even if a later hook or write fails.

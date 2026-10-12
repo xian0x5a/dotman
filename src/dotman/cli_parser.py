@@ -154,7 +154,7 @@ def add_commit_argument(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--commit",
         action="store_true",
-        help="Commit Work without the Deck: after a successful unattended run, commit the repository files it wrote (the Deck starts with it on)",
+        help="Commit Work without the Deck: after a successful --no-confirm run, commit the repository files it wrote (the Deck starts with it on)",
     )
 
 
@@ -224,7 +224,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action=_PrintVersionAction)
     parser.add_argument("--config", metavar="<config-path>", help="Path to dotman config.toml")
     parser.add_argument("--json", action="store_true", dest="json_output", help="Emit machine-readable JSON")
-    parser.add_argument("--unattended", action="store_true", help="Use policy defaults without menus, editors, pagers, or prompts")
+    parser.add_argument("--no-confirm", action="store_true", help="Use policy defaults without menus, editors, pagers, or prompts; sudo may still authenticate")
     parser.add_argument(
         "--file-symlink-mode",
         choices=("prompt", "follow"),

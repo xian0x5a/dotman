@@ -27,7 +27,7 @@ from dotman.diff_review import (
 )
 from dotman.engine import DotmanEngine
 from dotman.interaction import Interaction
-from dotman.interaction_policy import unattended_enabled
+from dotman.interaction_policy import no_confirm_enabled
 from dotman.models import (
     FullSpecSelector,
     SelectorKind,
@@ -495,8 +495,8 @@ def _prompt_yes_no(message: str, *, default: bool | None = None) -> bool:
         print("invalid confirmation: enter 'y' or 'n'", file=sys.stderr)
 
 
-def confirm_review_continue(*, unattended: bool = False) -> bool:
-    if unattended:
+def confirm_review_continue(*, no_confirm: bool = False) -> bool:
+    if no_confirm:
         return True
     return _prompt_yes_no(review_continue_prompt(), default=True)
 
@@ -518,7 +518,7 @@ def print_review_command_help() -> None:
 
 
 def interactive_mode_enabled(*, json_output: bool) -> bool:
-    return not unattended_enabled() and not json_output and sys.stdin.isatty()
+    return not no_confirm_enabled() and not json_output and sys.stdin.isatty()
 
 
 def confirm_partial_candidate_match(*, candidate_label: str) -> bool:
@@ -877,7 +877,7 @@ def run_diff_review_menu(
     *,
     operation: str,
     full_paths: bool | None = None,
-    unattended: bool = False,
+    no_confirm: bool = False,
 ) -> bool:
     full_paths = _effective_full_paths(full_paths)
     print_review_menu_items(review_items, operation=operation, full_paths=full_paths)
@@ -917,7 +917,7 @@ def run_diff_review_menu(
         if command_name == "next":
             selected_index = 0 if last_viewed_index is None else last_viewed_index + 1
             if selected_index >= len(review_items):
-                if confirm_review_continue(unattended=unattended):
+                if confirm_review_continue(no_confirm=no_confirm):
                     return True
                 continue
         if selected_index is None:
@@ -975,7 +975,7 @@ def review_restore_actions_for_interactive_diffs(
     actions: Sequence[RestoreAction],
     json_output: bool,
     full_paths: bool | None = None,
-    unattended: bool = False,
+    no_confirm: bool = False,
 ) -> bool:
     full_paths = _effective_full_paths(full_paths)
     if not interactive_mode_enabled(json_output=json_output):
@@ -983,7 +983,7 @@ def review_restore_actions_for_interactive_diffs(
     review_items = build_restore_review_items(snapshot, actions)
     if not review_items:
         return True
-    return run_diff_review_menu(review_items, operation="restore", full_paths=full_paths, unattended=unattended)
+    return run_diff_review_menu(review_items, operation="restore", full_paths=full_paths, no_confirm=no_confirm)
 
 
 @dataclass(frozen=True)

@@ -70,7 +70,7 @@ def test_track_resolver_returns_kept_when_profile_replacement_is_declined(
     ]
 
 
-def test_track_resolver_unattended_emits_replacement_summary_without_interaction(
+def test_track_resolver_no_confirm_emits_replacement_summary_without_interaction(
     tmp_path: Path,
 ) -> None:
     config_path = write_named_manager_config(tmp_path, {"example": EXAMPLE_REPO})
@@ -84,7 +84,7 @@ def test_track_resolver_unattended_emits_replacement_summary_without_interaction
     result = TrackResolver(
         DotmanEngine.from_config_path(config_path),
         message_sink=messages.append,
-    ).resolve("example:git@work", unattended=True)
+    ).resolve("example:git@work", no_confirm=True)
 
     assert result.disposition == "ready"
     assert result.binding.profile == "work"

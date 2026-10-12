@@ -7,7 +7,7 @@ from dotman.command_runtime import ArgvCommand, CommandResult, MemoryCommandRunt
 from dotman.file_access import _SudoLease
 
 
-# Unattended skips dotman's decisions, not sudo authentication.
+# No-confirm skips dotman's decisions, not sudo authentication.
 @pytest.mark.parametrize(
     ("ticket_exit_code", "expected_requests"),
     [
@@ -16,12 +16,12 @@ from dotman.file_access import _SudoLease
     ],
     ids=["valid-ticket-no-prompt", "missing-ticket-prompts"],
 )
-def test_unattended_elevation_authenticates_only_without_ticket(monkeypatch, ticket_exit_code, expected_requests) -> None:
+def test_no_confirm_elevation_authenticates_only_without_ticket(monkeypatch, ticket_exit_code, expected_requests) -> None:
     monkeypatch.setattr("os.geteuid", lambda: 1000)
     runtime = MemoryCommandRuntime([CommandResult(exit_code=ticket_exit_code), CommandResult(exit_code=0)])
     lease = _SudoLease(runtime)
     try:
-        with interaction_policy.interaction_scope(unattended=True):
+        with interaction_policy.interaction_scope(no_confirm=True):
             lease.request("publish files")
     finally:
         lease.close()

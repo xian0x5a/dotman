@@ -152,7 +152,7 @@ def test_push_cli_executes_tracked_binding_and_emits_json_results(
     config_path = write_named_manager_config(tmp_path, {"fixture": repo_root})
     _write_tracked_binding(tmp_path / "state")
 
-    exit_code = main(["--unattended", "--config", str(config_path), "--json", "push"])
+    exit_code = main(["--no-confirm", "--config", str(config_path), "--json", "push"])
 
     assert exit_code == 0
     captured = capsys.readouterr()
@@ -193,7 +193,7 @@ def test_push_directory_target_create_preserves_repo_executable_bit(
     config_path = write_named_manager_config(tmp_path, {"fixture": repo_root})
     _write_tracked_binding(tmp_path / "state")
 
-    exit_code = main(["--unattended", "--config", str(config_path), "push"])
+    exit_code = main(["--no-confirm", "--config", str(config_path), "push"])
 
     assert exit_code == 0
     live_path = home / ".config" / "app" / "nested.txt"
@@ -220,7 +220,7 @@ def test_push_directory_target_updates_live_file_when_only_repo_executable_bit_c
     config_path = write_named_manager_config(tmp_path, {"fixture": repo_root})
     _write_tracked_binding(tmp_path / "state")
 
-    exit_code = main(["--unattended", "--config", str(config_path), "push"])
+    exit_code = main(["--no-confirm", "--config", str(config_path), "push"])
 
     assert exit_code == 0
     assert live_path.read_text(encoding="utf-8") == "repo directory value\n"
@@ -246,7 +246,7 @@ def test_push_directory_target_ignores_non_executable_mode_drift(
     config_path = write_named_manager_config(tmp_path, {"fixture": repo_root})
     _write_tracked_binding(tmp_path / "state")
 
-    exit_code = main(["--unattended", "--config", str(config_path), "push"])
+    exit_code = main(["--no-confirm", "--config", str(config_path), "push"])
 
     assert exit_code == 0
     assert live_path.read_text(encoding="utf-8") == "repo directory value\n"
@@ -273,7 +273,7 @@ def test_push_directory_target_path_rule_applies_child_chmod_on_create(
     config_path = write_named_manager_config(tmp_path, {"fixture": repo_root})
     _write_tracked_binding(tmp_path / "state")
 
-    exit_code = main(["--unattended", "--config", str(config_path), "push"])
+    exit_code = main(["--no-confirm", "--config", str(config_path), "push"])
 
     assert exit_code == 0
     live_path = home / ".config" / "app" / "nested.txt"
@@ -305,7 +305,7 @@ def test_push_directory_target_path_rule_repairs_child_chmod_drift(
     config_path = write_named_manager_config(tmp_path, {"fixture": repo_root})
     _write_tracked_binding(tmp_path / "state")
 
-    exit_code = main(["--unattended", "--config", str(config_path), "push"])
+    exit_code = main(["--no-confirm", "--config", str(config_path), "push"])
 
     assert exit_code == 0
     assert live_path.read_text(encoding="utf-8") == "repo directory value\n"
@@ -330,7 +330,7 @@ def test_push_file_target_repairs_chmod_drift_without_content_change(
     config_path = write_named_manager_config(tmp_path, {"fixture": repo_root})
     _write_tracked_binding(tmp_path / "state")
 
-    exit_code = main(["--unattended", "--config", str(config_path), "--json", "push"])
+    exit_code = main(["--no-confirm", "--config", str(config_path), "--json", "push"])
 
     assert exit_code == 0
     payload = json.loads(capsys.readouterr().out)
@@ -359,7 +359,7 @@ def test_push_directory_target_uses_render_for_child_files(
     config_path = write_named_manager_config(tmp_path, {"fixture": repo_root})
     _write_tracked_binding(tmp_path / "state")
 
-    exit_code = main(["--unattended", "--config", str(config_path), "push"])
+    exit_code = main(["--no-confirm", "--config", str(config_path), "push"])
 
     assert exit_code == 0
     live_path = home / ".config" / "app" / "nested.txt"
@@ -398,7 +398,7 @@ def test_push_directory_target_path_rule_render_overrides_default_render(
     config_path = write_named_manager_config(tmp_path, {"fixture": repo_root})
     _write_tracked_binding(tmp_path / "state")
 
-    exit_code = main(["--unattended", "--config", str(config_path), "push"])
+    exit_code = main(["--no-confirm", "--config", str(config_path), "push"])
 
     assert exit_code == 0
     live_root = home / ".config" / "app"
@@ -426,9 +426,9 @@ def test_push_cli_dry_run_emits_symlink_hazard_metadata(
     symlink_target.write_text("live value\n", encoding="utf-8")
     (live_root / "config.txt").symlink_to(symlink_target)
 
-    exit_code = main(["--unattended", "--config", str(config_path), "--json", "push", "--dry-run"])
+    exit_code = main(["--no-confirm", "--config", str(config_path), "--json", "push", "--dry-run"])
 
-    # Unattended preview cannot authorize replacing the link, so the hazard is a unit error.
+    # No-confirm preview cannot authorize replacing the link, so the hazard is a unit error.
     assert exit_code == 1
     payload = json.loads(capsys.readouterr().out)
     unit = payload["sync_units"][0]
@@ -462,7 +462,7 @@ def test_push_cli_fails_fast_for_symlinked_live_target_in_non_interactive_mode(
     symlink_target.write_text("live value\n", encoding="utf-8")
     (live_root / "config.txt").symlink_to(symlink_target)
 
-    exit_code = main(["--unattended", "--config", str(config_path), "push"])
+    exit_code = main(["--no-confirm", "--config", str(config_path), "push"])
 
     assert exit_code == 1
     output = capsys.readouterr().out
@@ -474,7 +474,7 @@ def test_push_cli_fails_fast_for_symlinked_live_target_in_non_interactive_mode(
 
 
 
-def test_push_cli_unattended_refuses_unsafe_symlink_replacement(
+def test_push_cli_no_confirm_refuses_unsafe_symlink_replacement(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -493,7 +493,7 @@ def test_push_cli_unattended_refuses_unsafe_symlink_replacement(
     symlink_target.write_text("live value\n", encoding="utf-8")
     (live_root / "config.txt").symlink_to(symlink_target)
 
-    exit_code = main(["--unattended", "--config", str(config_path), "push"])
+    exit_code = main(["--no-confirm", "--config", str(config_path), "push"])
 
     assert exit_code == 1
     live_path = live_root / "config.txt"
@@ -523,7 +523,7 @@ def test_push_cli_fails_fast_for_symlinked_directory_live_target_in_non_interact
     real_live_root.mkdir(parents=True)
     live_root.symlink_to(real_live_root, target_is_directory=True)
 
-    exit_code = main(["--unattended", "--config", str(config_path), "--json", "push"])
+    exit_code = main(["--no-confirm", "--config", str(config_path), "--json", "push"])
 
     assert exit_code == 1
     payload = json.loads(capsys.readouterr().out)
@@ -554,7 +554,7 @@ def test_push_cli_follows_directory_symlink_when_configured(
     real_live_root.mkdir(parents=True)
     live_root.symlink_to(real_live_root, target_is_directory=True)
 
-    exit_code = main(["--unattended", "--config", str(config_path), "--dir-symlink-mode", "follow", "push"])
+    exit_code = main(["--no-confirm", "--config", str(config_path), "--dir-symlink-mode", "follow", "push"])
 
     assert exit_code == 0
     assert live_root.is_symlink()
@@ -585,7 +585,7 @@ def test_push_cli_run_noop_executes_hooks_for_all_noop_push_plan(
     _write_tracked_binding(tmp_path / "state")
     _write_in_sync_live_config(home)
 
-    exit_code = main(["--unattended", "--config", str(config_path), "--json", "push", "--run-noop"])
+    exit_code = main(["--no-confirm", "--config", str(config_path), "--json", "push", "--run-noop"])
 
     assert exit_code == 0
     payload = json.loads(capsys.readouterr().out)
@@ -617,7 +617,7 @@ def test_push_cli_human_execution_hides_direct_agreement_base_save(
     _write_tracked_binding(tmp_path / "state")
     _write_in_sync_live_config(home)
 
-    exit_code = main(["--unattended", "--config", str(config_path), "push"])
+    exit_code = main(["--no-confirm", "--config", str(config_path), "push"])
 
     assert exit_code == 0
     captured = capsys.readouterr()
@@ -644,7 +644,7 @@ def test_push_cli_run_noop_dry_run_json_shows_hook_only_package(
     _write_tracked_binding(tmp_path / "state")
     _write_in_sync_live_config(home)
 
-    exit_code = main(["--unattended", "--config", str(config_path), "--json", "push", "--dry-run", "--run-noop"])
+    exit_code = main(["--no-confirm", "--config", str(config_path), "--json", "push", "--dry-run", "--run-noop"])
 
     assert exit_code == 0
     payload = json.loads(capsys.readouterr().out)
@@ -671,7 +671,7 @@ def test_push_cli_run_noop_hook_only_plan_soft_skips_guard_and_does_not_create_s
     live_path.parent.mkdir(parents=True)
     live_path.write_text("repo value\n", encoding="utf-8")
 
-    exit_code = main(["--unattended", "--config", str(config_path), "push", "--run-noop"])
+    exit_code = main(["--no-confirm", "--config", str(config_path), "push", "--run-noop"])
 
     assert exit_code == 0
     output = capsys.readouterr().out
@@ -697,7 +697,7 @@ def test_push_cli_run_noop_hook_only_plan_soft_skips_guard_in_json(
     config_path = write_named_manager_config(tmp_path, {"fixture": repo_root})
     _write_tracked_binding(tmp_path / "state")
 
-    exit_code = main(["--unattended", "--config", str(config_path), "--json", "push", "--run-noop"])
+    exit_code = main(["--no-confirm", "--config", str(config_path), "--json", "push", "--run-noop"])
 
     assert exit_code == 0
     payload = json.loads(capsys.readouterr().out)
@@ -726,7 +726,7 @@ def test_push_cli_fails_fast_and_skips_post_push_after_failed_guard(
     config_path = write_named_manager_config(tmp_path, {"fixture": repo_root})
     _write_tracked_binding(tmp_path / "state")
 
-    exit_code = main(["--unattended", "--config", str(config_path), "--json", "push"])
+    exit_code = main(["--no-confirm", "--config", str(config_path), "--json", "push"])
 
     assert exit_code == 1
     payload = json.loads(capsys.readouterr().out)
@@ -758,7 +758,7 @@ def test_push_cli_guard_failure_blocks_every_package_in_the_push(
     _write_tracked_binding(tmp_path / "state", repo_name="fixture-a", selector="app")
     _write_tracked_binding(tmp_path / "state", repo_name="fixture-b", selector="other")
 
-    exit_code = main(["--unattended", "--config", str(config_path), "push"])
+    exit_code = main(["--no-confirm", "--config", str(config_path), "push"])
 
     assert exit_code == 1
     captured = capsys.readouterr()
@@ -886,7 +886,7 @@ def test_pull_cli_applies_repository_changes_and_emits_stages(
     tracked_before = tracked.read_bytes()
 
     assert main([
-        "--config", str(tmp_path / "config.toml"), "--unattended", "--json",
+        "--config", str(tmp_path / "config.toml"), "--no-confirm", "--json",
         "pull", "main:app.unit",
     ]) == 0
 
@@ -915,7 +915,7 @@ def test_pull_cli_uses_capture_without_launching_configured_editor(tmp_path, mon
     ])
 
     assert main([
-        "--config", str(tmp_path / "config.toml"), "--unattended", "--json",
+        "--config", str(tmp_path / "config.toml"), "--no-confirm", "--json",
         "pull", "main:app.unit",
     ]) == 0
 
@@ -967,7 +967,7 @@ def test_pull_cli_run_noop_executes_only_pull_hooks(tmp_path, monkeypatch, capsy
         )
 
     assert main([
-        "--config", str(tmp_path / "config.toml"), "--unattended", "--json",
+        "--config", str(tmp_path / "config.toml"), "--no-confirm", "--json",
         "pull", "--run-noop", "main:app",
     ]) == 0
 

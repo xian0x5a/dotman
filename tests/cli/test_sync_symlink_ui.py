@@ -7,7 +7,7 @@ from tests.engine.test_sync_session import open_session
 from tests.engine.test_sync_symlinks import linked_file
 
 
-def test_unattended_rejects_prompt_replacement(tmp_path, monkeypatch, capsys):
+def test_no_confirm_rejects_prompt_replacement(tmp_path, monkeypatch, capsys):
     engine, path, referent = linked_file(tmp_path, monkeypatch)
     assert runner_for(engine).run(arguments(dry_run=False)) == 1
     payload = json.loads(capsys.readouterr().out)

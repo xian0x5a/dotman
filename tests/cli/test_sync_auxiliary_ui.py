@@ -65,7 +65,7 @@ async def auxiliary_table_interaction():
             app.action_retry()
 
 
-def test_unattended_selects_auxiliary_and_forwards_run_noop(capsys):
+def test_no_confirm_selects_auxiliary_and_forwards_run_noop(capsys):
     from dotman.models import UiConfig
     from dotman.sync_deck_command import SyncDeckCommandRunner
     session = auxiliary_session()
@@ -79,7 +79,7 @@ def test_unattended_selects_auxiliary_and_forwards_run_noop(capsys):
         open_sync_session=open_session,
     )
     args = SimpleNamespace(config=None, scopes=[], no_deps=False, dry_run=True,
-                           unattended=True, json_output=False, run_noop=True)
+                           no_confirm=True, json_output=False, run_noop=True)
     runner = SyncDeckCommandRunner(engine_factory=lambda _: engine, use_color=False)
     assert runner.run(args) == 0
     assert opened == [([], True, True)]

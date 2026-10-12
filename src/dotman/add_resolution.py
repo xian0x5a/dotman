@@ -121,9 +121,9 @@ class AddResolver:
         *,
         repo_name: str,
         package_id: str,
-        unattended: bool = False,
+        no_confirm: bool = False,
     ) -> bool:
-        if unattended:
+        if no_confirm:
             return True
         if self._interaction is None:
             return False

@@ -11,7 +11,7 @@ from tests.engine.test_sync_session import make_engine
 def arguments(**overrides):
     return SimpleNamespace(**dict(
         dict(command="sync", config=None, scopes=[], no_deps=False, dry_run=True,
-             unattended=True, json_output=True), **overrides))
+             no_confirm=True, json_output=True), **overrides))
 
 
 def runner_for(engine):
@@ -20,16 +20,16 @@ def runner_for(engine):
 
 
 def test_sync_parser_accepts_multiple_exact_scopes_and_explicit_approval():
-    args = build_parser().parse_args(["--unattended", "sync", "main:app.one", "main:app.two", "--dry-run"])
+    args = build_parser().parse_args(["--no-confirm", "sync", "main:app.one", "main:app.two", "--dry-run"])
     assert args.scopes == ["main:app.one", "main:app.two"]
-    assert args.unattended and args.dry_run
+    assert args.no_confirm and args.dry_run
 
 
 @pytest.mark.parametrize("command", ["sync", "pull", "push"])
 def test_no_deps_leaves_dependency_targets_out_of_a_package_scope(tmp_path, monkeypatch, capsys, command):
     engine = make_engine(tmp_path, monkeypatch, [("own", "push-only", b"r", b"l", "")],
                          dependency_targets=[("shared", "push-only", b"r", b"l", "")])
-    args = build_parser().parse_args(["--unattended", "--json", command, "--dry-run", "--no-deps", "main:app"])
+    args = build_parser().parse_args(["--no-confirm", "--json", command, "--dry-run", "--no-deps", "main:app"])
     assert args.no_deps
 
     assert runner_for(engine).run(arguments(scopes=["main:app"], no_deps=True)) == 0
@@ -41,7 +41,7 @@ def test_no_deps_leaves_dependency_targets_out_of_a_package_scope(tmp_path, monk
     assert sorted(units) == ["main:app.own", "main:base.shared"]
 
 
-def test_unattended_preview_selects_defaults_without_writes_or_content_leaks(tmp_path, monkeypatch, capsys):
+def test_no_confirm_preview_selects_defaults_without_writes_or_content_leaks(tmp_path, monkeypatch, capsys):
     engine = make_engine(tmp_path, monkeypatch, [("unit", "push-only", b"repo-secret", b"live-secret", "")])
     assert runner_for(engine).run(arguments()) == 0
     output = capsys.readouterr().out
@@ -60,31 +60,31 @@ def test_unattended_preview_selects_defaults_without_writes_or_content_leaks(tmp
 
 
 @pytest.mark.parametrize("dry_run", [False, True])
-def test_nonterminal_sync_requires_unattended_before_opening_session(tmp_path, monkeypatch, capsys, dry_run):
+def test_nonterminal_sync_requires_no_confirm_before_opening_session(tmp_path, monkeypatch, capsys, dry_run):
     engine = make_engine(tmp_path, monkeypatch, [("unit", "push-only", b"repo", b"live", "")])
     def forbidden(*args, **kwargs):
-        raise AssertionError("unapproved unattended execution must not open a real session")
+        raise AssertionError("unapproved --no-confirm execution must not open a real session")
     monkeypatch.setattr(engine, "open_sync_session", forbidden)
-    assert runner_for(engine).run(arguments(dry_run=dry_run, unattended=False)) == 1
+    assert runner_for(engine).run(arguments(dry_run=dry_run, no_confirm=False)) == 1
     payload = json.loads(capsys.readouterr().out)
     assert payload["status"] == "failed"
     assert (tmp_path / "live/unit").read_bytes() == b"live"
 
 
-def test_unattended_sync_executes_explicit_approval(tmp_path, monkeypatch, capsys):
+def test_no_confirm_sync_executes_explicit_approval(tmp_path, monkeypatch, capsys):
     engine = make_engine(tmp_path, monkeypatch, [("unit", "push-only", b"repo", b"live", "")])
-    assert runner_for(engine).run(arguments(dry_run=False, unattended=True)) == 0
+    assert runner_for(engine).run(arguments(dry_run=False, no_confirm=True)) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["sync_units"][0]["result"] == "converged"
     assert (tmp_path / "live/unit").read_bytes() == b"repo"
 
 
-def test_unattended_observation_failure_prevents_other_publication(tmp_path, monkeypatch, capsys):
+def test_no_confirm_observation_failure_prevents_other_publication(tmp_path, monkeypatch, capsys):
     engine = make_engine(tmp_path, monkeypatch, [("unit", "push-only", b"repo", b"live", ""),
                                                ("bad", "push-only", b"repo", b"live", "")])
     (tmp_path / "live/bad").unlink()
     (tmp_path / "live/bad").mkdir()
-    assert runner_for(engine).run(arguments(dry_run=False, unattended=True)) == 1
+    assert runner_for(engine).run(arguments(dry_run=False, no_confirm=True)) == 1
     payload = json.loads(capsys.readouterr().out)
     assert payload["status"] == "failed"
     assert (tmp_path / "live/unit").read_bytes() == b"live"
@@ -166,7 +166,7 @@ def test_interactive_preview_hides_unselected_healthy_work(tmp_path, monkeypatch
         return True
 
     monkeypatch.setattr(sync_deck, "run_command_deck", leave_unselected)
-    assert runner_for(engine).run(arguments(unattended=False, json_output=False)) == 0
+    assert runner_for(engine).run(arguments(no_confirm=False, json_output=False)) == 0
     assert "main:app.unit" not in capsys.readouterr().out
     assert (tmp_path / "live/unit").read_bytes() == b"live"
 
@@ -184,11 +184,11 @@ def test_interactive_sync_logs_directly_when_everything_is_in_sync(tmp_path, mon
         raise AssertionError("nothing to review must not open the Deck")
 
     monkeypatch.setattr(sync_deck, "run_command_deck", forbidden)
-    assert runner_for(engine).run(arguments(dry_run=dry_run, unattended=False, json_output=False)) == 0
+    assert runner_for(engine).run(arguments(dry_run=dry_run, no_confirm=False, json_output=False)) == 0
     assert "in-sync: 1" in capsys.readouterr().out
 
 
-def test_failed_materialization_stops_unattended_publication(tmp_path, monkeypatch, capsys):
+def test_failed_materialization_stops_no_confirm_publication(tmp_path, monkeypatch, capsys):
     engine = make_engine(tmp_path, monkeypatch, [
         ("one", "push-only", b"repo", b"live", ""),
         ("two", "push-only", b"repo", b"live", ""),
@@ -263,7 +263,7 @@ def test_interactive_abort_emits_final_summary_and_releases_session(tmp_path, mo
             raise KeyboardInterrupt()
         return False
     monkeypatch.setattr(sync_deck, "run_command_deck", abort)
-    assert runner_for(engine).run(arguments(dry_run=False, unattended=False, json_output=False)) == 130
+    assert runner_for(engine).run(arguments(dry_run=False, no_confirm=False, json_output=False)) == 130
     captured = capsys.readouterr()
     # Nothing ran, so the log must not echo the dismissed rows back as pending.
     assert captured.out.splitlines() == [":: Sync", ":: aborted — no changes made"]
@@ -294,7 +294,7 @@ def test_json_reports_actual_failed_hook_without_leaking_captured_output(tmp_pat
 
 
 @pytest.mark.parametrize("dry_run", [False, True])
-def test_unattended_both_fallback_reports_reason_and_skips(tmp_path, monkeypatch, capsys, dry_run):
+def test_no_confirm_both_fallback_reports_reason_and_skips(tmp_path, monkeypatch, capsys, dry_run):
     engine = make_engine(tmp_path, monkeypatch, [
         ("push", "push-only", b"repo", b"live", ""),
         ("both", "both", b"repo", b"live", ""),
@@ -332,7 +332,7 @@ def test_report_marks_an_approved_guess_until_a_side_is_chosen(tmp_path, monkeyp
         return True
 
     monkeypatch.setattr(sync_deck, "run_command_deck", approve_both)
-    assert runner_for(engine).run(arguments(unattended=False, dry_run=True, json_output=False, report=True)) == 0
+    assert runner_for(engine).run(arguments(no_confirm=False, dry_run=True, json_output=False, report=True)) == 0
     out = capsys.readouterr().out
     assert _in_order(out, "main:app.guessed", "Use repository (guessed)", "main:app.chosen")
     assert out.count("(guessed)") == 1
@@ -360,7 +360,7 @@ def test_json_failed_hook_identifies_exact_instance_target(tmp_path, monkeypatch
     assert payload["sync_units"][0]["result"] == "converged"
 
 @pytest.mark.parametrize("dry_run", [True, False])
-def test_unattended_topology_blocker_fails_with_typed_diagnostic(tmp_path, monkeypatch, capsys, dry_run):
+def test_no_confirm_topology_blocker_fails_with_typed_diagnostic(tmp_path, monkeypatch, capsys, dry_run):
     from tests.engine.test_sync_directory_observation import directory_engine, put
 
     engine = directory_engine(tmp_path, monkeypatch, policy="push-only",
@@ -437,7 +437,7 @@ def test_sync_review_shows_full_paths_regardless_of_full_path_option(tmp_path, m
         return True
 
     monkeypatch.setattr(sync_deck, "run_command_deck", inspect)
-    assert runner_for(engine).run(arguments(unattended=False, json_output=False, full_path=full_path)) == 0
+    assert runner_for(engine).run(arguments(no_confirm=False, json_output=False, full_path=full_path)) == 0
 
 @pytest.mark.parametrize("command", ["guard", "probe"])
 def test_failed_planning_commands_do_not_copy_output_into_json(tmp_path, monkeypatch, capsys, command):
@@ -454,10 +454,10 @@ def test_failed_planning_commands_do_not_copy_output_into_json(tmp_path, monkeyp
     assert json.loads(output)["summary"]["diagnostics"]
     assert "private-command-output" not in output
 
-def test_unattended_sync_propagates_mode_to_both_hook_families(tmp_path, monkeypatch, capsys):
+def test_no_confirm_sync_propagates_mode_to_both_hook_families(tmp_path, monkeypatch, capsys):
     engine = make_engine(tmp_path, monkeypatch, [
-        ("in", "pull-only", b"repo", b"live", '[targets.in.hooks]\npre_pull = "test \\"$DOTMAN_UNATTENDED\\" = 1"'),
-        ("out", "push-only", b"repo", b"live", '[targets.out.hooks]\npre_push = "test \\"$DOTMAN_UNATTENDED\\" = 1"'),
+        ("in", "pull-only", b"repo", b"live", '[targets.in.hooks]\npre_pull = "test \\"$DOTMAN_NO_CONFIRM\\" = 1"'),
+        ("out", "push-only", b"repo", b"live", '[targets.out.hooks]\npre_push = "test \\"$DOTMAN_NO_CONFIRM\\" = 1"'),
     ])
     assert runner_for(engine).run(arguments(dry_run=False)) == 0
     payload = json.loads(capsys.readouterr().out)
@@ -638,7 +638,7 @@ def test_report_lists_every_entry_after_the_timeline(tmp_path, monkeypatch, caps
         return True
 
     monkeypatch.setattr(sync_deck, "run_command_deck", approve_first)
-    assert runner_for(engine).run(arguments(unattended=False, dry_run=False, json_output=False, report=True)) == 0
+    assert runner_for(engine).run(arguments(no_confirm=False, dry_run=False, json_output=False, report=True)) == 0
     out = capsys.readouterr().out
     assert _in_order(out, "[1/1] write", "[ok] main:app.unit", "Use repository", ":: completed")
     assert "[unselected] main:app.second" in out
@@ -657,7 +657,7 @@ def no_base_engine(tmp_path, monkeypatch):
     ])
 
 
-def test_unattended_sync_skips_no_base_drift_and_keeps_repository_sources(tmp_path, monkeypatch, capsys):
+def test_no_confirm_sync_skips_no_base_drift_and_keeps_repository_sources(tmp_path, monkeypatch, capsys):
     engine = no_base_engine(tmp_path, monkeypatch)
     assert runner_for(engine).run(arguments(dry_run=False, json_output=False)) == 0
     output = capsys.readouterr().out
@@ -673,7 +673,7 @@ def test_unattended_sync_skips_no_base_drift_and_keeps_repository_sources(tmp_pa
         assert fresh.base.status != "usable"
 
 
-def test_unattended_sync_json_lists_no_base_skips(tmp_path, monkeypatch, capsys):
+def test_no_confirm_sync_json_lists_no_base_skips(tmp_path, monkeypatch, capsys):
     engine = no_base_engine(tmp_path, monkeypatch)
     assert runner_for(engine).run(arguments()) == 0
     payload = json.loads(capsys.readouterr().out)

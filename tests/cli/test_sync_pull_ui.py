@@ -252,11 +252,11 @@ def test_no_write_review_says_approval_records_the_sync_base(tmp_path, monkeypat
 
 
 @pytest.mark.parametrize('report', [False, True])
-def test_unattended_noop_is_reported_as_noop_only_on_request(tmp_path, monkeypatch, capsys, report):
+def test_no_confirm_noop_is_reported_as_noop_only_on_request(tmp_path, monkeypatch, capsys, report):
     from dotman.sync_deck_command import PullDeckCommandRunner
 
     engine = make_engine(tmp_path, monkeypatch, [('unit', 'pull-only', b'a\n', b'A\n', FOLDING_CAPTURE)])
-    args = SimpleNamespace(config=engine.config.config_path, scopes=[], no_deps=False, dry_run=True, unattended=True,
+    args = SimpleNamespace(config=engine.config.config_path, scopes=[], no_deps=False, dry_run=True, no_confirm=True,
                            json_output=False, run_noop=False, command='pull', report=report)
     assert PullDeckCommandRunner(engine_factory=lambda _: engine, use_color=False).run(args) == 0
     assert ('[noop] main:app.unit' in capsys.readouterr().out) == report

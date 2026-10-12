@@ -30,7 +30,7 @@ on_demand = {on_demand}
 
 def run(engine, capsys, *args, json_output=True):
     code = main(["--config", str(engine.config.config_path), *(["--json"] if json_output else []),
-                 "--unattended", *args])
+                 "--no-confirm", *args])
     output = capsys.readouterr().out
     return code, json.loads(output) if json_output else output
 

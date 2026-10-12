@@ -30,10 +30,10 @@ See [Sync lifecycle](sync.md) for convergence semantics and
 ## Confirmation and execution flags
 
 - `--json` switches command output to machine-readable JSON. It is a global option and must appear before the subcommand.
-- Global `--unattended` suppresses every menu, Editor, pager, and prompt throughout command behavior. It uses configured defaults and fails safely when a required decision cannot be resolved.
-- `--unattended` does not suppress sudo authentication: when elevation needs a password, sudo authenticates however it is configured: NOPASSWD, a terminal prompt, or the `SUDO_ASKPASS` helper when no terminal is present. A terminal nobody watches waits at the prompt until sudo times out. Dotman never substitutes its own prompt.
-- A missing terminal never implies consent. Without `--unattended`, an unavailable required interactive decision fails; `--json` selects output only and never authorizes execution.
-- Execution hooks receive `DOTMAN_UNATTENDED=1` under `--unattended`, otherwise `0`; planning Guards do not receive it.
+- Global `--no-confirm` suppresses every menu, Editor, pager, and prompt throughout command behavior. It uses configured defaults and fails safely when a required decision cannot be resolved.
+- `--no-confirm` does not suppress sudo authentication: when elevation needs a password, sudo authenticates however it is configured: NOPASSWD, a terminal prompt, or the `SUDO_ASKPASS` helper when no terminal is present. A terminal nobody watches waits at the prompt until sudo times out. Dotman never substitutes its own prompt.
+- A missing terminal never implies consent. Without `--no-confirm`, an unavailable required interactive decision fails; `--json` selects output only and never authorizes execution.
+- Execution hooks receive `DOTMAN_NO_CONFIRM=1` under `--no-confirm`, otherwise `0`; planning Guards do not receive it.
 - `--run-noop` is meaningful for `push`, `pull`, and `sync`; Sync retains both surviving directional hook families.
 - `--run-noop` now feeds normal planning and selection instead of reviving hooks late in execution.
 - For the active operation, `--run-noop` temporarily treats pre/post hooks as noop-eligible, even if they do not declare `run_noop = true` in the manifest.
@@ -51,7 +51,7 @@ See [Sync lifecycle](sync.md) for convergence semantics and
   diagnostic, not a successful omission. Guards never grant the opposite route.
   Sync also lists each exit-100 scope as the same unselectable Guard-skipped
   row and JSON `guard_skips` entry, so a narrowed policy names its Guard.
-  Unattended Sync rejects a no-route blocker before
+  No-confirm Sync rejects a no-route blocker before
   mutation; interactive execution may retain unrelated approved work but still
   reports failure. Configured policy continues to determine Base eligibility.
 
@@ -91,13 +91,13 @@ using the same package-or-target lookup as `edit query`: `claude`,
 `claude.settings` or `dot:claude` resolve to their canonical identity when one
 tracked package or target matches exactly. Directory-child suffixes are kept
 verbatim after the owning target resolves. Partial or ambiguous input opens a
-selection menu in a terminal; JSON, unattended, and non-terminal resolution
+selection menu in a terminal; JSON, no-confirm, and non-terminal resolution
 fails with the candidates rather than guessing.
 
 ## Sync
 
 ```text
-dotman [--config PATH] [--json] [--unattended] [--file-symlink-mode MODE] [--dir-symlink-mode MODE] sync [-d | --dry-run] [--full-path] [--report] [--commit] [--no-deps] [--run-noop] [<tracked-scope> ...]
+dotman [--config PATH] [--json] [--no-confirm] [--file-symlink-mode MODE] [--dir-symlink-mode MODE] sync [-d | --dry-run] [--full-path] [--report] [--commit] [--no-deps] [--run-noop] [<tracked-scope> ...]
 ```
 
 File-symlink modes are `prompt` (default) and `follow`; directory-symlink modes
@@ -231,12 +231,12 @@ otherwise **Use repository** is the visible fallback and Merge is unavailable.
   **T** retries materialization; Editor attempts can be retried with **E**.
   `L` explicitly authorizes prompt-mode live-link replacement for the focused
   Proposal; it does not select or approve it. Review shows authorization in the
-  shared warning/success colors. Unattended Sync cannot supply this decision.
+  shared warning/success colors. No-confirm Sync cannot supply this decision.
   During editing, `Ctrl+C` or OS SIGINT cancels only the Editor attempt,
   including a broker-triggered sudo password prompt. Prompt cleanup and terminal
   restoration finish before the deck resumes; **E** can start a fresh attempt.
   Terminal Editors take terminal ownership temporarily and return to the same
-  focused deck. No Editor runs automatically or under `--unattended`.
+  focused deck. No Editor runs automatically or under `--no-confirm`.
 - **Tab** focuses the ringed detail panel below the table so arrow, vim and page
   keys scroll it; **Tab** or **Esc** returns to the workset. Row commands keep
   acting on the focused row. The mouse wheel scrolls it without moving focus.
@@ -247,20 +247,20 @@ otherwise **Use repository** is the visible fallback and Merge is unavailable.
   Review shows child executable changes with Git mode lines. Exact Path Rule
   chmod affects live publication only; it is not repository or Merge ancestry.
   Controls and exclusions apply symmetrically even for an exact child scope.
-- `--unattended` uses policy defaults, selects every eligible Proposal, Additional Source Change and auxiliary row, materializes that set, and confirms execution.
+- `--no-confirm` uses policy defaults, selects every eligible Proposal, Additional Source Change and auxiliary row, materializes that set, and confirms execution.
   Commit Work stays off unless `--commit` selects it.
   Both-policy drift without a usable Base is the exception: nothing shows which
   side changed, so it stays unselected and prints
   `[skipped] <identity> (no Base)` with a first-review hint. JSON lists it in
   `no_base_skips` with the Base reason, and the exit status is unaffected. To
-  bootstrap a host unattended, run `dotman --unattended push` (or `pull`) once.
+  bootstrap a host without the Deck, run `dotman --no-confirm push` (or `pull`) once.
   The next Sync sees both sides agree and records a Base.
   Missing terminals and `--json` do not grant consent. Required interactive
   decisions without a terminal fail rather than selecting work implicitly.
   Ambiguity, unsafe symlink decisions, conflicts, Observation or materialization
   failures, and unsatisfied structural closure fail before mutation.
 - `--dry-run` reports frozen approved outcomes without hooks, managed writes,
-  snapshots, Base acknowledgment or cleanup. Interactive preview uses the normal Command Deck. Unattended preview
+  snapshots, Base acknowledgment or cleanup. Interactive preview uses the normal Command Deck. No-confirm preview
   selects and materializes all eligible work using policy defaults, reports frozen
   effects without confirmation, and fails if any blocker makes it unexecutable.
 - Active Probe Work has no Proposal, Approval, Base or Converged result. Its
@@ -331,7 +331,7 @@ otherwise **Use repository** is the visible fallback and Merge is unavailable.
 - Exit `0` means healthy completion, including deliberately unselected healthy
   interactive rows and completed work with checkpoint-only warnings. Exit `1`
   covers Observation, materialization, blocking,
-  unattended-decision, execution, or incomplete-convergence failure. Partial
+  decision-required, execution, or incomplete-convergence failure. Partial
   convergence with any failure exits `1`. Exit `2` means invalid syntax;
   exit `130` means interruption or explicit abort.
 
@@ -339,8 +339,8 @@ Examples:
 
 ```sh
 dotman sync main:app.settings
-dotman --json --unattended sync --dry-run main:app.settings
-dotman --unattended sync main:app.settings
+dotman --json --no-confirm sync --dry-run main:app.settings
+dotman --no-confirm sync main:app.settings
 ```
 
 ## Selectors
@@ -473,9 +473,9 @@ workset and Command Deck with Sync and Pull, but its only resolution is
   Drifted Proposals start approved. `x` opts out; Enter inspects frozen Views
   and the live outcome; `e` edits the repository source transactionally; `t` retries
   a failed Proposal. There is no Resolution Intent or Merge choice.
-- Noninteractive use requires global `--unattended`, including `--dry-run` and
-  `--json`; without a terminal Push otherwise fails with `unattended-decision`.
-  Unattended Push aborts before publication if an initially approved unit fails.
+- Noninteractive use requires global `--no-confirm`, including `--dry-run` and
+  `--json`; without a terminal Push otherwise fails with `decision-required`.
+  No-confirm Push aborts before publication if an initially approved unit fails.
 - `-d` / `--dry-run` runs frozen planning and review without live writes,
   snapshots or Base saves. `--run-noop` retains eligible auxiliary hook work;
   active Probes and retained hook work start selected and can be opted out.
@@ -499,7 +499,7 @@ workset and Command Deck with Sync and Pull, but its only resolution is
   repository-space outcome as a Sync Base. Checkpoint-only failures warn without
   stopping later work.
 - `file_symlink_mode = prompt` requires explicit per-row link replacement
-  authorization (`L`); unattended Push cannot grant it. A dangling live link
+  authorization (`L`); no-confirm Push cannot grant it. A dangling live link
   is replaceable the same way for push-only work; anything with pull capability
   still rejects it, so it is never read as a deleted live file. `follow` writes through
   to the resolved target. `dir_symlink_mode = fail` rejects symlinked directory
@@ -507,8 +507,8 @@ workset and Command Deck with Sync and Pull, but its only resolution is
 - Results use the shared Sync document: drifted units report `converged`,
   `would-converge`, `pending` or a failure status.
 
-Examples: `dotman push main:git.config`, `dotman --unattended push -d`,
-`dotman --json --unattended push`.
+Examples: `dotman push main:git.config`, `dotman --no-confirm push -d`,
+`dotman --json --no-confirm push`.
 
 ## Pull
 
@@ -528,7 +528,7 @@ Merge choice and never publishes to live paths.
 - Capture failure never launches an Editor automatically. Explicit editing may
   recover the failed unit, which still needs Approval. Interactive execution may
   retain a healthy approved subset; failures remain visible in the result.
-- Noninteractive execution requires global `--unattended` and aborts before Apply
+- Noninteractive execution requires global `--no-confirm` and aborts before Apply
   if an initially approved unit fails. This also applies to preview.
 - `-d` / `--dry-run` runs frozen planning and review without repository Apply.
   `--run-noop` retains eligible auxiliary hook work. Active Probes and retained
@@ -554,8 +554,8 @@ Merge choice and never publishes to live paths.
   Observation constraints as Sync.
 
 Examples: `dotman pull main:git.config`,
-`dotman --unattended pull -d`, `dotman --json --unattended pull`,
-`dotman --unattended pull --commit`.
+`dotman --no-confirm pull -d`, `dotman --json --no-confirm pull`,
+`dotman --no-confirm pull --commit`.
 
 ## Capture
 

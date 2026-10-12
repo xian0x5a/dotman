@@ -128,7 +128,7 @@ def test_editor_key_saves_in_place_and_is_disabled_after_confirmation(tmp_path, 
         asyncio.run(asyncio.wait_for(interact(), timeout=5))
 
 
-def test_unattended_sync_never_launches_configured_editor(tmp_path, monkeypatch, capsys):
+def test_no_confirm_sync_never_launches_configured_editor(tmp_path, monkeypatch, capsys):
     from tests.cli.test_sync_deck_command import arguments, runner_for
     from tests.engine.test_sync_session import make_engine
 

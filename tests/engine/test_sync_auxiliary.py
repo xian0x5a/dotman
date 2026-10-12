@@ -186,7 +186,7 @@ def test_removed_one_sided_route_is_visible_nonapprovable(tmp_path, monkeypatch,
         assert [item.code for item in row.observation.diagnostics] == ['no-route']
 
 
-def test_unattended_json_executes_auxiliary_work_without_file_output(tmp_path, monkeypatch, capsys):
+def test_no_confirm_json_executes_auxiliary_work_without_file_output(tmp_path, monkeypatch, capsys):
     import json
     from dotman.cli import main
 
@@ -198,7 +198,7 @@ pre_push = "echo hook >> {log}"
 probe = "true"
 sync_policy = "pull-only"
 ''')
-    assert main(['--config', str(engine.config.config_path), '--json', '--unattended', 'sync', '--run-noop']) == 0
+    assert main(['--config', str(engine.config.config_path), '--json', '--no-confirm', 'sync', '--run-noop']) == 0
     document = json.loads(capsys.readouterr().out)
     assert document['sync_units'] == []
     assert document['probe_work'] == [{'identity': 'main:app.check', 'selected': True, 'directions': ['pull'], 'diagnostics': []}]
@@ -267,7 +267,7 @@ def test_exact_cli_selector_resolves_probe_target(tmp_path, monkeypatch, capsys,
 probe = "echo probe >> {log}"
 sync_policy = "push-only"
 ''')
-    assert main(['--config', str(engine.config.config_path), '--json', '--unattended', 'push', selector]) == 0
+    assert main(['--config', str(engine.config.config_path), '--json', '--no-confirm', 'push', selector]) == 0
     document = json.loads(capsys.readouterr().out)
     assert [work['identity'] for work in document['probe_work']] == ['main:app.check']
     assert log.read_text().splitlines() == ['probe']
@@ -293,6 +293,6 @@ def test_bare_probe_target_name_never_shadows_a_package(tmp_path, monkeypatch, c
         'id = "tool"\n[targets.run]\nprobe = "true"\nsync_policy = "push-only"\n')
     write_tracked_packages_state(tmp_path / 'state', repo_name='main', entries=[('app', 'default'), ('tool', 'default')])
     config = str(engine.config.config_path)
-    assert main(['--config', config, '--json', '--unattended', 'push', '--dry-run', 'tool']) == 0
+    assert main(['--config', config, '--json', '--no-confirm', 'push', '--dry-run', 'tool']) == 0
     document = json.loads(capsys.readouterr().out)
     assert [work['identity'] for work in document['probe_work']] == ['main:tool.run']

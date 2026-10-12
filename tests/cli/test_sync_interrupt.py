@@ -94,7 +94,7 @@ def test_sigint_with_sync_base_emits_clean_json_and_stops_execution(tmp_path, mo
     before = source.read_bytes(), live.read_bytes()
     process = subprocess.Popen(
         [sys.executable, "-m", "dotman.cli", "--config", str(tmp_path / "config.toml"),
-         "--json", "--unattended", "sync"],
+         "--json", "--no-confirm", "sync"],
         stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         start_new_session=True,
     )

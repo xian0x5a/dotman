@@ -50,12 +50,12 @@ class TrackResolver:
         self._message_sink = message_sink
         self._use_color = use_color
 
-    def resolve(self, binding_text: str, *, unattended: bool = False) -> TrackResolution:
+    def resolve(self, binding_text: str, *, no_confirm: bool = False) -> TrackResolution:
         binding = self._resolve_selector(binding_text)
         while True:
             replacement_result = self._confirm_replacements(
                 binding,
-                unattended=unattended,
+                no_confirm=no_confirm,
             )
             if replacement_result is not None:
                 return replacement_result
@@ -72,7 +72,7 @@ class TrackResolver:
                 binding = binding.with_profile(alternative_profile)
                 continue
 
-            if not self._confirm_implicit_overrides(binding, unattended=unattended):
+            if not self._confirm_implicit_overrides(binding, no_confirm=no_confirm):
                 existing_binding = self._find_recorded_entry_exact(binding)
                 if existing_binding is not None:
                     return TrackResolution(disposition="kept", binding=existing_binding)
@@ -111,7 +111,7 @@ class TrackResolver:
         self,
         binding: FullSpecSelector,
         *,
-        unattended: bool,
+        no_confirm: bool,
     ) -> TrackResolution | None:
         expanded_bindings = self._engine.expand_tracked_package_entry(binding)
         existing_bindings = self._recorded_entries_for_scope(binding)
@@ -147,7 +147,7 @@ class TrackResolver:
                 )
             message = "\n".join(message_lines)
         rendered_message = f"\n{message}\n"
-        if unattended:
+        if no_confirm:
             if self._message_sink is not None:
                 self._message_sink(rendered_message)
             return None
@@ -314,7 +314,7 @@ class TrackResolver:
         self,
         binding: FullSpecSelector,
         *,
-        unattended: bool,
+        no_confirm: bool,
     ) -> bool:
         overrides = [
             override
@@ -338,7 +338,7 @@ class TrackResolver:
                 for contender in override.overridden
             )
         rendered_message = "\n" + "\n".join(message_lines) + "\n"
-        if unattended:
+        if no_confirm:
             if self._message_sink is not None:
                 self._message_sink(rendered_message)
             return True

@@ -12,36 +12,36 @@ from tests.engine.test_sync_session import make_engine
 
 
 @pytest.mark.parametrize("hook", ["pre_pull", "post_pull"])
-def test_unattended_pull_propagates_mode_to_hooks(tmp_path, monkeypatch, capsys, hook):
+def test_no_confirm_pull_propagates_mode_to_hooks(tmp_path, monkeypatch, capsys, hook):
     from dotman.cli import main
 
     marker = tmp_path / "hook-mode"
     engine = make_engine(tmp_path, monkeypatch, [
         ("unit", "both", b"repo", b"live",
          f'[targets.unit.hooks]\n{hook} = '
-         + json.dumps(f'printf "$DOTMAN_UNATTENDED" > {marker}')),
+         + json.dumps(f'printf "$DOTMAN_NO_CONFIRM" > {marker}')),
     ])
     assert main([
-        "--config", str(engine.config.config_path), "--json", "--unattended", "pull",
+        "--config", str(engine.config.config_path), "--json", "--no-confirm", "pull",
     ]) == 0
     assert json.loads(capsys.readouterr().out)["status"] == "completed"
     assert marker.read_text() == "1"
 
 
-def test_unattended_pull_rejects_tty_hook_even_with_a_terminal(tmp_path, monkeypatch):
+def test_no_confirm_pull_rejects_tty_hook_even_with_a_terminal(tmp_path, monkeypatch):
     marker = tmp_path / "tty-launched"
     engine = make_engine(tmp_path, monkeypatch, [
         ("unit", "both", b"repo", b"live",
          '[targets.unit.hooks]\npre_pull = { run = '
          + json.dumps(f"touch {marker}") + ', io = "tty" }'),
     ])
-    # A pipe-only probe would fail the terminal check even if unattended policy
+    # A pipe-only probe would fail the terminal check even if --no-confirm policy
     # were lost. A real PTY proves that the operation policy prevents launch.
     master, slave = pty.openpty()
     try:
         process = subprocess.Popen(
             [sys.executable, "-m", "dotman.cli", "--config",
-             str(engine.config.config_path), "--unattended", "pull"],
+             str(engine.config.config_path), "--no-confirm", "pull"],
             stdin=slave, stdout=slave, stderr=slave, start_new_session=True,
         )
         try:
@@ -59,7 +59,7 @@ def test_unattended_pull_rejects_tty_hook_even_with_a_terminal(tmp_path, monkeyp
 
 
 @pytest.mark.parametrize("dry_run", [False, True])
-def test_unattended_pull_failure_never_applies_healthy_subset(tmp_path, monkeypatch, capsys, dry_run):
+def test_no_confirm_pull_failure_never_applies_healthy_subset(tmp_path, monkeypatch, capsys, dry_run):
     engine = make_engine(tmp_path, monkeypatch, [
         ("bad", "both", b"repo", b"live", 'capture = "exit 9"\ncompare = {repo = "raw", live = "raw"}'),
         ("good", "both", b"repo", b"live", ""),
@@ -74,7 +74,7 @@ def test_unattended_pull_failure_never_applies_healthy_subset(tmp_path, monkeypa
     assert (tmp_path / "repo/packages/app/good").read_bytes() == b"repo"
 
 
-def test_unattended_pull_reports_applied_not_converged(tmp_path, monkeypatch, capsys):
+def test_no_confirm_pull_reports_applied_not_converged(tmp_path, monkeypatch, capsys):
     engine = make_engine(tmp_path, monkeypatch, [("unit", "both", b"repo", b"live", "")])
     runner = PullDeckCommandRunner(engine_factory=lambda _: engine, use_color=False)
     assert runner.run(arguments(command="pull", dry_run=False)) == 0
@@ -89,7 +89,7 @@ def test_unattended_pull_reports_applied_not_converged(tmp_path, monkeypatch, ca
 
 def test_pull_parser_accepts_exact_multiple_scopes():
     from dotman.cli_parser import build_parser
-    args = build_parser().parse_args(["--unattended", "pull", "main:app.a", "main:app.b"])
+    args = build_parser().parse_args(["--no-confirm", "pull", "main:app.a", "main:app.b"])
     assert args.scopes == ["main:app.a", "main:app.b"]
 
 

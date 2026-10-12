@@ -33,7 +33,7 @@ def write_push_repo(tmp_path: Path, monkeypatch, tracked_package: str) -> Path:
 def test_push_cli_short_dry_run_previews_tracked_scope_without_writes(tmp_path, monkeypatch, capsys) -> None:
     config_path = write_push_repo(tmp_path, monkeypatch, "git")
 
-    assert main(["--config", str(config_path), "--json", "--unattended", "push", "-d"]) == 0
+    assert main(["--config", str(config_path), "--json", "--no-confirm", "push", "-d"]) == 0
 
     payload = json.loads(capsys.readouterr().out)
     assert payload["operation"] == "push"
@@ -52,7 +52,7 @@ def test_push_cli_accepts_package_owned_by_tracked_root(tmp_path, monkeypatch, c
     config_path = write_push_repo(tmp_path, monkeypatch, "core-cli-meta")
 
     assert main([
-        "--config", str(config_path), "--json", "--unattended", "push", "--dry-run", "example:nvim",
+        "--config", str(config_path), "--json", "--no-confirm", "push", "--dry-run", "example:nvim",
     ]) == 0
 
     payload = json.loads(capsys.readouterr().out)
@@ -64,7 +64,7 @@ def test_push_cli_rejects_untracked_scope(tmp_path, monkeypatch, capsys) -> None
     config_path = write_push_repo(tmp_path, monkeypatch, "git")
 
     assert main([
-        "--config", str(config_path), "--json", "--unattended", "push", "--dry-run", "example:nvim",
+        "--config", str(config_path), "--json", "--no-confirm", "push", "--dry-run", "example:nvim",
     ]) == 2
 
     payload = json.loads(capsys.readouterr().out)
@@ -76,7 +76,7 @@ def test_push_cli_rejects_untracked_scope(tmp_path, monkeypatch, capsys) -> None
 def test_push_cli_human_preview_names_leaf_targets_not_root_package(tmp_path, monkeypatch, capsys) -> None:
     config_path = write_push_repo(tmp_path, monkeypatch, "core-cli-meta")
 
-    assert main(["--config", str(config_path), "--unattended", "push", "--dry-run"]) == 0
+    assert main(["--config", str(config_path), "--no-confirm", "push", "--dry-run"]) == 0
 
     output = capsys.readouterr().out
     assert ":: Push preview" in output
