@@ -31,6 +31,7 @@ See [Sync lifecycle](sync.md) for convergence semantics and
 
 - `--json` switches command output to machine-readable JSON. It is a global option and must appear before the subcommand.
 - Global `--unattended` suppresses every menu, Editor, pager, and prompt throughout command behavior. It uses configured defaults and fails safely when a required decision cannot be resolved.
+- `--unattended` does not suppress sudo authentication: when elevation needs a password, sudo authenticates however it is configured: NOPASSWD, a terminal prompt, or the `SUDO_ASKPASS` helper when no terminal is present. A terminal nobody watches waits at the prompt until sudo times out. Dotman never substitutes its own prompt.
 - A missing terminal never implies consent. Without `--unattended`, an unavailable required interactive decision fails; `--json` selects output only and never authorizes execution.
 - Execution hooks receive `DOTMAN_UNATTENDED=1` under `--unattended`, otherwise `0`; planning Guards do not receive it.
 - `--run-noop` is meaningful for `push`, `pull`, and `sync`; Sync retains both surviving directional hook families.

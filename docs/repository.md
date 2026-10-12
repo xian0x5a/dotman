@@ -506,6 +506,7 @@ exit 0
 - `default_command_elevation` does not support `root` or `lease`; set those on specific command objects instead.
 - Explicit command metadata wins over the repo default. Use `elevation = "none"` to opt a command out of a repo default.
 - `default_command_elevation = "intercept"` gives every command without explicit `elevation` the temporary `sudo` shim in `PATH`.
+- Every mode authenticates the same way under `--unattended`: when the sudo ticket is missing, sudo authenticates however it is configured (NOPASSWD, a terminal prompt, or the `SUDO_ASKPASS` helper when no terminal is present).
 
 Elevation modes:
 

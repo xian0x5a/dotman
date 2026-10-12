@@ -125,6 +125,9 @@ def _execute_step(step: ExecutionStep, *, stream_output: bool, unattended: bool)
         raise ValueError(f"unsupported execution step kind '{step.kind}'")
     try:
         if step.hook_plan.io == "tty":
+            # Checked before the runtime so a rejected hook never triggers elevation.
+            if unattended:
+                raise ValueError("hook command io 'tty' is unavailable in unattended mode")
             _require_interactive_terminal_for_hook()
         command_result = current_command_runtime().run(
             CommandRequest(
