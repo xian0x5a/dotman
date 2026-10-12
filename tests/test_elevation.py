@@ -170,3 +170,44 @@ def test_concurrent_sudo_requests_prompt_for_a_password_once(monkeypatch) -> Non
         second.join(5)
 
     assert [request.io for request in runtime.requests].count("tty") == 1
+
+
+def test_intercept_hook_sudo_v_requests_the_broker_lease_then_runs_real_sudo_noninteractively(
+    monkeypatch, tmp_path,
+) -> None:
+    # `sudo -v` is how an intercept script authenticates early: the shim asks
+    # dotman for the sudo lease, then runs the real `sudo -n -v`.
+    from dotman.cli import main
+    from tests.engine.test_sync_session import make_engine
+
+    log = tmp_path / "sudo.log"
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    fake_sudo = bin_dir / "sudo"
+    fake_sudo.write_text(
+        f"#!{sys.executable}\nimport sys\n"
+        f"open({str(log)!r}, 'a').write('real sudo ' + ' '.join(sys.argv[1:]) + '\\n')\n",
+        encoding="utf-8",
+    )
+    fake_sudo.chmod(0o755)
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+
+    def record_lease_request(reason=None) -> None:
+        with log.open("a", encoding="utf-8") as handle:
+            handle.write("broker lease\n")
+
+    monkeypatch.setattr(elevation, "request_sudo", record_lease_request)
+    engine = make_engine(tmp_path, monkeypatch, [
+        ("unit", "push-only", b"repo", b"repo",
+         '[targets.unit.hooks]\npre_push = { run = "sudo -v", io = "pipe", elevation = "intercept" }'),
+    ])
+
+    exit_code = main(["--config", str(engine.config.config_path), "--no-confirm", "push", "--run-noop"])
+
+    assert exit_code == 0
+    assert log.read_text(encoding="utf-8").splitlines() == ["broker lease", "real sudo -n -v"]

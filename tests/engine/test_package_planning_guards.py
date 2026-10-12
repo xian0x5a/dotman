@@ -149,7 +149,7 @@ def test_package_guard_commands_preserve_order_stop_on_skip_and_support_elevatio
                 "[hooks]",
                 "guard_push = [",
                 f"  {{ run = {json.dumps(f'printf first >> {marker}')} }},",
-                "  { run = \"printf 'elevated skip\\n' >&2; exit 100\", elevation = \"lease\" },",
+                "  { run = \"printf 'elevated skip\\n' >&2; exit 100\", elevation = \"intercept\" },",
                 f"  {{ run = {json.dumps(f'printf third >> {marker}')} }},",
                 "]",
                 "",

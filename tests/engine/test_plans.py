@@ -729,7 +729,7 @@ def test_repo_default_command_elevation_applies_to_omitted_command_elevation(
     }
 
 
-@pytest.mark.parametrize("default_elevation", ["root", "bad"])
+@pytest.mark.parametrize("default_elevation", ["root", "lease", "broker", "bad"])
 def test_repo_default_command_elevation_rejects_unsafe_or_unknown_modes(
     tmp_path: Path,
     default_elevation: str,
