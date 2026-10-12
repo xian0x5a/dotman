@@ -56,16 +56,15 @@ class _SudoLease:
             self._ensure_keepalive()
             return
         self.close()
-        unattended = unattended_enabled()
         if not ticket_valid:
-            if unattended:
-                raise ValueError("sudo authentication unavailable in unattended mode")
+            # Unattended suppresses dotman's decisions, not sudo authentication:
+            # sudo authenticates however it is configured (terminal, askpass).
             _emit_sudo_notice(reason, password_required=True)
             result = self._runtime.run(_sudo_request("-v", io="tty"))
             raise_for_command_interruption(result)
             if result.exit_code != 0:
                 raise PermissionError("sudo authentication failed")
-        elif not unattended:
+        elif not unattended_enabled():
             _emit_sudo_notice(reason, password_required=False)
         self._acquired = True
         self._ensure_keepalive()
