@@ -1,36 +1,27 @@
 from __future__ import annotations
 
+import json
 import os
+import socket
 import subprocess
 import sys
 import time
 from pathlib import Path
 
 from dotman import elevation, file_access
-from dotman.cli import main
 from dotman.command_runtime import CommandResult, MemoryCommandRuntime, command_runtime_session
 
 
-def test_elevation_request_without_broker_env_fails_cleanly(monkeypatch, capsys) -> None:
-    monkeypatch.delenv(elevation.BROKER_ENV, raising=False)
-
-    exit_code = elevation.request_elevation_from_env("install packages")
-
-    assert exit_code == 1
-    assert "requires DOTMAN_ELEVATION_BROKER" in capsys.readouterr().err
-
-
-def test_elevation_request_cli_is_parseable_and_hidden_helper(monkeypatch, capsys) -> None:
-    monkeypatch.delenv(elevation.BROKER_ENV, raising=False)
-
-    exit_code = main(["elevation", "request", "install packages"])
-
-    assert exit_code == 1
-    assert "requires DOTMAN_ELEVATION_BROKER" in capsys.readouterr().err
+def _request_broker(socket_path: Path, reason: str) -> dict[str, object]:
+    # Speaks the same one-line JSON protocol as the intercept sudo shim.
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+        client.connect(str(socket_path))
+        client.sendall((json.dumps({"reason": reason}) + "\n").encode("utf-8"))
+        return json.loads(client.makefile("r", encoding="utf-8").readline())
 
 
 def test_elevation_broker_closes_without_waiting_for_a_poll_tick() -> None:
-    # Every broker/intercept command opens and closes a broker; guards run
+    # Every intercept command opens and closes a broker; guards run
     # several before the sync progress bar can appear.
     cycles = 5
     started = time.perf_counter()
@@ -43,18 +34,15 @@ def test_elevation_broker_closes_without_waiting_for_a_poll_tick() -> None:
     assert elapsed < 0.02 * cycles
 
 
-def test_elevation_request_contacts_broker_and_requests_sudo(monkeypatch) -> None:
+def test_elevation_broker_request_requests_sudo(monkeypatch) -> None:
     broker = elevation.ElevationBroker()
     recorded_reasons: list[str | None] = []
     monkeypatch.setattr(elevation, "request_sudo", lambda reason=None: recorded_reasons.append(reason))
 
     try:
         broker.start()
-        monkeypatch.setenv(elevation.BROKER_ENV, str(broker.socket_path))
 
-        exit_code = elevation.request_elevation_from_env("install missing Arch packages")
-
-        assert exit_code == 0
+        assert _request_broker(broker.socket_path, "install missing Arch packages") == {"ok": True}
         assert recorded_reasons == ["install missing Arch packages"]
     finally:
         broker.close()
@@ -68,9 +56,8 @@ def test_elevation_broker_preserves_runtime_in_request_thread(monkeypatch) -> No
     try:
         with file_access.sudo_session(), command_runtime_session(runtime):
             broker.start()
-            monkeypatch.setenv(elevation.BROKER_ENV, str(broker.socket_path))
 
-            assert elevation.request_elevation_from_env("install packages") == 0
+            assert _request_broker(broker.socket_path, "install packages") == {"ok": True}
 
         assert [request.command.arguments for request in runtime.requests] == [
             ("sudo", "-n", "-v")
@@ -102,7 +89,7 @@ def test_intercept_sudo_shim_fails_nonzero_when_broker_is_unreachable(monkeypatc
     broker = elevation.ElevationBroker()
     monkeypatch.setattr(elevation.shutil, "which", lambda command: "/bin/true" if command == "sudo" else None)
     try:
-        shim_env = broker.env(reason="legacy sudo command", intercept=True)
+        shim_env = broker.env(reason="legacy sudo command")
         shim_path = shim_env["PATH"].split(os.pathsep, 1)[0] + "/sudo"
         shim_env[elevation.BROKER_ENV] = f"{broker.socket_path}.missing"
 
@@ -138,7 +125,7 @@ def test_intercept_sudo_shim_normalizes_real_sudo_interruption(
         lambda command: str(interrupted_sudo) if command == "sudo" else None,
     )
     try:
-        shim_env = broker.env(reason="interrupted sudo command", intercept=True)
+        shim_env = broker.env(reason="interrupted sudo command")
         shim_path = shim_env["PATH"].split(os.pathsep, 1)[0] + "/sudo"
         shim_env["PATH"] = f"{Path(shim_path).parent}{os.pathsep}/usr/bin{os.pathsep}/bin"
 

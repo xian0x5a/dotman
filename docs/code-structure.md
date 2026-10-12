@@ -193,7 +193,7 @@ hoc sorting.
 
 Planning passes the engine's runtime explicitly while evaluating guards, probes, and projections, and binds that same runtime for shared privileged file helpers. Execution binds one runtime for the complete session. Editor, review, and privileged-helper commands use the same active runtime.
 
-Each broker/intercept command owns its elevation broker for the complete runtime
+Each intercept command owns its elevation broker for the complete runtime
 call. The broker copies that command's runtime and cancellation context into its
 serving threads; a later Editor attempt never reuses a cancelled attempt's broker.
 Before returning terminal control, the runtime stops broker admission, unblocks

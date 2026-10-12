@@ -141,16 +141,9 @@ def _kill_owned(
                 pass
 
 
-@pytest.mark.parametrize(("elevation", "action"), [
-    ("intercept", "ctrl_c"),
-    ("intercept", "sigint"),
-    ("intercept", "prompt_sigint"),
-    ("broker", "prompt_sigint"),
-    ("intercept", "success"),
-    ("broker", "success"),
-])
+@pytest.mark.parametrize("action", ["ctrl_c", "sigint", "prompt_sigint", "success"])
 def test_cli_broker_password_prompt_result_and_terminal_lifecycle(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, elevation: str, action: str,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, action: str,
 ) -> None:
     if os.geteuid() == 0:
         pytest.skip("root does not require sudo authentication")
@@ -162,18 +155,15 @@ def test_cli_broker_password_prompt_result_and_terminal_lifecycle(
     child_success = tmp_path / "intercept-child-succeeded"
     bin_dir = tmp_path / "bin"
     _fake_sudo(bin_dir, ready, release=release if action == "success" else None,
-               child_success=child_success if elevation == "intercept" and action == "success" else None)
+               child_success=child_success if action == "success" else None)
     _isolated_environment(tmp_path, monkeypatch, bin_dir)
-    child_command = (
-        (sys.executable, "-m", "dotman.cli", "elevation", "request", "fixture reason")
-        if elevation == "broker" else ("sudo", "-n", "true")
-    )
+    child_command = ("sudo", "-n", "true")
     provider = tmp_path / "hook-provider"
     _provider(provider, provider_pid, client_pid, child_command)
     engine = make_engine(tmp_path, monkeypatch, [
         ("unit", "push-only", b"repo", b"repo",
          "[targets.unit.hooks]\npre_push = { run = "
-         + json.dumps(str(provider)) + f', io = "pipe", elevation = "{elevation}" }}\n'
+         + json.dumps(str(provider)) + ', io = "pipe", elevation = "intercept" }\n'
          + f'post_push = "touch {post_push}"'),
     ])
     source = tmp_path / "repo/packages/app/unit"
@@ -220,7 +210,7 @@ def test_cli_broker_password_prompt_result_and_terminal_lifecycle(
         assert process.returncode == (0 if action == "success" else 130), output.decode(errors="replace")
         assert (source.read_bytes(), live.read_bytes()) == before
         assert post_push.exists() == (action == "success"), output.decode(errors="replace")
-        assert child_success.exists() == (action == "success" and elevation == "intercept")
+        assert child_success.exists() == (action == "success")
         _wait_for(lambda: all(_stopped(pid) for pid in (prompt, client, provider_process)), process, master, output)
         assert termios.tcgetattr(slave) == terminal_before, output.decode(errors="replace")
         assert b"Traceback" not in output, output.decode(errors="replace")

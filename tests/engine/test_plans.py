@@ -554,7 +554,7 @@ def test_package_hook_shorthand_list_accepts_command_objects(
         tmp_path,
         package_manifest=[
             "[hooks]",
-            'pre_push = ["echo pre", { run = "echo lease", elevation = "lease" }]',
+            'pre_push = ["echo pre", { run = "echo intercept", elevation = "intercept" }]',
         ],
     )
 
@@ -565,7 +565,7 @@ def test_package_hook_shorthand_list_accepts_command_objects(
     hook = engine.get_repo("fixture").resolve_package("app").hooks["pre_push"]
     assert hook.commands == (
         HookCommandSpec(run="echo pre"),
-        HookCommandSpec(run="echo lease", elevation="lease"),
+        HookCommandSpec(run="echo intercept", elevation="intercept"),
     )
     assert hook.run_noop is False
 
@@ -614,7 +614,7 @@ def test_push_hook_commands_keep_per_command_io_and_elevation(tmp_path: Path) ->
     repo_root = write_repo_and_target_hook_repo(
         tmp_path,
         repo_manifest=[
-            'default_command_elevation = "broker"',
+            'default_command_elevation = "intercept"',
             "[hooks.pre_push]",
             'commands = ["echo repo"]',
         ],
@@ -633,8 +633,8 @@ def test_push_hook_commands_keep_per_command_io_and_elevation(tmp_path: Path) ->
 
     assert [(request.command.source, request.io, request.elevation)
             for request in runtime.requests if isinstance(request.command, ShellCommand)] == [
-        ("echo repo", "pipe", "broker"),
-        ("echo package", "pipe", "broker"),
+        ("echo repo", "pipe", "intercept"),
+        ("echo package", "pipe", "intercept"),
         ("echo root", "pipe", "root"),
     ]
     # Tests have no terminal, so a tty command proves its io reached execution by failing before it runs.
@@ -673,7 +673,7 @@ def test_push_noop_target_runs_only_noop_eligible_hook_commands(
     assert log.read_text(encoding="utf-8").splitlines() == ["noop"]
 
 
-@pytest.mark.parametrize("elevation", ["none", "root", "lease", "broker", "intercept"])
+@pytest.mark.parametrize("elevation", ["none", "root", "intercept"])
 def test_package_hook_command_object_accepts_elevation_modes(
     tmp_path: Path,
     elevation: str,
@@ -691,7 +691,7 @@ def test_package_hook_command_object_accepts_elevation_modes(
     assert hook.commands == (HookCommandSpec(run="echo prep", elevation=elevation),)
 
 
-@pytest.mark.parametrize("default_elevation", ["none", "broker", "intercept"])
+@pytest.mark.parametrize("default_elevation", ["none", "intercept"])
 def test_repo_default_command_elevation_applies_to_omitted_command_elevation(
     tmp_path: Path,
     default_elevation: str,
@@ -729,7 +729,7 @@ def test_repo_default_command_elevation_applies_to_omitted_command_elevation(
     }
 
 
-@pytest.mark.parametrize("default_elevation", ["root", "lease", "bad"])
+@pytest.mark.parametrize("default_elevation", ["root", "bad"])
 def test_repo_default_command_elevation_rejects_unsafe_or_unknown_modes(
     tmp_path: Path,
     default_elevation: str,
@@ -741,7 +741,7 @@ def test_repo_default_command_elevation_rejects_unsafe_or_unknown_modes(
 
     with pytest.raises(
         ValueError,
-        match=r"unsupported default_command_elevation '.+'; expected one of: none, broker, intercept",
+        match=r"unsupported default_command_elevation '.+'; expected one of: none, intercept",
     ):
         DotmanEngine.from_config_path(write_single_repo_config(tmp_path, repo_name="fixture", repo_path=repo_root))
 
@@ -775,7 +775,7 @@ def test_repo_default_command_elevation_rejects_unsafe_or_unknown_modes(
                 "[hooks.pre_push]",
                 'commands = [{ run = "echo pre", elevation = "bad" }]',
             ],
-            r"unsupported elevation 'bad'; expected one of: none, root, lease, broker, intercept",
+            r"unsupported elevation 'bad'; expected one of: none, root, intercept",
         ),
         (
             [

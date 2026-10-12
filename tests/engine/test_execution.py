@@ -51,7 +51,7 @@ def test_hook_step_translates_hook_options_to_runtime_request(interactive: bool,
     runtime = MemoryCommandRuntime([CommandResult(exit_code=7, stdout=b"out", stderr=b"err")])
     step = _hook_step(HookPlan(
         package_id="app", hook_name="pre_push", command="printf result", cwd=Path("/command-cwd"),
-        env={"X": "1"}, io="tty" if interactive else "pipe", elevation="lease",
+        env={"X": "1"}, io="tty" if interactive else "pipe", elevation="intercept",
     ))
 
     result = _run_hook_step(step, runtime, stream_output=True)
@@ -65,7 +65,7 @@ def test_hook_step_translates_hook_options_to_runtime_request(interactive: bool,
     assert request.io == ("tty" if interactive else "pipe")
     # TTY hooks own the terminal, so their output is never streamed through dotman.
     assert request.stream_output is (not interactive)
-    assert request.elevation == "lease"
+    assert request.elevation == "intercept"
 
 
 def test_tty_hook_step_fails_without_terminal(monkeypatch) -> None:

@@ -14,7 +14,7 @@ from contextvars import ContextVar, copy_context
 from pathlib import Path
 from typing import Iterator
 
-from dotman.command_runtime import INTERRUPTED_EXIT_CODE, CommandOperation, command_operation
+from dotman.command_runtime import CommandOperation, command_operation
 from dotman.file_access import request_sudo
 
 
@@ -109,17 +109,8 @@ class ElevationBroker:
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as wake:
             wake.connect(str(self.socket_path))
 
-    def env(self, *, reason: str | None = None, intercept: bool = False) -> dict[str, str]:
+    def env(self, *, reason: str | None = None) -> dict[str, str]:
         self.start()
-        env = {
-            BROKER_ENV: str(self.socket_path),
-            REASON_ENV: reason or "perform privileged operation",
-        }
-        if intercept:
-            env.update(self._intercept_env())
-        return env
-
-    def _intercept_env(self) -> dict[str, str]:
         real_sudo = self._real_sudo_path or shutil.which("sudo")
         if real_sudo is None:
             raise ValueError("sudo is required for elevation intercept mode but was not found in PATH")
@@ -134,6 +125,8 @@ class ElevationBroker:
             shim_path.chmod(shim_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
         current_path = os.environ.get("PATH", "")
         return {
+            BROKER_ENV: str(self.socket_path),
+            REASON_ENV: reason or "perform privileged operation",
             REAL_SUDO_ENV: real_sudo,
             "PATH": f"{self._shim_dir}{os.pathsep}{current_path}",
         }
@@ -297,32 +290,3 @@ def _read_json_payload(connection: socket.socket) -> dict[str, object]:
 def _write_json_payload(connection: socket.socket, payload: dict[str, object]) -> None:
     connection.sendall((json.dumps(payload) + "\n").encode("utf-8"))
 
-
-def request_elevation_from_env(reason: str | None = None) -> int:
-    broker = os.environ.get(BROKER_ENV)
-    if not broker:
-        print(
-            'dotman elevation request requires DOTMAN_ELEVATION_BROKER; run from a command with elevation = "broker" or "intercept"',
-            file=sys.stderr,
-        )
-        return 1
-    request_reason = reason or os.environ.get(REASON_ENV) or "perform privileged operation"
-    try:
-        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
-            client.connect(broker)
-            _write_json_payload(client, {"reason": request_reason})
-            response = client.makefile("r", encoding="utf-8").readline()
-    except OSError as exc:
-        print(f"dotman elevation request failed: broker unavailable: {exc}", file=sys.stderr)
-        return 1
-    try:
-        payload = json.loads(response)
-    except json.JSONDecodeError:
-        print("dotman elevation request failed: broker returned invalid response", file=sys.stderr)
-        return 1
-    if payload.get("interrupted"):
-        return INTERRUPTED_EXIT_CODE
-    if not payload.get("ok"):
-        print(f"dotman elevation request failed: {payload.get('error', 'unknown broker error')}", file=sys.stderr)
-        return 1
-    return 0

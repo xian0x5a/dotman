@@ -242,25 +242,6 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers = parser.add_subparsers(dest="command", required=True, title="commands", metavar="<command>")
 
-    elevation_parser = subparsers.add_parser(
-        "elevation",
-        help=argparse.SUPPRESS,
-        description=argparse.SUPPRESS,
-    )
-    elevation_subparsers = elevation_parser.add_subparsers(
-        dest="elevation_command",
-        required=True,
-        title="elevation commands",
-        metavar="<elevation-command>",
-    )
-    elevation_request_parser = elevation_subparsers.add_parser(
-        "request",
-        help=argparse.SUPPRESS,
-        description=argparse.SUPPRESS,
-    )
-    elevation_request_parser.add_argument("reason", nargs="?", metavar="<reason>", help=argparse.SUPPRESS)
-    hide_subparser_from_help(subparsers, "elevation")
-
     track_parser = subparsers.add_parser(
         "track",
         help="Track packages in manager state",

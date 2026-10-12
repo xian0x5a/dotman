@@ -156,18 +156,11 @@ class SystemCommandElevation:
                 else:
                     command = ArgvCommand(("sudo", "-n", "-E", *command.arguments))
             return command, prepared_env
-        if mode == "lease":
-            if os.geteuid() != 0:
-                request_sudo(reason or "run privileged command")
-            return command, prepared_env
-        if mode in {"broker", "intercept"}:
+        if mode == "intercept":
             from dotman.elevation import current_elevation_broker
 
-            broker_env = current_elevation_broker().env(
-                reason=reason or "run privileged command",
-                intercept=mode == "intercept",
-            )
-            if mode == "intercept" and "PATH" in prepared_env and "PATH" in broker_env:
+            broker_env = current_elevation_broker().env(reason=reason or "run privileged command")
+            if "PATH" in prepared_env:
                 # Command-specific PATH remains authoritative after the injected shim.
                 shim_dir = broker_env["PATH"].split(os.pathsep, 1)[0]
                 broker_env["PATH"] = f"{shim_dir}{os.pathsep}{prepared_env['PATH']}"
@@ -230,7 +223,7 @@ class ProductionCommandRuntime(_CancellationLatch):
     def run(self, request: CommandRequest) -> CommandResult:
         self.check_cancelled()
         with ExitStack() as elevation_scope:
-            if request.elevation in {"broker", "intercept"}:
+            if request.elevation == "intercept":
                 from dotman.elevation import elevation_broker_session
 
                 elevation_scope.enter_context(elevation_broker_session())

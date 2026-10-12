@@ -14,7 +14,7 @@ class StandaloneCommandRunner:
     command_names = frozenset({"rewrite", "transform", "elevation", "capture", "reconcile", "render"})
 
     def run(self, args: Any) -> int:
-        if args.command in {"reconcile", "elevation"} and getattr(args, "no_confirm", False):
+        if args.command == "reconcile" and getattr(args, "no_confirm", False):
             raise InteractionRequiredError(f"{args.command} requires interaction and is unavailable with --no-confirm")
         if args.command == "rewrite" and args.rewrite_name == "home":
             from dotman.rewrites.cli import run_home_rewrite
@@ -24,10 +24,6 @@ class StandaloneCommandRunner:
             from dotman.transforms.cli import run_parsed_engine
 
             return run_parsed_engine(args.transform_engine, args.transform_parser, args)
-        if args.command == "elevation" and args.elevation_command == "request":
-            from dotman.elevation import request_elevation_from_env
-
-            return request_elevation_from_env(args.reason)
         if args.command == "capture" and args.capture_command == "patch":
             from dotman.template_commands import run_patch_capture
 

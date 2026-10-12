@@ -169,11 +169,11 @@ def test_production_runtime_delegates_elevation_preparation() -> None:
     result = runtime.run(
         CommandRequest(
             command=ShellCommand("printf %s \"$ELEVATED\""),
-            elevation="broker",
+            elevation="intercept",
         )
     )
 
-    assert elevation.modes == ["broker"]
+    assert elevation.modes == ["intercept"]
     assert result.stdout == b"yes"
 
 
@@ -195,28 +195,10 @@ def test_system_elevation_root_requests_sudo_and_wraps_shell(monkeypatch: pytest
     assert env == {"X": "1"}
 
 
-def test_system_elevation_lease_requests_sudo_without_wrapping(monkeypatch: pytest.MonkeyPatch) -> None:
-    reasons: list[str | None] = []
-    monkeypatch.setattr("dotman.command_runtime.os.geteuid", lambda: 1000)
-    monkeypatch.setattr("dotman.file_access.request_sudo", reasons.append)
-    command = ArgvCommand(("installer",))
-
-    prepared_command, _env = SystemCommandElevation().prepare(
-        command,
-        {},
-        "lease",
-        "prepare installer",
-    )
-
-    assert reasons == ["prepare installer"]
-    assert prepared_command is command
-
-
 def test_system_elevation_intercept_preserves_command_path_after_shim(monkeypatch: pytest.MonkeyPatch) -> None:
     class Broker:
-        def env(self, *, reason, intercept):
+        def env(self, *, reason):
             assert reason == "install dependencies"
-            assert intercept is True
             return {"DOTMAN_ELEVATION_BROKER": "/runtime/broker", "PATH": "/shim:/usr/bin"}
 
     monkeypatch.setattr("dotman.elevation.current_elevation_broker", lambda: Broker())
