@@ -131,7 +131,7 @@ class SyncDeckCommandRunner:
 
     def _select_defaults(self, session):
         set_all_selected(session, True, tuple(row.row_id for row in session.view.rows))
-        # No Base means no evidence of which side changed; unattended runs
+        # No Base means no evidence of which side changed; --no-confirm runs
         # leave that drift for a first review instead of guessing a side.
         for row in session.view.rows:
             if needs_first_review(row):
@@ -157,18 +157,18 @@ class SyncDeckCommandRunner:
         self._interaction = interaction
 
     def run(self, args) -> int:
-        with interaction_scope(unattended=args.unattended):
+        with interaction_scope(no_confirm=args.no_confirm):
             return self._run(args)
 
     def _run(self, args) -> int:
         interactive = (
-            not args.json_output and not args.unattended
+            not args.json_output and not args.no_confirm
             and sys.stdin.isatty() and sys.stdout.isatty()
         )
-        if not interactive and not args.unattended:
+        if not interactive and not args.no_confirm:
             self._emit(args, None, None, diagnostic={
-                "code": "unattended-decision",
-                "message": f"{self.operation.title()} requires a terminal or explicit --unattended.",
+                "code": "decision-required",
+                "message": f"{self.operation.title()} requires a terminal or explicit --no-confirm.",
             })
             return 1
         # Configuration load failures keep the CLI's structured error and hint.
@@ -220,10 +220,10 @@ class SyncDeckCommandRunner:
                             "code": "interrupted", "message": f"{self.operation.title()} aborted",
                         }, deck_dismissed=True)
                         return 130
-                elif args.unattended:
+                elif args.no_confirm:
                     self._select_defaults(session)
 
-                # Unattended failures must not permit a partially understood
+                # No-confirm failures must not permit a partially understood
                 # workset to mutate unrelated units.
                 blocked = any(
                     has_errors(row_diagnostics(row))
@@ -245,7 +245,7 @@ class SyncDeckCommandRunner:
                     for row in session.view.rows
                 ):
                     self._emit(args, session, None, diagnostic={
-                        "code": "unattended-decision",
+                        "code": "decision-required",
                         "message": "Participating drift has no supported automatic resolution.",
                     })
                     return 1
@@ -463,7 +463,7 @@ def needs_first_review(row) -> bool:
 
 
 def no_base_skip_summaries(args, rows) -> list[dict]:
-    if not getattr(args, "unattended", False):
+    if not getattr(args, "no_confirm", False):
         return []
     return [{"identity": row.row_id, "reason": row.fallback_reason}
             for row in rows if needs_first_review(row) and not row.approved]
@@ -681,7 +681,7 @@ def primary_change_summary(proposal, path) -> dict | None:
 
 
 class PullDeckCommandRunner(SyncDeckCommandRunner):
-    """Pull has fixed initially approved work, not unattended Sync defaults."""
+    """Pull has fixed initially approved work, not --no-confirm Sync defaults."""
 
     command_names = frozenset({"pull"})
     operation = "pull"
@@ -696,7 +696,7 @@ class PullDeckCommandRunner(SyncDeckCommandRunner):
 
 
 class PushDeckCommandRunner(SyncDeckCommandRunner):
-    """Push has fixed initially approved work, not unattended Sync defaults."""
+    """Push has fixed initially approved work, not --no-confirm Sync defaults."""
 
     command_names = frozenset({"push"})
     operation = "push"

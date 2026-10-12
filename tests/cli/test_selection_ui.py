@@ -517,10 +517,10 @@ def test_parse_review_command_rejects_legacy_continue_shortcut() -> None:
         cli.parse_review_command("c", 1)
 
 
-def test_confirm_review_continue_skips_prompt_when_unattended(monkeypatch) -> None:
+def test_confirm_review_continue_skips_prompt_when_no_confirm(monkeypatch) -> None:
     monkeypatch.setattr(cli, "prompt", lambda _message: (_ for _ in ()).throw(AssertionError("prompt should not run")))
 
-    assert cli.confirm_review_continue(unattended=True) is True
+    assert cli.confirm_review_continue(no_confirm=True) is True
 
 
 def test_select_menu_option_renders_bottom_up_by_default(monkeypatch, capsys) -> None:

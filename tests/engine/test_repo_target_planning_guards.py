@@ -499,7 +499,7 @@ def test_target_guard_hard_failure_fails_push_for_package_instance(
     config_path = write_single_repo_config(tmp_path, repo_name="fixture", repo_path=repo_root)
     write_tracked_packages_state(tmp_path / "state", repo_name="fixture", entries=[("profiled", "work")])
 
-    assert main(["--config", str(config_path), "--json", "--unattended", "push"]) == 1
+    assert main(["--config", str(config_path), "--json", "--no-confirm", "push"]) == 1
 
     diagnostic, = json.loads(capsys.readouterr().out)["summary"]["diagnostics"]
     assert diagnostic["code"] == "planning-failed"
@@ -673,14 +673,14 @@ def test_cli_renders_repo_and_target_guard_diagnostics_in_human_and_json_output(
     for repo_name in ("repo-skip", "target-skip"):
         write_tracked_packages_state(tmp_path / "state", repo_name=repo_name, entries=[("app", "default")])
 
-    assert main(["--config", str(config_path), "--unattended", "push", "--dry-run"]) == 0
+    assert main(["--config", str(config_path), "--no-confirm", "push", "--dry-run"]) == 0
     human_output = capsys.readouterr().out
     assert "[skipped] repo-skip (guard_push)" in human_output
     assert "Guard skipped: repo mismatch" in human_output
     assert "[skipped] target-skip:app.config (guard_push)" in human_output
     assert "Guard skipped: target mismatch" in human_output
 
-    assert main(["--config", str(config_path), "--json", "--unattended", "push", "--dry-run"]) == 0
+    assert main(["--config", str(config_path), "--json", "--no-confirm", "push", "--dry-run"]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["guard_skips"] == [
         {
@@ -718,7 +718,7 @@ def test_all_target_guard_skipped_cli_returns_without_execution(
     )
     config_path = write_single_repo_config(tmp_path, repo_name="fixture", repo_path=repo_root)
     write_tracked_packages_state(tmp_path / "state", repo_name="fixture", entries=[("app", "default")])
-    assert main(["--config", str(config_path), "--json", "--unattended", "push"]) == 0
+    assert main(["--config", str(config_path), "--json", "--no-confirm", "push"]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert [skip["identity"] for skip in payload["guard_skips"]] == ["fixture:app.config"]
     assert payload["sync_units"] == []

@@ -20,7 +20,7 @@ from dotman.command_runtime import (
     raise_for_command_interruption,
 )
 
-from dotman.interaction_policy import unattended_enabled
+from dotman.interaction_policy import no_confirm_enabled
 from dotman.terminal import colors_enabled
 
 _SUDO_KEEPALIVE_INTERVAL_SECONDS = 30
@@ -57,14 +57,14 @@ class _SudoLease:
             return
         self.close()
         if not ticket_valid:
-            # Unattended suppresses dotman's decisions, not sudo authentication:
+            # No-confirm suppresses dotman's decisions, not sudo authentication:
             # sudo authenticates however it is configured (terminal, askpass).
             _emit_sudo_notice(reason, password_required=True)
             result = self._runtime.run(_sudo_request("-v", io="tty"))
             raise_for_command_interruption(result)
             if result.exit_code != 0:
                 raise PermissionError("sudo authentication failed")
-        elif not unattended_enabled():
+        elif not no_confirm_enabled():
             _emit_sudo_notice(reason, password_required=False)
         self._acquired = True
         self._ensure_keepalive()

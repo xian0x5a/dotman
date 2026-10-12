@@ -38,14 +38,14 @@ class RestoreCommandRunner:
             json_output=args.json_output,
         )
         actions = build_restore_actions(snapshot)
-        if not args.dry_run and not getattr(args, "unattended", False) and not cli_interaction.interactive_mode_enabled(json_output=args.json_output):
-            raise InteractionRequiredError("restore requires confirmation; use --unattended to accept default work")
+        if not args.dry_run and not getattr(args, "no_confirm", False) and not cli_interaction.interactive_mode_enabled(json_output=args.json_output):
+            raise InteractionRequiredError("restore requires confirmation; use --no-confirm to accept default work")
         if not cli_interaction.review_restore_actions_for_interactive_diffs(
             snapshot=snapshot,
             actions=actions,
             json_output=args.json_output,
             full_paths=full_paths,
-            unattended=getattr(args, "unattended", False),
+            no_confirm=getattr(args, "no_confirm", False),
         ):
             emit_interrupt_notice()
             return INTERRUPTED_EXIT_CODE

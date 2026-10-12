@@ -119,21 +119,21 @@ def step_group_key(step: ExecutionStep) -> tuple[str, str | None, str | None]:
     return step.repo_name, step.package_id, bound_profile
 
 
-def _execute_step(step: ExecutionStep, *, stream_output: bool, unattended: bool) -> ExecutionStepResult:
+def _execute_step(step: ExecutionStep, *, stream_output: bool, no_confirm: bool) -> ExecutionStepResult:
     # Publication applies target effects itself; only hook steps run through here.
     if step.kind != "hook":
         raise ValueError(f"unsupported execution step kind '{step.kind}'")
     try:
         if step.hook_plan.io == "tty":
             # Checked before the runtime so a rejected hook never triggers elevation.
-            if unattended:
-                raise ValueError("hook command io 'tty' is unavailable in unattended mode")
+            if no_confirm:
+                raise ValueError("hook command io 'tty' is unavailable with --no-confirm")
             _require_interactive_terminal_for_hook()
         command_result = current_command_runtime().run(
             CommandRequest(
                 command=ShellCommand(step.hook_plan.command),
                 cwd=step.hook_plan.cwd,
-                env=_build_hook_env(step, unattended=unattended),
+                env=_build_hook_env(step, no_confirm=no_confirm),
                 io=step.hook_plan.io,
                 stream_output=stream_output if step.hook_plan.io == "pipe" else False,
                 elevation=step.hook_plan.elevation,
@@ -220,8 +220,8 @@ def _require_interactive_terminal(*, setting_name: str) -> None:
     raise ValueError(f"{setting_name} 'tty' requires an interactive terminal")
 
 
-def _build_hook_env(step: ExecutionStep, *, unattended: bool) -> dict[str, str]:
-    return {**step.hook_plan.env, "DOTMAN_UNATTENDED": "1" if unattended else "0"}
+def _build_hook_env(step: ExecutionStep, *, no_confirm: bool) -> dict[str, str]:
+    return {**step.hook_plan.env, "DOTMAN_NO_CONFIRM": "1" if no_confirm else "0"}
 
 
 __all__ = [

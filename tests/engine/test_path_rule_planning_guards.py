@@ -324,13 +324,13 @@ def test_all_path_rule_work_skipped_cli_reports_pattern_without_execution(
     (source_root / "one.txt").write_text("one\n", encoding="utf-8")
     config_path = write_single_repo_config(tmp_path, repo_name="fixture", repo_path=repo_root)
     write_tracked_packages_state(tmp_path / "state", repo_name="fixture", entries=[("app", "default")])
-    assert main(["--config", str(config_path), "--unattended", "push"]) == 0
+    assert main(["--config", str(config_path), "--no-confirm", "push"]) == 0
     human_output = capsys.readouterr().out
     assert "[skipped] fixture:app.config (guard_push) (path rule: *.txt)" in human_output
     assert "Guard skipped: directory disabled" in human_output
     assert not (home / ".config/app/one.txt").exists()
 
-    assert main(["--config", str(config_path), "--json", "--unattended", "push", "--dry-run"]) == 0
+    assert main(["--config", str(config_path), "--json", "--no-confirm", "push", "--dry-run"]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["sync_units"] == []
     assert payload["guard_skips"] == [

@@ -292,7 +292,7 @@ the projected file to stdout.
 - Those paths may name private staged copies: a Sync Proposal, or a protected
   file Dotman read for the command.
 - Commands also receive the target hook variables
-  ([Hooks And Commands](#hooks-and-commands)) except `DOTMAN_UNATTENDED`, and
+  ([Hooks And Commands](#hooks-and-commands)) except `DOTMAN_NO_CONFIRM`, and
   run in the directory of the `package.toml` that declares the target.
 - Commands are non-interactive and side-effect-free. Planning runs comparison
   projections concurrently, up to eight at a time (fewer on machines with fewer
@@ -506,7 +506,7 @@ exit 0
 - `default_command_elevation` does not support `root` or `lease`; set those on specific command objects instead.
 - Explicit command metadata wins over the repo default. Use `elevation = "none"` to opt a command out of a repo default.
 - `default_command_elevation = "intercept"` gives every command without explicit `elevation` the temporary `sudo` shim in `PATH`.
-- Every mode authenticates the same way under `--unattended`: when the sudo ticket is missing, sudo authenticates however it is configured (NOPASSWD, a terminal prompt, or the `SUDO_ASKPASS` helper when no terminal is present).
+- Every mode authenticates the same way under `--no-confirm`: when the sudo ticket is missing, sudo authenticates however it is configured (NOPASSWD, a terminal prompt, or the `SUDO_ASKPASS` helper when no terminal is present).
 
 Elevation modes:
 
@@ -586,11 +586,11 @@ commands = [
   A `both` unit with `guard_push` exiting `100` retains pull-only capability.
   A `push-only` unit with the same outcome has no route and remains a visible,
   non-approvable diagnostic. It is not a successful planning omission. Such
-  blockers fail unattended Sync before mutation; unrelated interactive work may
+  blockers fail no-confirm Sync before mutation; unrelated interactive work may
   execute, but the diagnostic still makes the result a failure.
 - Neither directional narrowing nor no-route outcomes change Base eligibility,
   which follows configured policy. Guards cannot enable policy-forbidden flow.
-- Guards use captured pipe I/O, never receive `DOTMAN_UNATTENDED`, and may use configured elevation.
+- Guards use captured pipe I/O, never receive `DOTMAN_NO_CONFIRM`, and may use configured elevation.
 - Each repo, resolved package instance, and target guard runs once per plan build. Guards are not emitted as execution steps or rerun after review or selection.
 - Guard outcomes never change static ownership or hide malformed configuration and ownership conflicts.
 - `pre_*` runs immediately before the package's selected target steps.
@@ -609,11 +609,11 @@ commands = [
 - Standalone hook-only target or repo execution must not fabricate target writes or snapshots.
 - Provenance alone should not cause hooks to execute.
 - Repo hook template expansion and env stay repo-scoped only. Dotman intentionally does not inject ambiguous single-package-entry values like `DOTMAN_PROFILE` or `DOTMAN_PACKAGE_ID` there.
-- Repo hook env includes `DOTMAN_REPO_NAME`, `DOTMAN_REPO_ROOT`, `DOTMAN_STATE_PATH`, `DOTMAN_OPERATION`, `DOTMAN_UNATTENDED`, and flattened repo vars as `DOTMAN_VAR_*`.
+- Repo hook env includes `DOTMAN_REPO_NAME`, `DOTMAN_REPO_ROOT`, `DOTMAN_STATE_PATH`, `DOTMAN_OPERATION`, `DOTMAN_NO_CONFIRM`, and flattened repo vars as `DOTMAN_VAR_*`.
 - Package hook env includes repo hook vars plus `DOTMAN_PACKAGE_ID`, `DOTMAN_PACKAGE_ROOT`, `DOTMAN_PROFILE`, `DOTMAN_OS`, `DOTMAN_CPU_ARCH`, and flattened package vars as `DOTMAN_VAR_*`.
 - `DOTMAN_PACKAGE_ROOT` is the package directory containing that package's `package.toml`.
 - Target hook env includes package hook vars plus `DOTMAN_TARGET_NAME`, `DOTMAN_TARGET_REPO_PATH`, `DOTMAN_TARGET_LIVE_PATH`, `DOTMAN_REPO_PATH`, `DOTMAN_SOURCE`, and `DOTMAN_LIVE_PATH`.
-- Execution-time pre/post hooks receive `DOTMAN_UNATTENDED=1` when global CLI `--unattended` is active and `0` otherwise. Planning guards do not receive it.
+- Execution-time pre/post hooks receive `DOTMAN_NO_CONFIRM=1` when global CLI `--no-confirm` is active and `0` otherwise. Planning guards do not receive it.
 - Hooks never auto-escalate through target path permissions, even when adjacent target work touches protected paths. Elevation only comes from explicit command metadata or repo-level `default_command_elevation`.
 - If a hook really must run as root, use explicit command metadata such as `{ run = "systemctl restart sddm", elevation = "root" }`.
 - If a hook only sometimes needs elevation, prefer `elevation = "broker"` and call `dotman elevation request "reason"` after the script proves privileged work is required.
@@ -629,7 +629,7 @@ commands = [
 - Projection and Editor syntax and inheritance are defined in [Projection and Editor configuration](#projection-and-editor-configuration).
 - Directory targets inherit providers per child, including Editor; Path Rules refine each child independently.
 - Render derives live representation; Capture derives repository representation from the live endpoint. Providers read endpoints at their real paths, so they may use neighbouring files; projections of an unapplied repository Proposal read a private staged file. Editor explicitly modifies staged repository sources.
-- Hook `io` defaults to `pipe`; `tty` requires an interactive terminal. Unattended execution cannot invoke an interactive provider or request terminal input.
+- Hook `io` defaults to `pipe`; `tty` requires an interactive terminal. No-confirm execution cannot invoke an interactive provider or run a `tty` hook; sudo authentication is unaffected.
 - Capture failure stays a typed failure. It never launches Editor or chooses another Resolution Intent.
 - When `pull` writes repo-side files while dotman is running under `sudo`, dotman should restore ownership of the written repo path back to the invoking user so the repo does not get stranded as root-owned.
 - Live file mode checks should compare against explicit target `chmod` where applicable. Directory-target child-file checks should compare only the Git-tracked executable bit.

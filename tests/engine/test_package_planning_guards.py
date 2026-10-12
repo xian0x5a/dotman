@@ -76,7 +76,7 @@ def test_package_guard_exit_100_omits_package_before_host_projection(
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setenv("DOTMAN_UNATTENDED", "1")
+    monkeypatch.setenv("DOTMAN_NO_CONFIRM", "1")
     live_path = home / ".config" / "app" / "config.txt"
     live_path.parent.mkdir(parents=True)
     live_path.write_text("live value\n", encoding="utf-8")
@@ -87,7 +87,7 @@ def test_package_guard_exit_100_omits_package_before_host_projection(
     _write_guarded_target_package(
         repo_root,
         operation=operation,
-        guard_command="[ -z \"${DOTMAN_UNATTENDED+x}\" ] || exit 9; printf 'not for this host\\n' >&2; exit 100",
+        guard_command="[ -z \"${DOTMAN_NO_CONFIRM+x}\" ] || exit 9; printf 'not for this host\\n' >&2; exit 100",
         projection_marker=projection_marker,
     )
     engine = _engine(tmp_path, repo_root)
@@ -293,7 +293,7 @@ def test_all_guard_skipped_cli_reports_before_ui_and_returns_without_execution(
     sink = RecordingSink()
     monkeypatch.setattr(sync_deck_command, "make_planning_sink", lambda *, json_output, unit: sink)
 
-    exit_code = main(["--config", str(config_path), "--unattended", "push"])
+    exit_code = main(["--config", str(config_path), "--no-confirm", "push"])
 
     assert exit_code == 0
     assert sink.closed is True
@@ -323,7 +323,7 @@ def test_guard_skip_json_is_structured_and_omits_command_text(
     config_path = write_single_repo_config(tmp_path, repo_name="fixture", repo_path=repo_root)
     write_tracked_packages_state(tmp_path / "state", repo_name="fixture", entries=[("app", "default")])
 
-    exit_code = main(["--config", str(config_path), "--json", "--unattended", "push", "--dry-run"])
+    exit_code = main(["--config", str(config_path), "--json", "--no-confirm", "push", "--dry-run"])
 
     assert exit_code == 0
     raw_output = capsys.readouterr().out

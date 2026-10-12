@@ -9,7 +9,7 @@ from pathlib import Path
 from uuid import uuid4
 import stat
 
-from dotman.interaction_policy import unattended_enabled
+from dotman.interaction_policy import no_confirm_enabled
 from dotman.command_runtime import CommandOperation, command_operation, command_runtime_session
 from dotman.execution import ExecutionStep, ExecutionStepResult, StepFinished, StepStarted, directory_synced_file_mode
 from dotman.atomic_files import default_created_file_mode
@@ -1576,7 +1576,7 @@ class ProposalSession:
             ) for row in selected),
             command_runtime=self._context.projection.command_runtime,
             complete=complete, auxiliary=auxiliary["pull"], run_noop=self._run_noop,
-            unattended=unattended_enabled(),
+            no_confirm=no_confirm_enabled(),
             check_cancelled=self.check_cancelled, blocked=bool(additional_diagnostics),
             stream_output=self._stream_output, observe=self._emit,
         )
@@ -1690,7 +1690,7 @@ class ProposalSession:
             complete=complete,
             snapshot_config=self._context.config.snapshots,
             auxiliary=auxiliary, run_noop=self._run_noop,
-            unattended=unattended_enabled(),
+            no_confirm=no_confirm_enabled(),
             check_cancelled=self.check_cancelled, blocked=blocked,
             command_runtime=self._context.projection.command_runtime,
             stream_output=self._stream_output, observe=self._emit,

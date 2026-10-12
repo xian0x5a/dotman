@@ -25,24 +25,24 @@ def _hook_step(hook_plan: HookPlan, **plan_fields) -> ExecutionStep:
 
 
 def _run_hook_step(
-    step: ExecutionStep, runtime: MemoryCommandRuntime, *, stream_output: bool = False, unattended: bool = False,
+    step: ExecutionStep, runtime: MemoryCommandRuntime, *, stream_output: bool = False, no_confirm: bool = False,
 ) -> ExecutionStepResult:
     with command_runtime_session(runtime):
-        return execution._execute_step(step, stream_output=stream_output, unattended=unattended)
+        return execution._execute_step(step, stream_output=stream_output, no_confirm=no_confirm)
 
 
-@pytest.mark.parametrize(("unattended", "expected_value"), [(False, "0"), (True, "1")])
-def test_hook_step_env_is_planned_env_plus_unattended_policy(unattended: bool, expected_value: str) -> None:
+@pytest.mark.parametrize(("no_confirm", "expected_value"), [(False, "0"), (True, "1")])
+def test_hook_step_env_is_planned_env_plus_no_confirm_policy(no_confirm: bool, expected_value: str) -> None:
     planned_env = {"DOTMAN_REPO_NAME": "fixture", "DOTMAN_OS": "linux", "DOTMAN_VAR_feature__flag": "on"}
     step = _hook_step(HookPlan(
         package_id="app", hook_name="pre_push", command="echo package", cwd=Path("/repo/app"), env=planned_env,
     ))
     runtime = MemoryCommandRuntime([CommandResult(exit_code=0)])
 
-    assert _run_hook_step(step, runtime, unattended=unattended).status == "ok"
+    assert _run_hook_step(step, runtime, no_confirm=no_confirm).status == "ok"
 
     request, = runtime.requests
-    assert dict(request.env) == {**planned_env, "DOTMAN_UNATTENDED": expected_value}
+    assert dict(request.env) == {**planned_env, "DOTMAN_NO_CONFIRM": expected_value}
 
 
 @pytest.mark.parametrize("interactive", [False, True])

@@ -245,11 +245,11 @@ frozen observation/projection, transactional sources, review, repository writes,
 path safety, and Base storage mechanics. Do not move workflow semantics into a
 pervasive `sync | pull` branch in those shared modules.
 
-`sync_deck_command.py` owns CLI consent, unattended default selection, output,
+`sync_deck_command.py` owns CLI consent, no-confirm default selection, output,
 and exit mapping. The deck consumes immutable public views and semantic commands;
 it owns focus, keybindings, menus and presentation, never private execution plans.
 JSON is an output choice, not authorization. Providers and hooks use the shared
-Command Runtime so unattended execution cannot accidentally fall into terminal
+Command Runtime so no-confirm execution cannot accidentally fall into terminal
 interaction and JSON stdout contains only the final result.
 
 ## SyncSession clients

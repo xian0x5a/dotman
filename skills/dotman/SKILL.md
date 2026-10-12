@@ -17,10 +17,10 @@ This file is an index. Read only the entries your task needs.
 
 ## Operating rules
 
-- Global options go before the command: `dotman --unattended --json <command> ...`. Use `--unattended` to avoid prompts and `--json` when you parse output. Elevation can still ask for a sudo password, on the terminal, or through a configured `SUDO_ASKPASS` helper when there is no terminal.
+- Global options go before the command: `dotman --no-confirm --json <command> ...`. Use `--no-confirm` to avoid prompts and `--json` when you parse output. Elevation can still ask for a sudo password, on the terminal, or through a configured `SUDO_ASKPASS` helper when there is no terminal.
 - Run freely: `list`, `info`, `doctor`, `search`, `transform` and `rewrite` to stdout, `render jinja`, and any command with `--dry-run`.
 - Every other command (`push`, `pull`, `sync`, `restore`, `track`, `untrack`, `add`, `capture`, `reset`, ...) writes to the user's machine, repo or dotman state. Run one when the task needs its effect, after a `--dry-run` preview where the command has one. `reset sync-base` has no confirmation and no dry-run.
-- To apply a change, prefer `sync`: it merges both sides against the Sync Base, while `push` and `pull` overwrite the other side. Unattended Sync leaves both-policy drift without a Base unselected, prints `[skipped] <identity> (no Base)` and still exits 0; resolve that with `push` or `pull` only once you know which side holds the wanted content.
+- To apply a change, prefer `sync`: it merges both sides against the Sync Base, while `push` and `pull` overwrite the other side. No-confirm Sync leaves both-policy drift without a Base unselected, prints `[skipped] <identity> (no Base)` and still exits 0; resolve that with `push` or `pull` only once you know which side holds the wanted content.
 - Leave elevation (sudo) prompts to the user.
 - Name targets as `repo:package.target` and package instances as `repo:package<profile>.target`.
 - Scope a write command to what changed. Name the targets (`repo:package.target`) when only those files changed; their package hooks still run. A package scope (`dotman pull repo:package`) also covers the packages it depends on, so add `--no-deps` when several targets or a shared input (vars, templates, `package.toml`) changed but the dependencies did not. For `pull`, run `--dry-run` on the package first to find the drifted targets, then narrow (`docs/cli.md` § Sync scope resolution).

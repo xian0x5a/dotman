@@ -37,7 +37,7 @@ def test_committed_checkpoint_reports_durability_warning_without_losing_acknowle
     from dotman.cli import main
     from dotman.sync_base_store import SyncBaseStoreDurabilityError
 
-    # Unattended Sync skips no-Base both-policy drift, so drifted Sync uses pull-only.
+    # No-confirm Sync skips no-Base both-policy drift, so drifted Sync uses pull-only.
     policy = 'pull-only' if operation == 'sync' and not direct else 'both'
     engine = make_engine(tmp_path, monkeypatch, [('unit', policy, b'repo', b'repo' if direct else b'live', '')])
     replace_record = SyncBaseStore.replace
@@ -47,7 +47,7 @@ def test_committed_checkpoint_reports_durability_warning_without_losing_acknowle
         raise SyncBaseStoreDurabilityError('checkpoint committed; durability uncertain')
 
     monkeypatch.setattr(SyncBaseStore, 'replace', fail_after_commit)
-    assert main(['--config', str(engine.config.config_path), '--json', '--unattended', operation]) == 0
+    assert main(['--config', str(engine.config.config_path), '--json', '--no-confirm', operation]) == 0
     unit = json.loads(capsys.readouterr().out)['sync_units'][0]
     assert unit['base']['acknowledged']
     assert unit['diagnostics'][0]['code'] == 'base-durability-uncertain'
@@ -63,7 +63,7 @@ def test_push_human_reports_base_only_through_warnings(tmp_path, monkeypatch, ca
         def fail(*args, **kwargs):
             raise SyncBaseStoreError('checkpoint unavailable')
         monkeypatch.setattr(SyncBaseStore, 'replace', fail)
-    assert main(['--config', str(engine.config.config_path), '--unattended', 'push']) == 0
+    assert main(['--config', str(engine.config.config_path), '--no-confirm', 'push']) == 0
     output = capsys.readouterr().out
     assert '[1/1] write' in output
     # A clean unit is not recapped; a checkpoint warning is.
@@ -74,7 +74,7 @@ def test_push_human_reports_base_only_through_warnings(tmp_path, monkeypatch, ca
     assert (tmp_path / 'live/unit').read_bytes() == b'repo'
 
 
-def test_optional_checkpoint_validation_failure_does_not_block_unattended_apply(tmp_path, monkeypatch, capsys):
+def test_optional_checkpoint_validation_failure_does_not_block_no_confirm_apply(tmp_path, monkeypatch, capsys):
     engine = make_engine(tmp_path, monkeypatch, [('unit', 'pull-only', b'repo', b'live',
         'render = "exit 7"\ncompare = {repo = "raw", live = "raw"}')])
     assert runner_for(engine).run(arguments(dry_run=False)) == 0

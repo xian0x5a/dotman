@@ -18,7 +18,7 @@ def test_push_preview_missing_source_preserves_live_and_checkpoint(
         if patch_capture else 'render = "printf generated"'
     )
     engine = make_engine(tmp_path, monkeypatch, [("unit", "both", None, live, settings)])
-    args = ["--config", str(engine.config.config_path), "--json", "--unattended", "push", "--dry-run", "main:app"]
+    args = ["--config", str(engine.config.config_path), "--json", "--no-confirm", "push", "--dry-run", "main:app"]
     assert main(args) == 0
     result = json.loads(capsys.readouterr().out)
     if expected_action == "delete":

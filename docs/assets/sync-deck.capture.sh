@@ -61,8 +61,8 @@ git -C "$repo" -c user.email=demo@example.com -c user.name=Demo commit -qm init
 for package in git zsh nvim starship ghostty tmux; do uv run -q dotman track "dot:$package@laptop" >/dev/null; done
 mkdir -p "$HOME/.config/ghostty"
 cp "$repo/packages/ghostty/files/config/ghostty/config" "$HOME/.config/ghostty/config"
-uv run -q dotman --unattended push >/dev/null
-uv run -q dotman --unattended pull >/dev/null
+uv run -q dotman --no-confirm push >/dev/null
+uv run -q dotman --no-confirm pull >/dev/null
 
 # Drift: live-only, repo-only, and both-sided edits.
 printf '[user]\n    name = Demo\n    email = demo@example.com\n[core]\n    editor = nvim\n[pull]\n    rebase = true\n' > "$HOME/.gitconfig"

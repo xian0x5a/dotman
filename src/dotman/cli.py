@@ -22,16 +22,16 @@ def main(
     *,
     interaction: Interaction | None = None,
 ) -> int:
-    unattended = False
+    no_confirm = False
     try:
         raw_argv = list(argv) if argv is not None else sys.argv[1:]
         args = build_parser().parse_args(normalize_edit_query_argv(raw_argv))
-        unattended = args.unattended
+        no_confirm = args.no_confirm
         if args.command in StandaloneCommandRunner.command_names:
             selected_runner = StandaloneCommandRunner()
         else:
-            selected_runner = _repo_command_runner(args, None if unattended else interaction)
-        with command_operation(), interaction_scope(unattended=args.unattended):
+            selected_runner = _repo_command_runner(args, None if no_confirm else interaction)
+        with command_operation(), interaction_scope(no_confirm=args.no_confirm):
             return selected_runner.run(args)
     except InteractionRequiredError as exc:
         _emit_error(exc, use_color=colors_enabled(sys.stderr))
@@ -41,7 +41,7 @@ def main(
         return INTERRUPTED_EXIT_CODE
     except ValueError as exc:
         _emit_error(exc, use_color=colors_enabled(sys.stderr))
-        return 1 if unattended else 2
+        return 1 if no_confirm else 2
     except RuntimeError as exc:
         # Imported here because only repo commands load the Sync Base store.
         from dotman.sync_base_store import SyncBaseStoreError
@@ -49,7 +49,7 @@ def main(
         if not isinstance(exc, SyncBaseStoreError):
             raise
         _emit_error(exc, use_color=colors_enabled(sys.stderr))
-        return 1 if unattended else 2
+        return 1 if no_confirm else 2
 
 
 def _emit_error(exc: Exception, *, use_color: bool) -> None:
@@ -73,7 +73,7 @@ def _repo_command_runner(args: Any, interaction: Interaction | None) -> Any:
     from dotman.sync_deck_command import PullDeckCommandRunner, PushDeckCommandRunner, SyncDeckCommandRunner
 
     stdin_isatty = getattr(sys.stdin, "isatty", None)
-    if not args.unattended and interaction is None and stdin_isatty is not None and stdin_isatty():
+    if not args.no_confirm and interaction is None and stdin_isatty is not None and stdin_isatty():
         interaction = TerminalInteraction()
     engine_factory = lambda config_path: DotmanEngine.from_config_path(
         config_path,

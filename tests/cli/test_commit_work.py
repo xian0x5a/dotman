@@ -15,8 +15,8 @@ def pull_repo(tmp_path, monkeypatch):
     return tmp_path
 
 
-def test_unattended_pull_commit_reports_the_commit(pull_repo, capsys):
-    assert main(["--config", str(pull_repo / "config.toml"), "--json", "--unattended", "pull", "--commit"]) == 0
+def test_no_confirm_pull_commit_reports_the_commit(pull_repo, capsys):
+    assert main(["--config", str(pull_repo / "config.toml"), "--json", "--no-confirm", "pull", "--commit"]) == 0
 
     payload = json.loads(capsys.readouterr().out)
     head = git(pull_repo / "repo", "rev-parse", "--short", "HEAD").strip()
@@ -30,7 +30,7 @@ def test_unattended_pull_commit_reports_the_commit(pull_repo, capsys):
 
 def test_pull_without_commit_leaves_history_alone(pull_repo, capsys):
     head = git(pull_repo / "repo", "rev-parse", "HEAD")
-    assert main(["--config", str(pull_repo / "config.toml"), "--json", "--unattended", "pull"]) == 0
+    assert main(["--config", str(pull_repo / "config.toml"), "--json", "--no-confirm", "pull"]) == 0
 
     payload = json.loads(capsys.readouterr().out)
     assert [(item["selected"], item["result"]) for item in payload["commit_work"]] == [(False, None)]
@@ -80,7 +80,7 @@ def test_deck_uncheck_keeps_history(pull_repo, monkeypatch):
 
 
 def test_human_timeline_shows_commit_step(pull_repo, capsys):
-    assert main(["--config", str(pull_repo / "config.toml"), "--unattended", "pull", "--commit"]) == 0
+    assert main(["--config", str(pull_repo / "config.toml"), "--no-confirm", "pull", "--commit"]) == 0
 
     output = capsys.readouterr().out
     assert "  main\n    [1/1] commit      chore(dotman): pull app (2 targets)\n      ok\n" in output
@@ -91,7 +91,7 @@ def test_human_recap_names_a_commit_skipped_by_failure(tmp_path, monkeypatch, ca
     make_engine(tmp_path, monkeypatch, [
         ("first", "both", b"repo", b"live", '[targets.first.hooks]\npost_pull = "exit 9"'),
     ])
-    assert main(["--config", str(tmp_path / "config.toml"), "--unattended", "pull", "--commit"]) == 1
+    assert main(["--config", str(tmp_path / "config.toml"), "--no-confirm", "pull", "--commit"]) == 1
 
     assert "  [skipped] main commit (earlier work failed)" in capsys.readouterr().out
 

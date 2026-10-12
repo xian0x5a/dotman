@@ -11,13 +11,13 @@ from dotman.sync_deck_command import primary_change_summary, selection_uses_incl
 from tests.engine.test_sync_directory_observation import directory_engine, open_directory, put
 
 
-def test_unattended_directory_child_converges_with_normal_approval(tmp_path, monkeypatch, capsys):
+def test_no_confirm_directory_child_converges_with_normal_approval(tmp_path, monkeypatch, capsys):
     engine = directory_engine(tmp_path, monkeypatch, policy="push-only")
     repo, live = tmp_path / "repo/packages/app/tree", tmp_path / "live/tree"
     put(repo, "nested/child", b"repo")
     put(live, "nested/child", b"live")
 
-    assert main(["--config", str(engine.config.config_path), "--json", "--unattended", "sync"]) == 0
+    assert main(["--config", str(engine.config.config_path), "--json", "--no-confirm", "sync"]) == 0
 
     payload = json.loads(capsys.readouterr().out)
     unit, = payload["sync_units"]

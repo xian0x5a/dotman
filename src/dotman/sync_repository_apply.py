@@ -76,7 +76,7 @@ def execute_repository_apply(
     command_runtime: CommandRuntime | None = None,
     complete: Callable[[RepositoryApplyUnit], None],
     stream_output: bool = False,
-    unattended: bool = False,
+    no_confirm: bool = False,
     auxiliary: Sequence[HookActivation] = (),
     run_noop: bool = False,
     check_cancelled: Callable[[], None] | None = None,
@@ -106,7 +106,7 @@ def execute_repository_apply(
     if blocked:
         return PublicationResult(tuple(results.values()), steps=unattempted_steps(planned))
     steps, error, interrupted = [], None, False
-    with interaction_scope(unattended=unattended), command_runtime_session(command_runtime or current_command_runtime()):
+    with interaction_scope(no_confirm=no_confirm), command_runtime_session(command_runtime or current_command_runtime()):
         reporter = StepReporter("repository-apply", planned, observe)
         for index, step in enumerate(planned):
             unit = None if step.kind == "hook" else by_identity[_target_identity(step.package_plan, step.target_plan)]
@@ -116,7 +116,7 @@ def execute_repository_apply(
                 if check_cancelled is not None:
                     check_cancelled()
                 if step.kind == "hook":
-                    result = _execute_step(step, stream_output=stream_output, unattended=unattended)
+                    result = _execute_step(step, stream_output=stream_output, no_confirm=no_confirm)
                 elif step.kind == "unit-completion":
                     complete(unit)
                     results[unit.row_id] = PublicationUnitResult(unit.row_id, "ok")

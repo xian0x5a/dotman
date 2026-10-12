@@ -1,7 +1,7 @@
 """Permanent fixed live-to-repository orchestration over frozen Proposal work."""
 from dataclasses import replace
 
-from dotman.interaction_policy import unattended_enabled
+from dotman.interaction_policy import no_confirm_enabled
 from dotman.sync_observation import observe_scope
 from dotman.sync_session import (
     ProposalSession, SessionRow, AdditionalRow, Proposal, AuxiliaryRow,
@@ -24,7 +24,7 @@ class PullSession(ProposalSession):
         return ()
 
     def _prepare_workset(self):
-        # Pull is opt-out for auxiliary work too; unattended execution must not
+        # Pull is opt-out for auxiliary work too; --no-confirm execution must not
         # reapprove the whole workset and thereby retry failed Proposals.
         self._view = replace(self.view, rows=tuple(
             replace(row, approved=row.kind == "drift", intent=None,
@@ -74,7 +74,7 @@ class PullSession(ProposalSession):
                                       requires_publication=False) for row in selected),
             command_runtime=self._context.projection.command_runtime,
             complete=lambda unit: self._acknowledge(by_id[unit.row_id]), auxiliary=auxiliary, run_noop=self._run_noop,
-            unattended=unattended_enabled(),
+            no_confirm=no_confirm_enabled(),
             check_cancelled=self.check_cancelled, blocked=bool(diagnostics),
             stream_output=self._stream_output, observe=self._emit,
         )

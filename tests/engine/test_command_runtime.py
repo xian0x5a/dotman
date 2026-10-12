@@ -62,6 +62,6 @@ def test_push_session_uses_injected_runtime_for_guard_probe_and_projection(
         ShellCommand("probe-command"),
         ShellCommand("render-command"),
     }
-    assert runtime.requests[0].excluded_env_keys == frozenset({"DOTMAN_UNATTENDED"})
+    assert runtime.requests[0].excluded_env_keys == frozenset({"DOTMAN_NO_CONFIRM"})
     assert [type(row) for row in rows] == [SessionRow, AuxiliaryRow]
     assert observation.comparison_repository == FilePresent(b"projected\n")

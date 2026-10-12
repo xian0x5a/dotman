@@ -35,7 +35,7 @@ def test_pull_cli_previews_tracked_scopes_without_writes(
     tracked_before = tracked.read_bytes()
 
     assert main([
-        "--config", str(pull_repo / "config.toml"), "--json", "--unattended",
+        "--config", str(pull_repo / "config.toml"), "--json", "--no-confirm",
         "pull", "--dry-run", *scopes,
     ]) == 0
 
@@ -57,7 +57,7 @@ def test_pull_cli_previews_tracked_scopes_without_writes(
 
 def test_pull_cli_human_preview_uses_canonical_target_identity(pull_repo, capsys):
     assert main([
-        "--config", str(pull_repo / "config.toml"), "--unattended",
+        "--config", str(pull_repo / "config.toml"), "--no-confirm",
         "pull", "--dry-run", "main:app.first",
     ]) == 0
 
@@ -121,7 +121,7 @@ def test_pull_cli_accepts_package_owned_by_tracked_root(pull_repo, capsys):
     )
 
     assert main([
-        "--config", str(pull_repo / "config.toml"), "--json", "--unattended",
+        "--config", str(pull_repo / "config.toml"), "--json", "--no-confirm",
         "pull", "--dry-run", "main:app",
     ]) == 0
 

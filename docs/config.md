@@ -52,7 +52,7 @@ This reference owns user-level manager configuration. See
 - `file_symlink_mode` defaults to `prompt` and accepts `prompt` or `follow`.
 - `dir_symlink_mode` defaults to `fail` and accepts `fail` or `follow`.
 - CLI flags `--file-symlink-mode` and `--dir-symlink-mode` should override the config file for a single run.
-- `prompt` requires explicit authorization when publication must replace a file symlink. Unattended runs cannot grant it. Deletion unlinks the leaf without deleting its referent; repository-only work does not replace it.
+- `prompt` requires explicit authorization when publication must replace a file symlink. No-confirm runs cannot grant it. Deletion unlinks the leaf without deleting its referent; repository-only work does not replace it.
 - `follow` means dotman manages the resolved target instead of the symlink itself.
 
 ## Snapshots

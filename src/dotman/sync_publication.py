@@ -358,7 +358,7 @@ def execute_publication(
     complete: Callable[[PublicationUnit], None] | None = None,
     command_runtime: CommandRuntime | None = None,
     stream_output: bool = False,
-    unattended: bool = False,
+    no_confirm: bool = False,
     auxiliary: Sequence[HookActivation] = (),
     run_noop: bool = False,
     check_cancelled: Callable[[], None] | None = None,
@@ -410,7 +410,7 @@ def execute_publication(
     steps, snapshot, error, interrupted = [], None, None, False
     snapshot_started = False
     effect_positions = {unit.row_id: 0 for unit in units}
-    with interaction_scope(unattended=unattended), command_runtime_session(command_runtime or current_command_runtime()):
+    with interaction_scope(no_confirm=no_confirm), command_runtime_session(command_runtime or current_command_runtime()):
         reporter = StepReporter("live-publication", planned, observe)
         for index, step in enumerate(planned):
             unit = None if step.kind == "hook" else by_identity[_target_identity(step.package_plan, step.target_plan)]
@@ -420,7 +420,7 @@ def execute_publication(
                 if check_cancelled is not None:
                     check_cancelled()
                 if step.kind == "hook":
-                    result = _execute_step(step, stream_output=stream_output, unattended=unattended)
+                    result = _execute_step(step, stream_output=stream_output, no_confirm=no_confirm)
                 elif step.kind == "unit-completion":
                     if complete is not None:
                         complete(unit)
