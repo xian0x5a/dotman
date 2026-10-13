@@ -529,9 +529,8 @@ class TrackResolver:
         if ranked_partial:
             if self._interaction is None:
                 if len(ranked_partial) == 1:
-                    option = option_resolver(ranked_partial[0])
                     raise ValueError(
-                        f"no exact match for '{query_text}'; use exact name '{option.display_label}'"
+                        f"no exact match for '{query_text}'; use exact name '{value_resolver(ranked_partial[0])}'"
                     )
                 raise ValueError(partial_error_text)
             return self._choose(

@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import dotman.cli_interaction as cli
 import pytest
+from dotman.cli import main
 from dotman.command_runtime import ArgvCommand, CommandResult, MemoryCommandRuntime
 from dotman.models import UiConfig, UiMenusConfig
 from dotman.ui_context import ui_config_scope
+
+from tests.helpers import write_manager_config
 
 
 
@@ -91,6 +95,7 @@ def test_resolve_candidate_match_ranks_leftmost_selector_segments_first(monkeypa
             display_label=f"{match[0]}:{match[1]}",
             match_fields=cli.build_selector_match_fields(repo_name=match[0], selector=match[1]),
         ),
+        exact_name_resolver=lambda match: f"{match[0]}:{match[1]}",
         exact_error_text="unused",
         partial_error_text="unused",
         not_found_text="unused",
@@ -125,6 +130,7 @@ def test_resolve_candidate_match_routes_unique_partial_through_menu_by_default(m
             match_fields=(match,),
             field_kinds=("repo",),
         ),
+        exact_name_resolver=lambda match: match,
         exact_error_text="unused",
         partial_error_text="unused",
         not_found_text="unused",
@@ -655,3 +661,31 @@ def test_print_review_item_preserves_root_prefix_for_system_paths(capsys) -> Non
 
     output = capsys.readouterr().out
     assert ": /etc/sddm.conf.d/kde_settings.conf -> /repo/sddm.conf.d/kde_settings.conf" in output
+
+
+@pytest.mark.parametrize(
+    ("command", "profile_suffix"),
+    [
+        pytest.param(["info", "trackable"], "", id="info-trackable"),
+        pytest.param(["track"], "@basic", id="track"),
+    ],
+)
+def test_single_partial_match_error_suggests_a_name_the_command_accepts(
+    tmp_path: Path,
+    capsys,
+    command: list[str],
+    profile_suffix: str,
+) -> None:
+    # Without a prompt, a unique partial match fails with a suggested exact
+    # name; pasting that suggestion back must resolve.
+    config_path = write_manager_config(tmp_path)
+    query = "core-cli"
+
+    assert main(["--config", str(config_path), "--no-confirm", *command, f"{query}{profile_suffix}"]) != 0
+    error_output = capsys.readouterr().err
+    suggestions = [quoted for quoted in re.findall(r"'([^']+)'", error_output) if quoted != query]
+    assert suggestions, error_output
+
+    exit_code = main(["--config", str(config_path), "--no-confirm", *command, f"{suggestions[-1]}{profile_suffix}"])
+
+    assert exit_code == 0, capsys.readouterr().err

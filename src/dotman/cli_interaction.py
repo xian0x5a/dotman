@@ -238,6 +238,7 @@ def resolve_variable_text(
             match_fields=(match,),
             field_kinds=("variable",),
         ),
+        exact_name_resolver=lambda match: match,
         exact_error_text=f"variable '{variable_text}' is ambiguous: " + ", ".join(exact_matches),
         partial_error_text=f"variable '{variable_text}' is ambiguous: " + ", ".join(partial_matches),
         not_found_text=f"variable '{variable_text}' did not match any resolved variable",
@@ -554,6 +555,7 @@ def resolve_candidate_match(
     exact_header_text: str,
     partial_header_text: str,
     option_resolver: Callable[[SelectableItem], ResolverOption],
+    exact_name_resolver: Callable[[SelectableItem], str],
     exact_error_text: str,
     partial_error_text: str,
     not_found_text: str,
@@ -598,7 +600,7 @@ def resolve_candidate_match(
             if single_partial_error_text is not None:
                 raise ValueError(single_partial_error_text)
             raise ValueError(
-                f"no exact match for '{query_text}'; use exact name '{partial_option.display_label}'"
+                f"no exact match for '{query_text}'; use exact name '{exact_name_resolver(partial_match)}'"
             )
         if single_partial_mode == "menu":
             selected_index = select_menu_option(
@@ -664,6 +666,9 @@ def resolve_tracked_package_text(
             ),
             field_kinds=build_package_field_kinds(has_bound_profile=match[2] is not None),
         ),
+        exact_name_resolver=lambda match: (
+            f"{match[0].config.name}:{package_ref_text(package_id=match[1], bound_profile=match[2])}"
+        ),
         exact_error_text=(
             (
                 f"tracked package '{package_query}' is defined in multiple repos: "
@@ -724,6 +729,7 @@ def resolve_trackable_selector_text(
             ),
             field_kinds=build_selector_field_kinds(),
         ),
+        exact_name_resolver=lambda match: f"{match[0].config.name}:{match[1]}",
         exact_error_text=f"selector '{selector}' is defined in multiple repos: "
         + ", ".join(f"{repo.config.name}:{match}" for repo, match, _ in exact_matches),
         partial_error_text=f"selector '{selector}' is ambiguous: "
