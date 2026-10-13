@@ -81,7 +81,8 @@ This reference owns user-level manager configuration. See
     `pull 5 targets in 3 packages`.
   - `{packages}`: one package per line, sorted, instances kept (`git<work>`).
   - `{repo}`: the dotman repo name.
-- An unknown placeholder fails config loading.
+- An unknown placeholder, or a format spec or conversion that cannot render,
+  such as `{count:s}` or `{repo!x}`, fails config loading.
 
 ## UI
 

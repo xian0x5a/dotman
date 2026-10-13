@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 
 import pytest
@@ -149,3 +150,29 @@ def test_custom_message_template_and_validation(tmp_path):
     config.write_text(config.read_text().replace("{count}", "{targets}"))
     with pytest.raises(ValueError, match=r"git.commit_message.*\{targets\}"):
         load_manager_config(config)
+
+
+def write_commit_message_config(tmp_path, template):
+    config = write_named_manager_config(tmp_path, {"main": tmp_path})
+    # A JSON string literal is a valid TOML basic string, so escapes like \n survive.
+    config.write_text(config.read_text() + f"\n[git]\ncommit_message = {json.dumps(template)}\n")
+    return config
+
+
+@pytest.mark.parametrize("template", [
+    "{count:s}", "{operation:d}", "{repo!x}", "{summary:{bogus}}",
+])
+def test_unrenderable_message_template_fails_config_loading(tmp_path, template):
+    config = write_commit_message_config(tmp_path, template)
+    with pytest.raises(ValueError, match=r"git\.commit_message"):
+        load_manager_config(config)
+
+
+@pytest.mark.parametrize("template", [
+    "{summary}", "dotman: {summary}\n\n{packages}", "{count:>3} {repo}",
+])
+def test_valid_message_template_loads_and_renders(tmp_path, template):
+    config = write_commit_message_config(tmp_path, template)
+    loaded = load_manager_config(config).git.commit_message
+    assert loaded == template
+    render_commit_message(loaded, operation="sync", repo="main", targets=targets(("zsh", "zshrc", None)))
