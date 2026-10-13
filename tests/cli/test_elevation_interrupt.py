@@ -63,6 +63,9 @@ def _stopped(pid: int) -> bool:
         return True
 
 
+# The helper scripts below die from SIGINT with its default action. A Python
+# handler such as sys.exit could fire during interpreter shutdown and print
+# "Exception ignored ... Traceback" onto the PTY under test.
 def _fake_sudo(
     bin_dir: Path, ready: Path, *, release: Path | None = None, child_success: Path | None = None,
 ) -> None:
@@ -80,7 +83,7 @@ def _fake_sudo(
         "    sys.exit(0)\n"
         "assert sys.argv[1:] == ['-v'], sys.argv\n"
         "assert os.isatty(0) and os.tcgetpgrp(0) == os.getpgrp()\n"
-        "signal.signal(signal.SIGINT, lambda *_: sys.exit(130))\n"
+        "signal.signal(signal.SIGINT, signal.SIG_DFL)\n"
         "original = termios.tcgetattr(0)\n"
         "prompt = original.copy()\n"
         "prompt[3] &= ~termios.ECHO\n"
@@ -101,7 +104,7 @@ def _provider(
     executable.write_text(
         f"#!{sys.executable}\n"
         "import os, pathlib, signal, subprocess, sys\n"
-        "signal.signal(signal.SIGINT, lambda *_: sys.exit(130))\n"
+        "signal.signal(signal.SIGINT, signal.SIG_DFL)\n"
         f"pathlib.Path({str(provider_pid)!r}).write_text(str(os.getpid()))\n"
         f"child = subprocess.Popen({child_command!r})\n"
         f"pathlib.Path({str(client_pid)!r}).write_text(str(child.pid))\n"
