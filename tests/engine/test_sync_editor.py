@@ -1,3 +1,4 @@
+import os
 import json
 import shlex
 
@@ -39,8 +40,8 @@ def test_editor_failure_is_local_and_retryable(tmp_path, monkeypatch, exit_code,
     previous = session.view.rows[0].proposal
     result = dispatch(session, EditProposal)
     assert result.result.status == status
-    assert result.view.rows[0].proposal == (previous if status == "cancelled" else None)
-    assert result.view.rows[0].approved == (status == 'cancelled')
+    assert result.view.rows[0].proposal == previous
+    assert result.view.rows[0].approved
     session.check_cancelled()
 
 
@@ -322,3 +323,67 @@ def test_unchanged_editor_quit_adds_no_edited_choice(tmp_path, monkeypatch):
     row = result.view.rows[0]
     # An identical Edited choice would only toggle between two outcomes that both write nothing.
     assert (row.intent, row.allowed_intents) == ('use-live', ('use-live',))
+
+
+@pytest.mark.parametrize('flow', ['pull', 'sync-use-live'])
+def test_failed_editor_command_keeps_proposal_and_retry_edits_incoming_content(tmp_path, monkeypatch, flow):
+    """A failed Editor command saves nothing, so a retry still starts from the incoming live content (#212)."""
+    from dotman.sync_session import SetResolutionIntent
+    marker = tmp_path / 'editor-can-save'
+    command = f'test -e {shlex.quote(str(marker))} || exit 7; printf \'tweak\\n\' >> "$DOTMAN_SOURCE"'
+    engine = make_engine(tmp_path, monkeypatch, [('a', 'pull-only' if flow == 'pull' else 'both',
+        b'old repo\n', b'new live\n', f'editor = {{ run = {json.dumps(command)}, io = "pipe" }}')])
+    if flow == 'pull':
+        session = engine.open_pull_session(engine.resolve_sync_scope(), preview=False)
+    else:
+        session = open_session(engine, preview=False)
+        dispatch(session, SetResolutionIntent, intent='use-live')
+    with session:
+        dispatch(session, SetApproval, approved=True)
+        before = session.view.rows[0]
+        assert before.intent == 'use-live' and before.proposal is not None
+        failed = dispatch(session, EditProposal)
+        assert failed.result.status == 'command-failed'
+        assert failed.result.diagnostics
+        row = failed.view.rows[0]
+        assert (row.intent, row.proposal, row.approved) == ('use-live', before.proposal, True)
+        marker.touch()
+        assert dispatch(session, EditProposal).result.status == 'saved'
+        assert session.execute().result.status == 'completed'
+    assert (tmp_path / 'repo/packages/app/a').read_bytes() == b'new live\ntweak\n'
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason='root reads files regardless of mode bits')
+@pytest.mark.parametrize('flow', ['pull', 'sync-use-live'])
+def test_failed_editor_workspace_keeps_proposal_and_retry_edits_incoming_content(tmp_path, monkeypatch, flow):
+    """An Editor workspace that cannot be prepared saves nothing, so a retry still starts from the incoming live content (#212)."""
+    from dotman.sync_session import SetResolutionIntent
+    command = 'printf \'tweak\\n\' >> "$DOTMAN_SOURCE"'
+    engine = make_engine(tmp_path, monkeypatch, [('a', 'pull-only' if flow == 'pull' else 'both',
+        b'old repo\n', b'new live\n', f'editor = {{ run = {json.dumps(command)}, io = "pipe" }}')])
+    if flow == 'pull':
+        session = engine.open_pull_session(engine.resolve_sync_scope(), preview=False)
+    else:
+        session = open_session(engine, preview=False)
+        dispatch(session, SetResolutionIntent, intent='use-live')
+    # The Editor copies the whole repository into an isolated workspace, so an
+    # unreadable unrelated file makes that preparation fail before the editor runs.
+    unreadable = tmp_path / 'repo/packages/app/unreadable'
+    unreadable.write_bytes(b'secret\n')
+    unreadable.chmod(0)
+    try:
+        with session:
+            dispatch(session, SetApproval, approved=True)
+            before = session.view.rows[0]
+            assert before.intent == 'use-live' and before.proposal is not None
+            failed = dispatch(session, EditProposal)
+            assert failed.result.status != 'saved'
+            assert failed.result.diagnostics
+            row = failed.view.rows[0]
+            assert (row.intent, row.proposal, row.approved) == ('use-live', before.proposal, True)
+            unreadable.chmod(0o644)
+            assert dispatch(session, EditProposal).result.status == 'saved'
+            assert session.execute().result.status == 'completed'
+    finally:
+        unreadable.chmod(0o644)
+    assert (tmp_path / 'repo/packages/app/a').read_bytes() == b'new live\ntweak\n'

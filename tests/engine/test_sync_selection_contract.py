@@ -104,3 +104,81 @@ def test_scoped_batch_selects_only_listed_rows_and_rematerializes_dependents(tmp
     assert isinstance(command(session, BatchSetApproval, approved=False, row_ids=('main:app.missing',)),
                       CommandRejected)
     assert session.view == before
+
+
+@pytest.mark.parametrize('edited', [False, True], ids=['captured', 'edited'])
+@pytest.mark.parametrize('batch', [False, True], ids=['single', 'batch'])
+@pytest.mark.parametrize('operation', ['sync', 'pull', 'push'])
+def test_approval_round_trip_keeps_the_same_proposal(tmp_path, monkeypatch, operation, batch, edited):
+    """Approval is unrelated to the Proposal: unselect and reselect neither drop nor rebuild it."""
+    policy = 'push-only' if operation == 'push' else 'pull-only'
+    engine = make_engine(tmp_path, monkeypatch, [
+        ('unit', policy, b'repo\n', b'live\n',
+         'editor = { run = "printf \'tweak\\\\n\' >> \\"$DOTMAN_SOURCE\\"", io = "pipe" }'),
+    ])
+    opener = {'sync': engine.open_sync_session, 'pull': engine.open_pull_session,
+              'push': engine.open_push_session}[operation]
+    with opener(engine.resolve_sync_scope(), preview=False) as session:
+        def set_approval(approved):
+            row = session.view.rows[0]
+            if batch:
+                command(session, BatchSetApproval, approved=approved, row_ids=(row.row_id,))
+            else:
+                command(session, SetApproval, row, approved=approved)
+        set_approval(True)
+        if edited:
+            assert command(session, EditProposal, session.view.rows[0]).result.status == 'saved'
+        before = session.view.rows[0].proposal
+        assert before is not None and before.intent == ('editor' if edited else before.intent)
+        set_approval(False)
+        row = session.view.rows[0]
+        assert not row.approved
+        assert row.proposal == before
+        set_approval(True)
+        row = session.view.rows[0]
+        assert row.approved
+        assert row.proposal == before
+        assert row.proposal.generation == before.generation
+        assert session.execute().result.status == 'completed'
+    written = tmp_path / ('live/unit' if operation == 'push' else 'repo/packages/app/unit')
+    origin = b'repo\n' if operation == 'push' else b'live\n'
+    assert written.read_bytes() == origin + (b'tweak\n' if edited else b'')
+
+
+@pytest.mark.parametrize('batch', [False, True], ids=['single', 'batch'])
+def test_shared_source_approval_rebuilds_only_referencing_proposals(tmp_path, monkeypatch, batch):
+    """A Proposal is rebuilt when an Additional Source it reads changes approval, and only then."""
+    reader = ('render = "cat $DOTMAN_PACKAGE_ROOT/shared"\n'
+              'editor = { run = "printf candidate > \\"$DOTMAN_EDITOR_ADDITIONAL_SOURCE_PATHS\\"", '
+              'io = "pipe", additional_sources = ["shared"] }')
+    engine = make_engine(tmp_path, monkeypatch, [
+        ('author', 'push-only', b'repo', b'live', reader),
+        ('reader', 'push-only', b'repo', b'live', reader),
+        ('unselected', 'push-only', b'repo', b'live', reader),
+        ('unrelated', 'push-only', b'repo', b'live', ''),
+    ])
+    (tmp_path / 'repo/packages/app/shared').write_bytes(b'original')
+    with open_session(engine) as session:
+        command(session, EditProposal, session.view.rows[0])
+        command(session, BatchSetApproval, approved=True, row_ids=tuple(
+            row.row_id for row in session.view.rows if not isinstance(row, AdditionalRow)))
+        rows = {row.row_id: row for row in session.view.rows}
+        command(session, SetApproval, rows['main:app.unselected'], approved=False)
+        rows = {row.row_id: row for row in session.view.rows}
+        additional = next(row for row in rows.values() if isinstance(row, AdditionalRow))
+        assert not additional.approved
+        before = {row_id: row.proposal for row_id, row in rows.items() if not isinstance(row, AdditionalRow)}
+        assert all(before.values())
+        if batch:
+            command(session, BatchSetApproval, approved=True, row_ids=(additional.row_id,))
+        else:
+            command(session, SetApproval, additional, approved=True)
+        rows = {row.row_id: row for row in session.view.rows}
+        reader, unselected = rows['main:app.reader'], rows['main:app.unselected']
+        # Approved reader: rebuilt from the new input as a new Proposal.
+        assert reader.approved and reader.proposal.live == FilePresent(b'candidate')
+        assert reader.proposal.generation > before['main:app.reader'].generation
+        # Unselected reader: its stale Proposal is dropped, not silently kept.
+        assert not unselected.approved and unselected.proposal is None
+        # Unrelated row: untouched.
+        assert rows['main:app.unrelated'].proposal == before['main:app.unrelated']

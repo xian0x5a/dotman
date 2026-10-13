@@ -873,12 +873,11 @@ class ProposalSession:
             for row in view.rows:
                 if isinstance(row, SessionRow) and row.row_id in changed_references:
                     self._clear_input_cache(row)
-            # Unapprovable units, such as no-ops, keep their Proposal: dropping it
-            # would erase the no-op evidence and make the row look approvable.
+            # Unapprovable units, such as no-ops, keep their Approval state.
             approval_scope = {row.row_id for row in view.rows
                               if row.row_id in scope and isinstance(row, SessionRow) and row.approvable}
             rows = tuple(
-                replace(row, approved=command.approved, proposal=None)
+                replace(row, approved=command.approved)
                 if row.row_id in approval_scope
                 else row if row.row_id not in scope
                 else replace(row, approved=command.approved)
@@ -889,9 +888,12 @@ class ProposalSession:
                 for row in view.rows
             )
             self._view = replace(view, rows=rows)
-            # Rows outside the scope keep their Proposal unless a changed shared source feeds it.
-            self._invalidate_inputs({row.row_id for row in rows if isinstance(row, SessionRow)}
-                                    & (approval_scope | changed_references), clear_cache=False)
+            # Approval alone never changes a Proposal, as with SetApproval: rematerialize
+            # only rows fed by a changed shared source, and approved rows still lacking one.
+            self._invalidate_inputs(changed_references | {
+                row.row_id for row in rows
+                if row.row_id in approval_scope and row.approved and row.proposal is None
+            }, clear_cache=False)
             self._view = replace(self.view, revision=view.revision + 1)
             self._emit(SessionChanged(self.view))
             return CommandAccepted(self.view, BatchApprovalChanged(command.approved))
@@ -1223,6 +1225,11 @@ class ProposalSession:
         operation = self._editor_operation
         status, diagnostics = "saved", ()
         updated = row
+        # From launching the Editor until a save commits, a failure saved nothing:
+        # like cancellation it leaves the Proposal and Approval intact, so the next
+        # attempt reopens the same outcome. Initial materialization failures and
+        # failed saved edits still mark the row.
+        unsaved_attempt = False
         prior_view = self.view
         prior_captures, prior_renders = dict(self._captures), dict(self._renders)
         prior_generations = dict(self._proposal_generations)
@@ -1237,6 +1244,7 @@ class ProposalSession:
                 if row.observation.identity in self._editor_input_errors:
                     raise ValueError(self._editor_input_errors[row.observation.identity])
                 initial = self._editor_initial(row)
+                unsaved_attempt = True
                 output = edit_sources(
                     observation=row.observation, initial=initial,
                     metadata=metadata, repo_root=item.repo.root,
@@ -1254,6 +1262,7 @@ class ProposalSession:
                     # choice would only duplicate the current Resolution.
                     status = "unchanged"
                 else:
+                    unsaved_attempt = False
                     previous = row.proposal
                     generation = self._next_generation(row.row_id)
                     # Commit saved sources before projection: a failed Render must
@@ -1309,7 +1318,7 @@ class ProposalSession:
             diagnostics = (Diagnostic("editor-materialization-failed", str(exc)),)
         finally:
             self._editor_operation = CommandOperation()
-        if status not in ("saved", "unchanged", "cancelled"):
+        if status not in ("saved", "unchanged", "cancelled") and not unsaved_attempt:
             updated = replace(row, approved=False, proposal=None, diagnostics=diagnostics,
                               additional_changes=self._row_additional(row))
         self._view = replace(self.view, revision=self.view.revision + 1, rows=tuple(
@@ -1540,7 +1549,7 @@ class ProposalSession:
                 completion = lifecycle.complete(
                     replace(self._frozen_bases[observation.identity], payload=row.proposal.repository),
                     ProposalCompletion(
-                        intent=row.proposal.intent or "use-live", approved=True,
+                        intent=row.proposal.intent, approved=True,
                         publication_effects="succeeded" if row.proposal.publication_effects else "not-required",
                         primary_effect="succeeded" if row.proposal.primary_source_change is not None else "not-required",
                     ),

@@ -232,7 +232,9 @@ unchanged live file, and keeps the Drift section's Pull View diff. A unit whose 
 no push hook gets no reapply, since nothing could change what Capture reads; it stays a no-write
 Proposal.
 Changing Resolution Intent preserves Approval, discards the prior Proposal, and
-rematerializes approved work. Review exposes Capture and Reconciliation evidence
+rematerializes approved work. Approval alone, single or batch, never discards a
+Proposal; selection materializes only work that lacks one. Push and Pull fix the
+Resolution Intent to Use repository and Use live. Review exposes Capture and Reconciliation evidence
 separately from repository and live effects. The [CLI reference](cli.md#sync)
 defines keyboard and mouse interactions.
 Execution confirmation is available only when every approved participating Proposal
@@ -286,7 +288,8 @@ text becomes the evidence the next Editor run starts from. Blocks already presen
 the frozen repository source or Capture, and markers with other labels, are content. If no Proposal exists otherwise, including after
 a Capture failure, the next attempt starts from frozen repository sources without requiring Capture. The configured/default Editor
 receives isolated Primary and permitted Additional Source copies and read-only
-review evidence, not writable tracked paths. Cancelling discards the attempted
+review evidence, not writable tracked paths. Cancelling, or any failure before a save such as a failed Editor
+command or workspace, discards the attempted
 transaction and preserves the previous Proposal and Approval. Saving produces
 an **Edited** generation, selects Edited as the Resolution Intent, and derives policy-appropriate effects;
 the saved edit stays selectable after switching to another intent, and the next save replaces it; tracked sources

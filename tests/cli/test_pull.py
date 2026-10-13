@@ -47,7 +47,7 @@ def test_pull_cli_previews_tracked_scopes_without_writes(
     for unit in payload["sync_units"]:
         assert unit["approved"]
         assert unit["primary_source_change"]["kind"] == "write"
-        assert unit["resolution_intent"] is None
+        assert unit["resolution_intent"] == "use-live"
         assert unit["allowed_intents"] == []
     assert tracked.read_bytes() == tracked_before
     for name in ("first", "second"):

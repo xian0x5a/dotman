@@ -64,8 +64,8 @@ def test_pull_editor_failure_or_cancel_never_leaks_staged_changes(tmp_path, monk
         previous = session.view.rows[0].proposal
         result = edit_first(session)
         assert result.result.status == status
-        assert result.view.rows[0].approved == (status == "cancelled")
-        assert result.view.rows[0].proposal == (previous if status == "cancelled" else None)
+        assert result.view.rows[0].approved
+        assert result.view.rows[0].proposal == previous
         assert len(result.view.rows) == 1
     assert primary.read_bytes() == b"repo"
     assert additional.read_bytes() == b"include"
