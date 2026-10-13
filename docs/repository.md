@@ -132,7 +132,7 @@ chmod = "600"
 - Tools may still generate deterministic path-derived target keys for convenience, but that naming is a convention rather than a schema rule.
 - `path` may use `~/...` for home-relative destinations or an absolute path otherwise.
 - Targets may define `type = "file" | "directory"` when filesystem inference is not enough, such as when both source and live paths are absent. An explicit type establishes the endpoint kind, not permission to Render a missing file source.
-- Targets may define `chmod` when the installed root path needs an explicit mode.
+- Targets may define `chmod` when the installed root path needs an explicit mode. Target and path-rule `chmod` values are strings of 3 or 4 octal digits such as `"600"` or `"0755"`.
 - `chmod` is optional and should usually be omitted unless the target needs a non-default live mode.
 - For file targets, `chmod` is the source of truth for the installed file mode when present.
 - For directory targets, `chmod` applies to the live directory root only; child files mirror Git semantics and carry only the executable bit, not full permission bits such as `600` vs `644`.

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import sys
 from collections.abc import Collection
 from dataclasses import MISSING, fields, is_dataclass, replace
@@ -238,12 +239,13 @@ def normalize_sync_policy(value: Any) -> str | None:
     return normalize_optional_string_enum(value, key="sync_policy", allowed=VALID_SYNC_POLICY_VALUES)
 
 
-def _invalid_octal(value: str) -> bool:
-    try:
-        int(value, 8)
-    except ValueError:
-        return True
-    return False
+# int(value, 8) alone also accepts "-755", "0o755" and modes beyond 0o7777,
+# none of which a live file can ever report back.
+CHMOD_PATTERN = re.compile(r"[0-7]{3,4}")
+
+
+def _invalid_chmod(value: str) -> bool:
+    return CHMOD_PATTERN.fullmatch(value) is None
 
 
 def normalize_projection(value: Any, *, field_name: str, default: str, builtins: tuple[str, ...]) -> str:
@@ -543,8 +545,8 @@ def normalize_target_path_rules(
                 override_explicit=True,
             )
         chmod = val("chmod", None)
-        if chmod is not None and (not isinstance(chmod, str) or _invalid_octal(chmod)):
-            raise ValueError(f"package manifest {manifest_path} target '{target_name}' path_rules.{name}.chmod must be an octal string")
+        if chmod is not None and (not isinstance(chmod, str) or _invalid_chmod(chmod)):
+            raise ValueError(f"package manifest {manifest_path} target '{target_name}' path_rules.{name}.chmod must be 3 or 4 octal digits")
         sync_policy = normalize_sync_policy(payload.get("sync_policy", inherited_sync_policy))
         hooks = normalize_path_rule_hooks(payload.get("hooks"), manifest_path=manifest_path, target_name=target_name, rule_index=name,
                                           default_command_elevation=default_command_elevation)
@@ -616,8 +618,8 @@ def build_target_spec(
     disabled = boolean_value("disabled")
     on_demand = boolean_value("on_demand")
     chmod = value("chmod")
-    if chmod is not None and (not isinstance(chmod, str) or _invalid_octal(chmod)):
-        raise ValueError(f"package manifest {manifest_path} target '{target_name}' chmod must be an octal string")
+    if chmod is not None and (not isinstance(chmod, str) or _invalid_chmod(chmod)):
+        raise ValueError(f"package manifest {manifest_path} target '{target_name}' chmod must be 3 or 4 octal digits")
     render = normalize_projection(value("render"), field_name="render", default="raw", builtins=("raw", "jinja"))
     capture = normalize_projection(value("capture"), field_name="capture", default="raw", builtins=("raw", "patch"))
     # Preset comparison sides are independently inherited: an explicit side

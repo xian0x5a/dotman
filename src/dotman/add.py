@@ -80,10 +80,10 @@ def resolve_live_path_spec(live_path_text: str, *, cwd: Path | None = None, home
     file_mode = stat.S_IMODE(resolved_path.stat().st_mode)
     if resolved_path.is_file():
         target_kind = "file"
-        chmod = None if file_mode == 0o644 else f"{file_mode:o}"
+        chmod = None if file_mode == 0o644 else f"{file_mode:03o}"
     elif resolved_path.is_dir():
         target_kind = "directory"
-        chmod = None if file_mode == 0o755 else f"{file_mode:o}"
+        chmod = None if file_mode == 0o755 else f"{file_mode:03o}"
     else:
         raise ValueError(f"unsupported live path type for add: {resolved_path}")
     config_path = _config_path_text(resolved_path, home_dir=home_dir)
