@@ -159,15 +159,16 @@ class SyncBaseLifecycle:
         self.preview = preview
 
     def inspect(self, unit: BaseUnit) -> BaseInspection:
-        """Read only; no projections, live reads or cleanup."""
+        """Read only; no projections, live reads or cleanup.
+
+        A corrupt record is an unavailable Base; any other store failure raises.
+        """
         if not unit.eligible:
             return BaseInspection("not-applicable", "ineligible")
         try:
             record = self.store.read(unit.identity_bytes)
         except SyncBaseRecordCorruptionError as exc:
             return BaseInspection("unavailable", exc.reason, failure=exc)
-        except SyncBaseStoreError as exc:
-            return BaseInspection("unavailable", "storage_unavailable", failure=exc)
         if record is None:
             return BaseInspection("unavailable", "absent")
         if not record_matches_identity(record, unit.identity):
