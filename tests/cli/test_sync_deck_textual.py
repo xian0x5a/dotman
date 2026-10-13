@@ -1552,3 +1552,31 @@ def test_retry_key_is_refused_while_a_menu_is_open(tmp_path, monkeypatch, open_m
                 assert session.view.revision == revision
                 assert menu.display
         run(interact())
+
+
+def test_unexpected_background_error_stops_the_deck(tmp_path, monkeypatch):
+    engine = make_engine(tmp_path, monkeypatch, [("unit", "push-only", b"repo", b"live", "")])
+
+    def provider_bug(*args, **kwargs):
+        raise RuntimeError("provider bug")
+
+    # Select runs this session command on the materialization lane.
+    monkeypatch.setattr(sync_deck, "set_selected", provider_bug)
+    with engine.open_sync_session(engine.resolve_sync_scope([]), preview=True) as session:
+        app = SyncDeckApp(CommandDeck(session, use_color=False))
+        running_after_failure = []
+
+        async def interact():
+            async with app.run_test() as pilot:
+                await pilot.press("x")
+                for _ in range(200):
+                    if not app.is_running:
+                        break
+                    await asyncio.sleep(.01)
+                running_after_failure.append(app.is_running)
+
+        # Textual re-raises the app's unexpected exception when the pilot closes.
+        with pytest.raises(RuntimeError, match="provider bug"):
+            run(interact())
+        assert running_after_failure == [False]
+        assert app.return_code == 1
