@@ -68,7 +68,7 @@ def test_pull_preserves_repository_children_excluded_by_ignore_command(tmp_path,
 def test_ignore_command_runs_in_declaring_package_directory(tmp_path, monkeypatch):
     engine = ignore_command_engine(tmp_path, monkeypatch, "cat ignored.txt")
     (tmp_path / "repo/packages/app/ignored.txt").write_text("/managed/\n")
-    repo, live = roots(tmp_path)
+    _repo, live = roots(tmp_path)
     put(live, "visible")
     put(live, "managed/a")
 

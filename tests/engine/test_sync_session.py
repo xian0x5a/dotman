@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import FrozenInstanceError
-from pathlib import Path
 
 import pytest
 
@@ -601,7 +600,6 @@ def test_follow_dangling_live_link_is_missing_but_prompt_requires_valid_referent
 def test_preview_rejects_unsafe_existing_store_instead_of_hiding_it(
     tmp_path, monkeypatch
 ):
-    from dotman.sync_session import SessionOpenFailed
     from dotman.sync_base_store import LOCK_FILE_NAME, SyncBaseStore
 
     engine = make_engine(
@@ -690,7 +688,6 @@ def test_preview_preserves_managed_files_git_and_existing_base_bytes(
 def test_preview_does_not_treat_unreadable_store_directory_as_absent(
     tmp_path, monkeypatch
 ):
-    from dotman.sync_session import SessionOpenFailed
 
     engine = make_engine(
         tmp_path, monkeypatch, [("unit", "both", b"same", b"same", "")]

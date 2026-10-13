@@ -6,7 +6,7 @@ import pytest
 from dotman import sync_publication as publication
 from dotman.sync_session import SetApproval, SetResolutionIntent
 from tests.engine.test_sync_convergence import command
-from tests.engine.test_sync_publication import prepare, execute
+from tests.engine.test_sync_publication import prepare
 from tests.engine.test_sync_session import make_engine, open_session
 
 

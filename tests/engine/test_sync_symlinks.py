@@ -134,7 +134,7 @@ def test_prompt_mode_only_effect_replaces_link_using_frozen_bytes(tmp_path, monk
 
 
 def test_follow_deletion_never_prunes_external_referent_parents(tmp_path, monkeypatch):
-    engine, path, referent = linked_file(tmp_path, monkeypatch, mode="follow", policy="push-only-delete")
+    engine, path, _referent = linked_file(tmp_path, monkeypatch, mode="follow", policy="push-only-delete")
     outside = tmp_path / "external/nested/file"
     put(outside.parent, outside.name)
     path.unlink()
@@ -161,7 +161,7 @@ def test_follow_retarget_to_unsafe_shape_fails_without_mutation(tmp_path, monkey
 
 
 def test_repository_leaf_link_is_typed_observation_failure(tmp_path, monkeypatch):
-    engine, path, referent = linked_file(tmp_path, monkeypatch)
+    engine, _path, referent = linked_file(tmp_path, monkeypatch)
     source = tmp_path / "repo/packages/app/unit"
     source.unlink()
     source.symlink_to(referent)

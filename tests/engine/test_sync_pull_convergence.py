@@ -1,6 +1,6 @@
 import pytest
 
-from dotman.sync_base_store import FilePresent, Missing, SyncBaseStoreError
+from dotman.sync_base_store import FilePresent, SyncBaseStoreError
 from dotman.sync_session import PrepareProposalReview, SetApproval
 from tests.engine.test_sync_convergence import command
 from tests.engine.test_sync_session import make_engine, open_session

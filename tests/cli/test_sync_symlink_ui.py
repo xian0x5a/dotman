@@ -17,7 +17,7 @@ def test_no_confirm_rejects_prompt_replacement(tmp_path, monkeypatch, capsys):
 
 
 def test_deck_authorization_is_explicit_and_separate_from_selection(tmp_path, monkeypatch):
-    engine, path, referent = linked_file(tmp_path, monkeypatch)
+    engine, path, _referent = linked_file(tmp_path, monkeypatch)
     with open_session(engine) as session:
         app = SyncDeckApp(CommandDeck(session, use_color=False))
         async def interact():

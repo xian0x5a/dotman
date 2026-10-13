@@ -8,7 +8,7 @@ from tests.helpers import resolved_child_metadata
 
 
 def directory_engine(tmp_path, monkeypatch, *, extra='', policy='both', inferred=False):
-    engine = make_engine(tmp_path, monkeypatch, [('tree', policy, None, None, '')])
+    make_engine(tmp_path, monkeypatch, [('tree', policy, None, None, '')])
     manifest = tmp_path / 'repo/packages/app/package.toml'
     text = manifest.read_text().replace('type = "file"', '' if inferred else 'type = "directory"')
     manifest.write_text(text + '\n' + extra)
@@ -188,7 +188,7 @@ def test_children_freeze_independent_selection_and_endpoints(tmp_path, monkeypat
         before = session.view.observations
         assert len(before) == 2
         assert all(not unit.base.acknowledged for unit in before)
-        a, b = session.view.rows
+        a, _b = session.view.rows
         assert a.observation.state == 'drifted' and not a.observation.diagnostics
         assert 'set-approval' in a.allowed_commands
         session.dispatch(SetApproval(session.view.session_id, session.view.revision, a.row_id, True))
