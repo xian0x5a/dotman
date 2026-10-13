@@ -778,7 +778,7 @@ def row_resolution(row) -> str:
     if "prepare-proposal-review" not in row.allowed_commands:
         # In-sync units appear only to surface their warnings.
         return "In sync" if row.observation.state == "directly-in-sync" else "Unsupported"
-    return resolution_label((row.proposal and row.proposal.intent) or row.intent or "use-live")
+    return resolution_label((row.proposal and row.proposal.intent) or row.intent)
 
 
 def resolution_choosable(row) -> bool:
