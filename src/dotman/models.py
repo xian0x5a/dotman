@@ -15,6 +15,13 @@ def _serialized_projection(value: str) -> str | dict[str, str]:
     return value
 
 
+def projection_display_text(value: str) -> str:
+    """Render a stored projection the way the manifest spells it, e.g. ``{ run = "render" }``."""
+    serialized = _serialized_projection(value)
+    # Only builtin names are forced, so the command never needs TOML escaping.
+    return serialized if isinstance(serialized, str) else f'{{ run = "{serialized["run"]}" }}'
+
+
 def package_ref_text(*, package_id: str, bound_profile: str | None = None) -> str:
     if bound_profile is None:
         return package_id
