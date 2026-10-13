@@ -689,11 +689,29 @@ def array_of_tables_with_comment_owners(array_of_tables: AoT) -> tuple[AoT, list
     return AoT(elements, name=array_of_tables.name, parsed=True), run
 
 
-def inline_table_without_key(inline_table: InlineTable, removed_key_name: str) -> InlineTable:
+def inline_value(value: Any) -> Any:
+    """Copy a value for an inline table.
+
+    A dotted key inside an inline table (`{a.b = 1}`) parses to a table, and
+    tomlkit refuses to put a table into an inline table, so such tables are
+    rebuilt as nested inline tables (`{a = {b = 1}}`).
+    """
+    if not is_table_like(value):
+        return copy.deepcopy(value)
     rebuilt = tomlkit.inline_table()
-    for key_name, value in inline_table.items():
-        if key_name != removed_key_name:
-            rebuilt[key_name] = copy.deepcopy(value)
+    for key_name in child_key_names(value):
+        rebuilt[key_name] = inline_value(body_item(value, key_name))
+    return rebuilt
+
+
+def inline_table_without_path(table: TomlContainer, removed_path: tuple[str, ...]) -> InlineTable:
+    removed_name, *removed_rest = removed_path
+    rebuilt = tomlkit.inline_table()
+    for key_name in child_key_names(table):
+        if key_name != removed_name:
+            rebuilt[key_name] = inline_value(body_item(table, key_name))
+        elif removed_rest:
+            rebuilt[key_name] = inline_table_without_path(body_item(table, key_name), tuple(removed_rest))
     return rebuilt
 
 
@@ -712,14 +730,23 @@ def delete_key_path(root: TomlContainer, key_path: tuple[str, ...]) -> None:
     container = get_container(root, table_path)
     if container is None:
         return
-    if isinstance(container, InlineTable):
-        if key_name not in container:
+    inline_depth = next(
+        (depth for depth in range(1, len(table_path) + 1)
+         if isinstance(get_container(root, table_path[:depth]), InlineTable)),
+        None,
+    )
+    if inline_depth is not None:
+        if body_item(container, key_name) is None:
             return
         # tomlkit leaves a dangling separator when deleting a middle key from an
-        # inline table (`{b = 1, , e = 3}`), so replace it with a rebuilt copy.
-        parent_path, inline_table_name = split_key_path(table_path)
+        # inline table (`{b = 1, , e = 3}`), so replace the outermost inline
+        # table, whose holder is a regular table, with a rebuilt copy.
+        inline_path = table_path[:inline_depth]
+        parent_path, inline_table_name = split_key_path(inline_path)
         [holder] = parts_holding(get_container(root, parent_path), inline_table_name)
-        holder[inline_table_name] = inline_table_without_key(container, key_name)
+        holder[inline_table_name] = inline_table_without_path(
+            get_container(root, inline_path), key_path[inline_depth:]
+        )
         return
     for holder in parts_holding(container, key_name):
         del holder[key_name]
@@ -815,9 +842,9 @@ def ensure_container(
         source_current = body_item(source_current, part)
         next_value = current.get(part)
         if not is_table_like(next_value):
-            current[part] = (
-                tomlkit.inline_table() if isinstance(source_current, InlineTable) else tomlkit.table()
-            )
+            # Everything under an inline table is inline, even a dotted key's table.
+            inline = isinstance(current, InlineTable) or isinstance(source_current, InlineTable)
+            current[part] = tomlkit.inline_table() if inline else tomlkit.table()
             next_value = current[part]
         current = next_value
     return current
@@ -919,8 +946,12 @@ def copy_retained_paths(
 
         parent_path, item_name = split_key_path(item_path)
         source_key = keys_by_name(get_container(source_doc, parent_path))[item_name]
-        retained_value = copy.deepcopy(as_single_table(retained_item))
         target_container = ensure_container(target_doc, parent_path, source_doc)
+        retained_value = (
+            inline_value(retained_item)
+            if isinstance(target_container, InlineTable)
+            else copy.deepcopy(as_single_table(retained_item))
+        )
         target_container[copied_item_key(source_key, retained_value)] = retained_value
         copied_paths.add(item_path)
 
@@ -1072,6 +1103,7 @@ def merge_containers(
     overlay: TomlContainer,
     selected_paths: set[tuple[str, ...]],
     container_path: tuple[str, ...] = (),
+    inside_inline: bool = False,
 ) -> TomlContainer:
     """Merge overlay onto the kept base; every item brings its own comments.
 
@@ -1079,7 +1111,8 @@ def merge_containers(
     values before sections. A table in both base and overlay takes its header
     from the overlay and merges its body, unless selected_paths selects it whole.
     """
-    merged_is_inline = isinstance(overlay, InlineTable)
+    # A dotted key inside an inline table parses to a table but must stay inline.
+    merged_is_inline = inside_inline or isinstance(overlay, InlineTable)
     # Tables are filled under blank trivia and take the overlay's trivia only
     # afterwards: tomlkit indents new children by any spaces in their table's
     # indent, which holds the table's attached comments.
@@ -1112,7 +1145,8 @@ def merge_containers(
                 tomlkit.table() if entry.preserved_value is None else entry.preserved_value
             )
             return merge_containers(
-                base_value, preserved_value, entry.overlay_value, selected_paths, item_path
+                base_value, preserved_value, entry.overlay_value, selected_paths, item_path,
+                merged_is_inline,
             )
         if entry.overlay_value is not None:
             return adapt_merged_value(entry.overlay_value, overlay, merged_is_inline)
@@ -1169,7 +1203,8 @@ def merge_containers(
     append_trivia(merged, overlay_trivia.tail or preserved_trivia.tail)
 
     if isinstance(merged, InlineTable):
-        return InlineTable(merged.value, copy.deepcopy(overlay.trivia), new=True)
+        trivia = copy.deepcopy(overlay.trivia) if isinstance(overlay, InlineTable) else Trivia()
+        return InlineTable(merged.value, trivia, new=True)
     if type(merged) is Container:
         return Table(
             merged,
