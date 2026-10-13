@@ -1225,6 +1225,11 @@ class ProposalSession:
         operation = self._editor_operation
         status, diagnostics = "saved", ()
         updated = row
+        # From launching the Editor until a save commits, a failure saved nothing:
+        # like cancellation it leaves the Proposal and Approval intact, so the next
+        # attempt reopens the same outcome. Initial materialization failures and
+        # failed saved edits still mark the row.
+        unsaved_attempt = False
         prior_view = self.view
         prior_captures, prior_renders = dict(self._captures), dict(self._renders)
         prior_generations = dict(self._proposal_generations)
@@ -1239,6 +1244,7 @@ class ProposalSession:
                 if row.observation.identity in self._editor_input_errors:
                     raise ValueError(self._editor_input_errors[row.observation.identity])
                 initial = self._editor_initial(row)
+                unsaved_attempt = True
                 output = edit_sources(
                     observation=row.observation, initial=initial,
                     metadata=metadata, repo_root=item.repo.root,
@@ -1256,6 +1262,7 @@ class ProposalSession:
                     # choice would only duplicate the current Resolution.
                     status = "unchanged"
                 else:
+                    unsaved_attempt = False
                     previous = row.proposal
                     generation = self._next_generation(row.row_id)
                     # Commit saved sources before projection: a failed Render must
@@ -1311,7 +1318,7 @@ class ProposalSession:
             diagnostics = (Diagnostic("editor-materialization-failed", str(exc)),)
         finally:
             self._editor_operation = CommandOperation()
-        if status not in ("saved", "unchanged", "cancelled"):
+        if status not in ("saved", "unchanged", "cancelled") and not unsaved_attempt:
             updated = replace(row, approved=False, proposal=None, diagnostics=diagnostics,
                               additional_changes=self._row_additional(row))
         self._view = replace(self.view, revision=self.view.revision + 1, rows=tuple(
