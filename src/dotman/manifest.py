@@ -301,7 +301,7 @@ def normalize_compare_side(value: Any, *, side: str, field_name: str, default: s
     if value == other_view:
         raise ValueError(
             f'{context} compare.{side} = "{other_view}" is a compare.{other_side} view; '
-            f'set compare.{other_side} = "{other_view}" instead, or use {{ run = "{other_view}" }} for a command named {other_view}'
+            f'use compare = {{ {side} = "raw", {other_side} = "{other_view}" }}, or {{ run = "{other_view}" }} for a command named {other_view}'
         )
     return normalize_projection(value, field_name=field_name, default=default,
                                 builtins=("raw", COMPARE_SIDE_VIEWS[side], other_view))
