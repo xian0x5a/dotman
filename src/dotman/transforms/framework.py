@@ -246,8 +246,9 @@ class TransformRequest:
 def read_reference_bytes(path: Path | None, *, stdin_bytes: bytes | None = None) -> bytes | None:
     """Read an advisory file used only for formatting hints and compare reuse.
 
-    Unlike engine inputs, an unreadable reference must not abort the
-    transform; it just provides no hint.
+    Unlike engine inputs, a missing reference must not abort the transform:
+    the live file a Render compares against may not exist yet. It just
+    provides no hint.
     """
     if path is None:
         return None

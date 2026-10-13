@@ -514,7 +514,7 @@ Elevation modes:
 | --- | --- | --- |
 | `none` | No dotman-managed elevation. | Normal commands. |
 | `root` | Dotman requests sudo and runs the whole command through non-interactive sudo. | Root-only actions such as `systemctl restart ...`. Do not use for AUR helpers such as `yay`. |
-| `intercept` | The command runs as the user with a temporary `sudo` shim first in `PATH`. When the command calls `sudo`, the shim asks dotman for the sudo lease, then runs real `sudo -n`. Dotman asks for a password only when a `sudo` call happens. | Commands that call `sudo` themselves, such as install scripts and AUR helpers. |
+| `intercept` | The command runs as the user with a temporary `sudo` shim first in `PATH`. When the command calls `sudo` with a terminal, the shim asks dotman for the sudo lease, then runs real `sudo -n`; headless runs differ (below). Dotman asks for a password only when a `sudo` call happens. | Commands that call `sudo` themselves, such as install scripts and AUR helpers. |
 
 - `intercept` only sees `sudo` resolved through `PATH`. Call `sudo` by name, not `/usr/bin/sudo`.
 - With a terminal, the shim passes `-n`, so scripts that pipe a password into `sudo -S` do not work under `intercept`.
