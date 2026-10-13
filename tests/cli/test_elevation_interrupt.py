@@ -24,6 +24,7 @@ from tests.engine.test_sync_session import make_engine
 pytestmark = pytest.mark.skipif(sys.platform == "darwin", reason="Linux PTY lifecycle semantics")
 
 WAIT_SECONDS = 8
+JOB_CONTROL_SHELL = Path(__file__).with_name("job_control_shell.py")
 
 
 def _controlling_terminal(slave: int) -> None:
@@ -32,6 +33,52 @@ def _controlling_terminal(slave: int) -> None:
     os.setsid()
     fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
     assert os.tcgetpgrp(slave) == os.getpgrp()
+
+
+class _ForegroundJob:
+    """dotman as the foreground job of a stand-in interactive shell on a PTY.
+
+    If dotman led the session itself, its exit would SIGHUP the foreground
+    group, and leftover children would vanish even when dotman leaks them.
+    """
+
+    def __init__(self, arguments: list[str], slave: int, status_dir: Path) -> None:
+        status_dir.mkdir()
+        self._status_dir = status_dir
+        self.returncode: int | None = None
+        self.shell = subprocess.Popen(
+            [sys.executable, str(JOB_CONTROL_SHELL), str(status_dir), *arguments],
+            stdin=slave, stdout=slave, stderr=slave,
+            preexec_fn=lambda: _controlling_terminal(slave),
+            env={**os.environ, "TERM": "xterm-256color"},
+        )
+
+    @property
+    def pid(self) -> int:
+        return int((self._status_dir / "job-pid").read_text())
+
+    def poll(self) -> int | None:
+        if self.returncode is None:
+            returncode = self._status_dir / "job-returncode"
+            if returncode.exists():
+                self.returncode = int(returncode.read_text())
+            else:
+                assert self.shell.poll() is None, "job-control shell exited before its job"
+        return self.returncode
+
+    def send_signal(self, sig: int) -> None:
+        os.kill(self.pid, sig)
+
+    def kill(self) -> None:
+        groups = [self.shell.pid]
+        if (self._status_dir / "job-pid").exists():
+            groups.append(self.pid)
+        for group in groups:
+            try:
+                os.killpg(group, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        self.shell.wait(timeout=WAIT_SECONDS)
 
 
 def _read_available(master: int, output: bytearray) -> None:
@@ -43,12 +90,22 @@ def _read_available(master: int, output: bytearray) -> None:
                 raise
 
 
-def _wait_for(predicate, process: subprocess.Popen, master: int, output: bytearray) -> None:
+def _wait_until(predicate, master: int, output: bytearray) -> None:
     deadline = time.monotonic() + WAIT_SECONDS
     while not predicate():
         _read_available(master, output)
         assert time.monotonic() < deadline, output[-3000:].decode(errors="replace")
-        assert process.poll() is None or predicate(), output[-3000:].decode(errors="replace")
+
+
+def _wait_for(predicate, process: _ForegroundJob, master: int, output: bytearray) -> None:
+    """Wait for dotman to make the predicate hold; fail fast if it exits first."""
+    def satisfied() -> bool:
+        exited = process.poll() is not None
+        holds = predicate()
+        assert holds or not exited, output[-3000:].decode(errors="replace")
+        return holds
+
+    _wait_until(satisfied, master, output)
 
 
 def _stopped(pid: int) -> bool:
@@ -63,6 +120,9 @@ def _stopped(pid: int) -> bool:
         return True
 
 
+# The helper scripts below die from SIGINT with its default action. A Python
+# handler such as sys.exit could fire during interpreter shutdown and print
+# "Exception ignored ... Traceback" onto the PTY under test.
 def _fake_sudo(
     bin_dir: Path, ready: Path, *, release: Path | None = None, child_success: Path | None = None,
 ) -> None:
@@ -80,7 +140,7 @@ def _fake_sudo(
         "    sys.exit(0)\n"
         "assert sys.argv[1:] == ['-v'], sys.argv\n"
         "assert os.isatty(0) and os.tcgetpgrp(0) == os.getpgrp()\n"
-        "signal.signal(signal.SIGINT, lambda *_: sys.exit(130))\n"
+        "signal.signal(signal.SIGINT, signal.SIG_DFL)\n"
         "original = termios.tcgetattr(0)\n"
         "prompt = original.copy()\n"
         "prompt[3] &= ~termios.ECHO\n"
@@ -101,7 +161,7 @@ def _provider(
     executable.write_text(
         f"#!{sys.executable}\n"
         "import os, pathlib, signal, subprocess, sys\n"
-        "signal.signal(signal.SIGINT, lambda *_: sys.exit(130))\n"
+        "signal.signal(signal.SIGINT, signal.SIG_DFL)\n"
         f"pathlib.Path({str(provider_pid)!r}).write_text(str(os.getpid()))\n"
         f"child = subprocess.Popen({child_command!r})\n"
         f"pathlib.Path({str(client_pid)!r}).write_text(str(child.pid))\n"
@@ -121,14 +181,10 @@ def _isolated_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, bin_d
 
 
 def _kill_owned(
-    process: subprocess.Popen | None, paths: tuple[Path, ...], previous_pids: tuple[int, ...] = (),
+    process: _ForegroundJob | None, paths: tuple[Path, ...], previous_pids: tuple[int, ...] = (),
 ) -> None:
     if process is not None:
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        process.wait(timeout=WAIT_SECONDS)
+        process.kill()
     owned = list(previous_pids)
     for path in paths:
         if path.exists():
@@ -171,14 +227,12 @@ def test_cli_broker_password_prompt_result_and_terminal_lifecycle(
     before = (source.read_bytes(), live.read_bytes())
     master, slave = pty.openpty()
     terminal_before = termios.tcgetattr(slave)
-    process: subprocess.Popen | None = None
+    process: _ForegroundJob | None = None
     output = bytearray()
     try:
-        process = subprocess.Popen(
+        process = _ForegroundJob(
             [sys.executable, "-m", "dotman.cli", "--config", str(engine.config.config_path), "push", "--run-noop"],
-            stdin=slave, stdout=slave, stderr=slave,
-            preexec_fn=lambda: _controlling_terminal(slave),
-            env={**os.environ, "TERM": "xterm-256color"},
+            slave, tmp_path / "job",
         )
         # Keep the initially selected hook-only workset and confirm execution.
         _wait_for(lambda: b"Hook Work" in output, process, master, output)
@@ -211,7 +265,8 @@ def test_cli_broker_password_prompt_result_and_terminal_lifecycle(
         assert (source.read_bytes(), live.read_bytes()) == before
         assert post_push.exists() == (action == "success"), output.decode(errors="replace")
         assert child_success.exists() == (action == "success")
-        _wait_for(lambda: all(_stopped(pid) for pid in (prompt, client, provider_process)), process, master, output)
+        # dotman has exited; its interrupted children may still be finishing.
+        _wait_until(lambda: all(_stopped(pid) for pid in (prompt, client, provider_process)), master, output)
         assert termios.tcgetattr(slave) == terminal_before, output.decode(errors="replace")
         assert b"Traceback" not in output, output.decode(errors="replace")
     finally:
@@ -244,15 +299,13 @@ def test_broker_password_prompt_in_tty_editor_cancels_only_editor_attempt(
     before = (source.read_bytes(), live.read_bytes())
     master, slave = pty.openpty()
     terminal_before = termios.tcgetattr(slave)
-    process: subprocess.Popen | None = None
+    process: _ForegroundJob | None = None
     previous_pids: tuple[int, ...] = ()
     output = bytearray()
     try:
-        process = subprocess.Popen(
+        process = _ForegroundJob(
             [sys.executable, "-m", "dotman.cli", "--config", str(engine.config.config_path), "sync"],
-            stdin=slave, stdout=slave, stderr=slave,
-            preexec_fn=lambda: _controlling_terminal(slave),
-            env={**os.environ, "TERM": "xterm-256color"},
+            slave, tmp_path / "job",
         )
         _wait_for(lambda: b"Use repository" in output, process, master, output)
         os.write(master, b" ")
