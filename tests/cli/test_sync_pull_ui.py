@@ -1,3 +1,4 @@
+import os
 from dataclasses import replace
 from types import SimpleNamespace
 
@@ -137,6 +138,29 @@ def test_no_write_review_explains_drift_separately_from_repository_effect(tmp_pa
         assert deck.notice.startswith('Nothing to do')
         assert deck.review_text() == text
         assert marker.read_text().splitlines() == ['capture']
+
+
+@pytest.mark.parametrize('comparison,repo_fact,live_fact', [
+    ('{ repo = "raw", live = { run = "render" } }', 'raw', '{ run = "render" }'),
+    ('{ repo = { run = "render" }, live = "raw" }', '{ run = "render" }', 'raw'),
+])
+def test_drift_shows_forced_compare_view_as_written(tmp_path, monkeypatch, comparison, repo_fact, live_fact):
+    # A `{ run = "<builtin>" }` view is stored with an internal marker; Drift must show the manifest form.
+    # The forced view runs a literal `render` command, so put one on PATH.
+    bin_directory = tmp_path / 'bin'
+    bin_directory.mkdir()
+    (bin_directory / 'render').write_text('#!/bin/sh\ncat\n')
+    (bin_directory / 'render').chmod(0o755)
+    monkeypatch.setenv('PATH', f'{bin_directory}{os.pathsep}{os.environ["PATH"]}')
+    engine = make_engine(tmp_path, monkeypatch, [
+        ('unit', 'pull-only', b'repo', b'live-drift', f'capture = "printf repo"\ncompare = {comparison}'),
+    ])
+    with engine.open_sync_session(engine.resolve_sync_scope([]), preview=True) as session:
+        text = CommandDeck(session, use_color=False).review_text()
+    evidence = text.split(':: Drift', 1)[1]
+    assert f'Repository comparison: {repo_fact}' in evidence
+    assert f'Live comparison: {live_fact}' in evidence
+    assert '__dotman_command__' not in text
 
 
 def test_merge_review_reports_capture_reconciliation_and_both_outcomes(tmp_path, monkeypatch):
