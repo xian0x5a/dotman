@@ -332,10 +332,6 @@ class CommandDeck:
         row_ids = [row.row_id for row in self.visible_rows]
         self.focus = row_ids.index(focused.row_id) if focused and focused.row_id in row_ids else 0
 
-    def move(self, offset: int) -> None:
-        if not self.confirming and not self.reviewing:
-            self.focus = max(0, min(self.focus + offset, len(self.visible_rows) - 1))
-
     def back(self) -> bool:
         """Return False when already at the workset, where Escape has nothing to leave."""
         if self.confirming:
@@ -367,13 +363,6 @@ class CommandDeck:
             self.notice = "Selected Proposals must be ready before confirmation."
             return
         self.confirming = True
-
-    def click(self, index: int, *, selection: bool) -> None:
-        if self.reviewing or self.confirming:
-            return
-        self.focus = index
-        if selection:
-            self.select()
 
     def select(self, selected: bool | None = None) -> None:
         row = self.focused_row
