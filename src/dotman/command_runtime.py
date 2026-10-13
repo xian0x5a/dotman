@@ -70,7 +70,6 @@ class CommandRequest:
     stdout_sink: TextIO | None = field(default=None, compare=False, repr=False)
     stderr_sink: TextIO | None = field(default=None, compare=False, repr=False)
     elevation: ElevationMode = "none"
-    elevation_reason: str | None = None
     isolate_process_group: bool = True
 
     def __post_init__(self) -> None:
@@ -127,7 +126,6 @@ class CommandElevation(Protocol):
         command: Command,
         env: Mapping[str, str],
         mode: ElevationMode,
-        reason: str | None,
     ) -> tuple[Command, dict[str, str]]: ...
 
 
@@ -138,7 +136,6 @@ class SystemCommandElevation:
         command: Command,
         env: Mapping[str, str],
         mode: ElevationMode,
-        reason: str | None,
     ) -> tuple[Command, dict[str, str]]:
         prepared_env = dict(env)
         if mode == "none":
@@ -150,7 +147,7 @@ class SystemCommandElevation:
 
         if mode == "root":
             if os.geteuid() != 0:
-                request_sudo(reason or "run privileged command")
+                request_sudo("run privileged command")
                 if isinstance(command, ShellCommand):
                     command = ShellCommand(sudo_prefix_command(command.source))
                 else:
@@ -159,7 +156,7 @@ class SystemCommandElevation:
         if mode == "intercept":
             from dotman.elevation import current_elevation_broker
 
-            broker_env = current_elevation_broker().env(reason=reason or "run privileged command")
+            broker_env = current_elevation_broker().env(reason="run privileged command")
             if "PATH" in prepared_env:
                 # Command-specific PATH remains authoritative after the injected shim.
                 shim_dir = broker_env["PATH"].split(os.pathsep, 1)[0]
@@ -232,7 +229,6 @@ class ProductionCommandRuntime(_CancellationLatch):
                     request.command,
                     request.env,
                     request.elevation,
-                    request.elevation_reason,
                 )
                 environment = {
                     **{

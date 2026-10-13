@@ -159,7 +159,7 @@ def test_production_runtime_delegates_elevation_preparation() -> None:
         def __init__(self) -> None:
             self.modes: list[str] = []
 
-        def prepare(self, command, env, mode, reason):
+        def prepare(self, command, env, mode):
             self.modes.append(mode)
             return command, {**env, "ELEVATED": "yes"}
 
@@ -187,10 +187,9 @@ def test_system_elevation_root_requests_sudo_and_wraps_shell(monkeypatch: pytest
         ShellCommand("systemctl restart service"),
         {"X": "1"},
         "root",
-        "restart protected service",
     )
 
-    assert reasons == ["restart protected service"]
+    assert reasons == ["run privileged command"]
     assert command == ShellCommand("ROOT(systemctl restart service)")
     assert env == {"X": "1"}
 
@@ -198,7 +197,7 @@ def test_system_elevation_root_requests_sudo_and_wraps_shell(monkeypatch: pytest
 def test_system_elevation_intercept_preserves_command_path_after_shim(monkeypatch: pytest.MonkeyPatch) -> None:
     class Broker:
         def env(self, *, reason):
-            assert reason == "install dependencies"
+            assert reason == "run privileged command"
             return {"DOTMAN_ELEVATION_BROKER": "/runtime/broker", "PATH": "/shim:/usr/bin"}
 
     monkeypatch.setattr("dotman.elevation.current_elevation_broker", lambda: Broker())
@@ -207,7 +206,6 @@ def test_system_elevation_intercept_preserves_command_path_after_shim(monkeypatc
         ShellCommand("installer"),
         {"PATH": "/custom/bin", "X": "1"},
         "intercept",
-        "install dependencies",
     )
 
     assert env == {
@@ -342,7 +340,7 @@ def test_cancellation_stops_descendants_after_group_leader_exits(tmp_path: Path)
 @pytest.mark.parametrize("io_mode", ["pipe", "tty"])
 def test_cancel_during_elevation_prevents_spawn(monkeypatch, io_mode) -> None:
     class CancellingElevation:
-        def prepare(self, command, env, mode, reason):
+        def prepare(self, command, env, mode):
             runtime.request_cancel()
             return command, dict(env)
     runtime = ProductionCommandRuntime(elevation=CancellingElevation())
