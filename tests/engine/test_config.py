@@ -12,6 +12,7 @@ from tests.helpers import (
     REFERENCE_REPO,
     write_single_repo_config,
     write_single_repo_config_with_state_key,
+    write_tracked_packages_state,
 )
 
 
@@ -445,3 +446,56 @@ def test_repository_rejects_target_names_with_dots(tmp_path: Path) -> None:
         match=rf"package manifest {re.escape(str(package_manifest_path))}: invalid target name 'git\.config'",
     ):
         DotmanEngine.from_config_path(config_path)
+
+
+def write_tracked_fixture_repo(
+    tmp_path: Path,
+    *,
+    packages: dict[str, list[str]],
+    profile_lines: list[str] | None = None,
+) -> Path:
+    repo_root = tmp_path / "repo"
+    (repo_root / "profiles").mkdir(parents=True)
+    (repo_root / "profiles" / "default.toml").write_text("\n".join(profile_lines or []), encoding="utf-8")
+    for package_id, manifest_lines in packages.items():
+        package_root = repo_root / "packages" / package_id
+        package_root.mkdir(parents=True)
+        (package_root / "package.toml").write_text("\n".join([f'id = "{package_id}"', *manifest_lines, ""]), encoding="utf-8")
+    write_tracked_packages_state(
+        tmp_path / "state",
+        repo_name="fixture",
+        entries=[(package_id, "default") for package_id in packages],
+    )
+    return write_single_repo_config(tmp_path, repo_name="fixture", repo_path=repo_root)
+
+
+def test_repository_rejects_package_extends_cycle(tmp_path: Path) -> None:
+    config_path = write_tracked_fixture_repo(
+        tmp_path,
+        packages={"alpha": ['extends = ["beta"]'], "beta": ['extends = ["alpha"]']},
+    )
+
+    # Either load-time or resolution-time validation is acceptable; a
+    # RecursionError escaping from either stage is the reported bug.
+    with pytest.raises(ValueError, match=r"(?i)extends.*cycle|cycle.*extends") as exc_info:
+        engine = DotmanEngine.from_config_path(config_path)
+        engine.resolve_sync_scope(["fixture:alpha"])
+
+    assert "alpha" in str(exc_info.value)
+    assert "beta" in str(exc_info.value)
+
+
+def test_repository_rejects_profile_include_of_missing_profile(tmp_path: Path) -> None:
+    config_path = write_tracked_fixture_repo(
+        tmp_path,
+        packages={"app": []},
+        profile_lines=['includes = ["absent-profile"]'],
+    )
+
+    # Either load-time or resolution-time validation is acceptable; a
+    # KeyError escaping from either stage is the reported bug.
+    with pytest.raises(ValueError, match="absent-profile") as exc_info:
+        engine = DotmanEngine.from_config_path(config_path)
+        engine.resolve_sync_scope(["fixture:app"])
+
+    assert "profile" in str(exc_info.value)
