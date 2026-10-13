@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import difflib
-import json
 import os
 import shlex
 import stat
 import tempfile
 from dataclasses import dataclass, replace
 from pathlib import Path
+
+import tomlkit
 
 from dotman.atomic_files import write_text_atomic
 from dotman.command_runtime import ArgvCommand, CommandRequest, current_command_runtime
@@ -274,18 +275,14 @@ def next_available_target_name(base_name: str, existing_names: set[str]) -> str:
 
 
 def render_target_block(*, target_name: str, source_path: str, config_path: str, chmod: str | None) -> str:
-    lines = [
-        f"[targets.{target_name}]",
-        f"source = {json.dumps(source_path)}",
-        f"path = {json.dumps(config_path)}",
-    ]
+    target = {"source": source_path, "path": config_path}
     if chmod is not None:
-        lines.append(f"chmod = {json.dumps(chmod)}")
-    return "\n".join(lines) + "\n"
+        target["chmod"] = chmod
+    return tomlkit.dumps({"targets": {target_name: target}})
 
 
 def render_new_manifest(*, package_id: str, target_block: str) -> str:
-    return f'id = {json.dumps(package_id)}\n\n{target_block}'
+    return f"{tomlkit.dumps({'id': package_id})}\n{target_block}"
 
 
 def append_target_block(*, before_text: str, target_block: str) -> str:

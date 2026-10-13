@@ -5,6 +5,8 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Mapping, TYPE_CHECKING
 
+import tomlkit
+
 from dotman.atomic_files import write_text_atomic
 from dotman.toml_utils import load_toml_file
 from dotman.models import (
@@ -702,7 +704,6 @@ def write_tracked_package_entries(
 def write_tracked_package_entries_file(state_dir: Path, bindings: list[FullSpecSelector]) -> None:
     state_dir.mkdir(parents=True, exist_ok=True)
     state_path = tracked_packages_file_path(state_dir)
-    lines = [f"schema_version = {TRACKED_PACKAGES_SCHEMA_VERSION}", ""]
     tracked_packages = sorted(
         [
             TrackedPackageEntry(repo=binding.repo, package_id=binding.selector, profile=binding.profile)
@@ -710,17 +711,14 @@ def write_tracked_package_entries_file(state_dir: Path, bindings: list[FullSpecS
         ],
         key=lambda entry: (entry.repo, entry.package_id, entry.profile),
     )
-    for entry in tracked_packages:
-        lines.extend(
-            [
-                "[[packages]]",
-                f'repo = "{entry.repo}"',
-                f'package_id = "{entry.package_id}"',
-                f'profile = "{entry.profile}"',
-                "",
-            ]
-        )
-    write_text_atomic(state_path, "\n".join(lines))
+    state: dict[str, object] = {"schema_version": TRACKED_PACKAGES_SCHEMA_VERSION}
+    # tomlkit renders an empty list as `packages = []`; omit it so an empty state stays bare.
+    if tracked_packages:
+        state["packages"] = [
+            {"repo": entry.repo, "package_id": entry.package_id, "profile": entry.profile}
+            for entry in tracked_packages
+        ]
+    write_text_atomic(state_path, tomlkit.dumps(state))
 
 
 

@@ -875,3 +875,28 @@ def test_track_cli_skips_same_profile_package_override_prompt(
     assert "implicit: fixture:beta@basic (beta)" not in output
     assert "~/.config/shared.conf" not in output
     assert "~/.config/extra.conf" not in output
+
+
+@pytest.mark.parametrize("profile", ['work"laptop', "lab\\tab"])
+def test_track_cli_round_trips_profile_names_with_toml_special_characters(
+    tmp_path: Path,
+    capsys,
+    profile: str,
+) -> None:
+    repo_root = tmp_path / "repo"
+    (repo_root / "profiles").mkdir(parents=True)
+    (repo_root / "profiles" / f"{profile}.toml").write_text("", encoding="utf-8")
+    (repo_root / "packages" / "app").mkdir(parents=True)
+    (repo_root / "packages" / "app" / "package.toml").write_text('id = "app"\n', encoding="utf-8")
+    config_path = write_named_manager_config(tmp_path, {"main": repo_root})
+
+    assert main(["--config", str(config_path), "--no-confirm", "track", f"main:app@{profile}"]) == 0
+    capsys.readouterr()
+
+    exit_code = main(["--config", str(config_path), "--json", "list", "tracked"])
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert [
+        entry["profile"] for package in payload["packages"] for entry in package["package_entries"]
+    ] == [profile]
