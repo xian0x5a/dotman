@@ -519,6 +519,7 @@ Elevation modes:
 - `intercept` only sees `sudo` resolved through `PATH`. Call `sudo` by name, not `/usr/bin/sudo`.
 - The shim always passes `-n`, so scripts that pipe a password into `sudo -S` do not work under `intercept`.
 - To authenticate early, for example before a long build, call `sudo -v`; it goes through the shim like any other `sudo` call.
+- Without a terminal (cron, agent harnesses), dotman's sudo login cannot reach the command's `sudo` calls, so the shim lets each call authenticate itself through `SUDO_ASKPASS` (or a NOPASSWD rule). Expect one askpass prompt per `sudo` call. Without askpass, the call fails with sudo's own `a terminal is required to read the password` error.
 
 Example conditional package installer:
 

@@ -17,7 +17,7 @@ This file is an index. Read only the entries your task needs.
 
 ## Operating rules
 
-- Global options go before the command: `dotman --no-confirm --json <command> ...`. Use `--no-confirm` to avoid prompts and `--json` when you parse output. Elevation can still ask for a sudo password, on the terminal, or through a configured `SUDO_ASKPASS` helper when there is no terminal.
+- Global options go before the command: `dotman --no-confirm --json <command> ...`. Use `--no-confirm` to avoid prompts and `--json` when you parse output. Elevation can still ask for a sudo password, on the terminal, or through a configured `SUDO_ASKPASS` helper when there is no terminal. Without a terminal, each `sudo` call inside an `intercept` hook asks through askpass on its own.
 - Run freely: `list`, `info`, `doctor`, `search`, `transform` and `rewrite` to stdout, `render jinja`, and any command with `--dry-run`.
 - Every other command (`push`, `pull`, `sync`, `restore`, `track`, `untrack`, `add`, `capture`, `reset`, ...) writes to the user's machine, repo or dotman state. Run one when the task needs its effect, after a `--dry-run` preview where the command has one. `reset sync-base` has no confirmation and no dry-run.
 - To apply a change, prefer `sync`: it merges both sides against the Sync Base, while `push` and `pull` overwrite the other side. No-confirm Sync leaves both-policy drift without a Base unselected, prints `[skipped] <identity> (no Base)` and still exits 0; resolve that with `push` or `pull` only once you know which side holds the wanted content.
