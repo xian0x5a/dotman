@@ -1,7 +1,7 @@
 import pytest
 
 from dotman.sync_base_store import FilePresent, SyncBaseStoreError
-from dotman.sync_session import PrepareProposalReview, SetApproval
+from dotman.sync_session import ApprovalChanged, PrepareProposalReview, SetApproval
 from tests.engine.test_sync_convergence import command
 from tests.engine.test_sync_session import make_engine, open_session
 
@@ -70,6 +70,19 @@ def test_lossy_pull_no_write_is_a_noop_without_acknowledgment(tmp_path, monkeypa
     with open_session(engine) as later:
         record = later.view.observations[0].base.record
         assert record is None
+
+
+def test_approving_a_noop_proposal_reports_the_row_stays_unapproved(tmp_path, monkeypatch):
+    # Capture reproduces the repository while compare sees drift: a No-op Proposal offers no Approval.
+    engine = make_engine(tmp_path, monkeypatch, [
+        ('unit', 'pull-only', b'repo', b'live',
+         'capture = "printf repo"\ncompare = { repo = "raw", live = "raw" }'),
+    ])
+    with open_session(engine, preview=False) as session:
+        accepted = command(session, SetApproval, 'main:app.unit', True)
+        [row] = accepted.view.rows
+        assert row.proposal.noop and not row.approved
+        assert accepted.result == ApprovalChanged('main:app.unit', False)
 
 
 @pytest.mark.parametrize('source,live', [(b'repo', None), (None, b''), (b'repo', b'live')])
