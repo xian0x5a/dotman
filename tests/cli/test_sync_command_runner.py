@@ -12,8 +12,8 @@ from tests.engine.test_sync_session import make_engine
 
 def test_restore_command_runner_declares_only_restore() -> None:
     runner = RestoreCommandRunner(
-        engine_factory=lambda _config_path: pytest.fail(
-            "declaring commands must not construct an engine"
+        config_loader=lambda _config_path: pytest.fail(
+            "declaring commands must not load config"
         ),
         use_color=False,
     )

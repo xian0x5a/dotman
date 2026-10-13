@@ -4,36 +4,40 @@ from collections.abc import Callable
 from typing import Any
 
 from dotman import cli_emit, cli_interaction
-from dotman.engine import DotmanEngine
 from dotman.interaction_policy import InteractionRequiredError
+from dotman.models import ManagerConfig
 from dotman.operation_runner import run_restore_operation
 from dotman.snapshot import RestoreAction, SnapshotRecord, build_restore_actions
 from dotman.terminal import emit_interrupt_notice
 from dotman.ui_context import ui_config_scope
 
 
-EngineFactory = Callable[[str | None], DotmanEngine]
+ConfigLoader = Callable[[str | None], ManagerConfig]
 INTERRUPTED_EXIT_CODE = 130
 
 
 class RestoreCommandRunner:
-    """Review and run snapshot restore through typed operation boundaries."""
+    """Review and run snapshot restore through typed operation boundaries.
+
+    Restore reads only the manager config: it must work from snapshots alone,
+    without loading current repo manifests.
+    """
 
     command_names = frozenset({"restore"})
 
-    def __init__(self, *, engine_factory: EngineFactory, use_color: bool) -> None:
-        self._engine_factory = engine_factory
+    def __init__(self, *, config_loader: ConfigLoader, use_color: bool) -> None:
+        self._config_loader = config_loader
         self._use_color = use_color
 
     def run(self, args: Any) -> int:
-        engine = self._engine_factory(args.config)
-        full_paths = args.full_path if args.full_path is not None else engine.config.ui.full_paths
-        with ui_config_scope(engine.config.ui):
-            return self._run_restore(args=args, engine=engine, full_paths=full_paths)
+        config = self._config_loader(args.config)
+        full_paths = args.full_path if args.full_path is not None else config.ui.full_paths
+        with ui_config_scope(config.ui):
+            return self._run_restore(args=args, config=config, full_paths=full_paths)
 
-    def _run_restore(self, *, args: Any, engine: DotmanEngine, full_paths: bool) -> int:
+    def _run_restore(self, *, args: Any, config: ManagerConfig, full_paths: bool) -> int:
         snapshot = cli_interaction.resolve_snapshot_record(
-            engine.config.snapshots.path,
+            config.snapshots.path,
             args.snapshot,
             json_output=args.json_output,
         )

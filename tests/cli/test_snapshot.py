@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from dotman.cli import main
 from dotman.models import SnapshotConfig, TargetPlan
 from dotman.snapshot import create_push_snapshot, list_snapshots
@@ -638,3 +640,44 @@ def test_info_snapshot_cli_emits_json_with_recorded_paths(tmp_path: Path, monkey
     assert payload["snapshot"]["snapshot_id"] == snapshot_id
     assert payload["snapshot"]["entries"][0]["live_path"] == str(live_path)
     assert payload["snapshot"]["restore_count"] == 0
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        ["list", "snapshots"],
+        ["info", "snapshot", "{snapshot}"],
+        ["restore", "--dry-run", "{snapshot}"],
+    ],
+    ids=["list", "info", "restore-dry-run"],
+)
+def test_snapshot_commands_ignore_broken_repo_manifests(
+    tmp_path: Path, monkeypatch, capsys, command: list[str]
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+
+    repo_root = tmp_path / "repo"
+    _write_snapshot_execution_repo(repo_root)
+    config_path = _write_snapshot_config(tmp_path, repo_root)
+    _write_tracked_binding(tmp_path / "state")
+
+    live_path = home / ".config" / "app" / "config.txt"
+    live_path.parent.mkdir(parents=True, exist_ok=True)
+    live_path.write_text("before push\n", encoding="utf-8")
+    assert main(["--no-confirm", "--config", str(config_path), "push"]) == 0
+    snapshot_id = list_snapshots(tmp_path / "snapshots")[0].snapshot_id
+    live_path.write_text("mutated after push\n", encoding="utf-8")
+    # Snapshot commands must not depend on current repo state.
+    with (repo_root / "packages" / "app" / "package.toml").open("a", encoding="utf-8") as handle:
+        handle.write("broken = [\n")
+    capsys.readouterr()
+
+    args = [part.format(snapshot=snapshot_id) for part in command]
+    exit_code = main(["--no-confirm", "--config", str(config_path), *args])
+
+    captured = capsys.readouterr()
+    assert exit_code == 0, captured.err
+    assert snapshot_id in captured.out
+    assert live_path.read_text(encoding="utf-8") == "mutated after push\n"
