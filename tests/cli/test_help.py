@@ -76,7 +76,7 @@ def test_removed_snapshot_command_is_rejected_instead_of_aliased(capsys) -> None
 
 def test_removed_elevation_request_command_is_rejected(capsys) -> None:
     with pytest.raises(SystemExit) as exc_info:
-        main(["elevation", "request", "--reason", "install packages"])
+        main(["elevation", "request", "install packages"])
 
     assert exc_info.value.code == 2
     assert "invalid choice: 'elevation'" in capsys.readouterr().err

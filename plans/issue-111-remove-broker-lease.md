@@ -1,5 +1,5 @@
 ---
-status: open
+status: done
 ---
 
 # Remove broker and lease elevation modes (#111)
@@ -39,8 +39,13 @@ while it can fix `intercept`. Fewer modes also shrink the #108 fix.
 
 ## Progress
 - [x] Worktree `.worktrees/remove-broker-lease`, branch `refactor/remove-broker-lease`.
+- [x] Code removal, existing tests retargeted, docs, ADR 0006.
+- [x] Independent tests (removed values rejected, `dotman elevation` gone, intercept `sudo -v`).
+- [x] Independent review: nothing blocking; low findings addressed.
 
 ## Surprises & Discoveries
+- `skills/dotman/` never listed the modes, so it needed no change.
+- `tests/cli/test_elevation_interrupt.py[ctrl_c]` flaked once during independent testing (SIGINT hit the test's helper script); not related to this change.
 
 ## Decisions
 - Keep default `none`: intercept as default would let any hook in an opted-out repo
@@ -49,3 +54,6 @@ while it can fix `intercept`. Fewer modes also shrink the #108 fix.
   `sudo -v && ...` covers eager auth.
 
 ## Outcomes & Retrospective
+- Elevation is `none` / `root` / `intercept`; old values fail with `unsupported elevation '<mode>'; expected one of: ...`.
+- Decision recorded in `docs/adr/0006-intercept-is-the-only-user-scoped-elevation.md`; `docs/repository.md` documents `sudo -v` and the shim limits.
+- Next: #108 shim forwarding, now only for `intercept`.
