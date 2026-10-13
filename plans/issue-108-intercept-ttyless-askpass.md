@@ -1,5 +1,5 @@
 ---
-status: open
+status: done
 ---
 
 # Intercept sudo authenticates itself without a terminal (#108)
@@ -42,8 +42,13 @@ The terminal path stays exactly as it is.
 
 ## Progress
 - [x] Branch `fix/intercept-ttyless-askpass` in `.worktrees/intercept-ttyless-sudo`.
+- [x] Regression test written first by an independent agent; failed as expected, passes now.
+- [x] Shim change; real tty-less check with sudo 1.9.17p2 + askpass.
+- [x] Docs, skill, ADR 0007; independent review (nothing blocking).
 
 ## Surprises & Discoveries
+- sudo uses askpass without `-A` only when a display is available (`DISPLAY`; `WAYLAND_*` on 1.9.18+). Headless tty-less runs need NOPASSWD. dotman's own `sudo -v` has the same limit. Documented; follow-up issue filed.
+- One existing shim test depended on whether the test runner had a terminal; it now runs under its own PTY.
 
 ## Decisions
 - Rejected: shim forwards argv/cwd/env/stdio fds to the broker so dotman runs `sudo -n`
@@ -55,3 +60,5 @@ The terminal path stays exactly as it is.
 - Weighted scores: D 4.3, won't fix 4.2, forwarding only when tty-less 3.9, forwarding always 3.1.
 
 ## Outcomes & Retrospective
+- Tty-less `intercept` sudo works with askpass (one prompt per call) or NOPASSWD; terminal path unchanged.
+- Decision and the rejected forwarding design are recorded in `docs/adr/0007-ttyless-intercept-sudo-authenticates-itself.md`.

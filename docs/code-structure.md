@@ -196,8 +196,8 @@ Planning passes the engine's runtime explicitly while evaluating guards, probes,
 Each intercept command owns its elevation broker for the complete runtime
 call. The `sudo` shim asks the broker only when it has a controlling terminal;
 without one, sudo keys its ticket to the parent process, so the shim runs real
-`sudo` without `-n` and lets it authenticate itself (ADR 0007). The broker copies that command's runtime and cancellation context into its
-serving threads; a later Editor attempt never reuses a cancelled attempt's broker.
+`sudo` without `-n` and lets it authenticate itself (ADR 0007). The broker
+copies that command's runtime and cancellation context into its serving threads; a later Editor attempt never reuses a cancelled attempt's broker.
 Before returning terminal control, the runtime stops broker admission, unblocks
 pending request reads, and drains authentication handlers and their terminal
 restoration. Interrupted authentication is reported as interruption (130), not
