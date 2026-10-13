@@ -87,13 +87,14 @@ def test_post_commit_durability_failure_preserves_acknowledgment(tmp_path, monke
         assert store.read(unit().identity_bytes).payload == FilePresent(b'committed outcome')
 
 
-def test_checkpoint_read_failure_is_inspectable_without_guessing_a_winner():
+def test_checkpoint_read_failure_raises_instead_of_reporting_a_base_state():
     failure = SyncBaseStoreError("unavailable")
     class Unavailable:
         def read(self, identity):
             raise failure
-    result = SyncBaseLifecycle(Unavailable(), operation="sync").inspect(unit())
-    assert result.status == "unavailable" and result.failure is failure
+    with pytest.raises(SyncBaseStoreError) as raised:
+        SyncBaseLifecycle(Unavailable(), operation="sync").inspect(unit())
+    assert raised.value is failure
 
 
 def test_eligible_policy_change_keeps_base(tmp_path):

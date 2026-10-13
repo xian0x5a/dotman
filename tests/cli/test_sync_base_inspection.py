@@ -316,3 +316,22 @@ def test_doctor_counts_record_shape_identity_mismatch_without_git(
     assert corrupt.status == "warn"
     assert identity not in json.dumps([check.to_dict() for check in checks])
     assert database.read_bytes() == before
+
+
+@pytest.mark.parametrize("json_output", [True, False], ids=["json", "human"])
+def test_store_read_failure_after_open_is_cli_error(tmp_path, monkeypatch, capsys, json_output):
+    from dotman.sync_base_store import SyncBaseStoreError
+    engine = fixture_engine(tmp_path, monkeypatch)
+    store_record(engine)
+
+    def failing_read(self, identity):
+        # Stands in for an I/O failure on a store that opened successfully.
+        raise SyncBaseStoreError("simulated read failure")
+
+    monkeypatch.setattr(SyncBaseStore, "read", failing_read)
+    mode = ["--json"] if json_output else []
+    code = main(["--config", str(engine.config.config_path), *mode, "info", "sync-base", "main:app.unit"])
+    output = capsys.readouterr()
+    assert code != 0
+    assert "simulated read failure" in output.err
+    assert "Traceback" not in output.err
