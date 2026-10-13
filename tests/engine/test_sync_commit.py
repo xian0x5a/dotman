@@ -5,9 +5,10 @@ import subprocess
 
 import pytest
 
+from dotman.command_runtime import INTERRUPTED_EXIT_CODE, CommandResult, MemoryCommandRuntime
 from dotman.config import load_manager_config
 from dotman.models import DEFAULT_COMMIT_MESSAGE, ResolvedSyncTarget
-from dotman.sync_commit import render_commit_message
+from dotman.sync_commit import probe_work_tree, render_commit_message
 from dotman.sync_session import BatchSetApproval, Preview, SetApproval, SetCommit, SetResolutionIntent
 from tests.engine.test_sync_session import make_engine
 from tests.helpers import write_named_manager_config
@@ -176,3 +177,21 @@ def test_valid_message_template_loads_and_renders(tmp_path, template):
     loaded = load_manager_config(config).git.commit_message
     assert loaded == template
     render_commit_message(loaded, operation="sync", repo="main", targets=targets(("zsh", "zshrc", None)))
+
+
+@pytest.mark.parametrize("outcome,interruption", [
+    (InterruptedError("command operation cancelled"), InterruptedError),
+    (CommandResult(exit_code=INTERRUPTED_EXIT_CODE), KeyboardInterrupt),
+], ids=["cancelled-before-launch", "rev-parse-interrupted"])
+def test_probe_propagates_interruption(tmp_path, outcome, interruption):
+    runtime = MemoryCommandRuntime([outcome, CommandResult(exit_code=0, stdout=b"main\n")])
+    with pytest.raises(interruption):
+        probe_work_tree(tmp_path, runtime)
+
+
+@pytest.mark.parametrize("outcome", [
+    FileNotFoundError("git"),
+    CommandResult(exit_code=128, stderr=b"fatal: not a git repository"),
+], ids=["no-git-executable", "not-a-repo"])
+def test_probe_reports_no_work_tree_when_git_cannot_commit(tmp_path, outcome):
+    assert probe_work_tree(tmp_path, MemoryCommandRuntime([outcome])) is None
