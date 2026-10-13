@@ -12,8 +12,8 @@ from dotman.presets import BUILTIN_TARGET_PRESETS, get_builtin_target_preset
 
 VALID_COMMAND_IO_VALUES = ("pipe", "tty")
 VALID_HOOK_IO_VALUES = VALID_COMMAND_IO_VALUES
-VALID_ELEVATION_VALUES = ("none", "root", "lease", "broker", "intercept")
-VALID_DEFAULT_COMMAND_ELEVATION_VALUES = ("none", "broker", "intercept")
+VALID_ELEVATION_VALUES = ("none", "root", "intercept")
+VALID_DEFAULT_COMMAND_ELEVATION_VALUES = ("none", "intercept")
 VALID_SYNC_POLICY_VALUES = ("push-only", "pull-only", "both", "push-only-delete")
 VALID_TARGET_TYPE_VALUES = ("file", "directory")
 FORCED_COMMAND_PREFIX = "__dotman_command__:"

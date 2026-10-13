@@ -4,6 +4,8 @@ status: done
 
 # Elevation broker plan
 
+> Superseded: `lease`, `broker`, and `dotman elevation request` were removed in #111. See `docs/adr/0006-intercept-is-the-only-user-scoped-elevation.md`.
+
 Date: 2026-04-24
 
 ## Goal

@@ -233,7 +233,7 @@ otherwise **Use repository** is the visible fallback and Merge is unavailable.
   Proposal; it does not select or approve it. Review shows authorization in the
   shared warning/success colors. No-confirm Sync cannot supply this decision.
   During editing, `Ctrl+C` or OS SIGINT cancels only the Editor attempt,
-  including a broker-triggered sudo password prompt. Prompt cleanup and terminal
+  including a sudo password prompt triggered through the intercept shim. Prompt cleanup and terminal
   restoration finish before the deck resumes; **E** can start a fresh attempt.
   Terminal Editors take terminal ownership temporarily and return to the same
   focused deck. No Editor runs automatically or under `--no-confirm`.

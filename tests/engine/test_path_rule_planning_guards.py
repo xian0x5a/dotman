@@ -70,7 +70,7 @@ def test_path_rule_guards_normalize_supported_command_forms_and_elevation(tmp_pa
             [
                 'pattern = "*.txt"',
                 "hooks = { guard_push = \"printf string\", guard_pull = [",
-                '  { run = "printf object", io = "pipe", elevation = "broker" },',
+                '  { run = "printf object", io = "pipe", elevation = "intercept" },',
                 '  "printf ordered",',
                 "] }",
             ]
@@ -82,7 +82,7 @@ def test_path_rule_guards_normalize_supported_command_forms_and_elevation(tmp_pa
     assert rule.hooks is not None
     assert rule.hooks["guard_push"].commands == (HookCommandSpec(run="printf string"),)
     assert rule.hooks["guard_pull"].commands == (
-        HookCommandSpec(run="printf object", elevation="broker"),
+        HookCommandSpec(run="printf object", elevation="intercept"),
         HookCommandSpec(run="printf ordered"),
     )
 

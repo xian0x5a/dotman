@@ -223,8 +223,8 @@ class TargetSpec:
 
 
 HookCommandIO = Literal["pipe", "tty"]
-ElevationMode = Literal["none", "root", "lease", "broker", "intercept"]
-DefaultCommandElevationMode = Literal["none", "broker", "intercept"]
+ElevationMode = Literal["none", "root", "intercept"]
+DefaultCommandElevationMode = Literal["none", "intercept"]
 
 
 @dataclass(frozen=True)

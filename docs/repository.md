@@ -497,13 +497,13 @@ exit 0
 - Repo, package, and target hook shorthand still work and normalize to `run_noop = false`.
 - Empty hook command lists are allowed and mean the hook is effectively disabled at that package layer.
 - Hook command lists may mix plain strings and command objects in either shorthand or table form.
-- Pre/post command objects use `{ run = "...", io = "pipe" | "tty", elevation = "none" | "root" | "lease" | "broker" | "intercept", run_noop = true | false }`.
-- Repo, package, target, and path-rule guard command objects use `{ run = "...", io = "pipe", elevation = "none" | "root" | "lease" | "broker" | "intercept" }`.
+- Pre/post command objects use `{ run = "...", io = "pipe" | "tty", elevation = "none" | "root" | "intercept", run_noop = true | false }`.
+- Repo, package, target, and path-rule guard command objects use `{ run = "...", io = "pipe", elevation = "none" | "root" | "intercept" }`.
 - `run` is required for command objects and must not be empty after trimming.
 - `io` defaults to `pipe`.
 - `elevation` defaults to the repo-level `default_command_elevation`, or `none` when the repo default is omitted.
-- `repo.toml` may set `default_command_elevation = "none" | "broker" | "intercept"`. This applies to repo hooks, package hooks, target hooks, and custom editor commands that omit explicit `elevation`.
-- `default_command_elevation` does not support `root` or `lease`; set those on specific command objects instead.
+- `repo.toml` may set `default_command_elevation = "none" | "intercept"`. This applies to repo hooks, package hooks, target hooks, and custom editor commands that omit explicit `elevation`.
+- `default_command_elevation` does not support `root`; set it on specific command objects instead.
 - Explicit command metadata wins over the repo default. Use `elevation = "none"` to opt a command out of a repo default.
 - `default_command_elevation = "intercept"` gives every command without explicit `elevation` the temporary `sudo` shim in `PATH`.
 - Every mode authenticates the same way under `--no-confirm`: when the sudo ticket is missing, sudo authenticates however it is configured (NOPASSWD, a terminal prompt, or the `SUDO_ASKPASS` helper when no terminal is present).
@@ -514,14 +514,16 @@ Elevation modes:
 | --- | --- | --- |
 | `none` | No dotman-managed elevation. | Normal commands. |
 | `root` | Dotman requests sudo and runs the whole command through non-interactive sudo. | Root-only actions such as `systemctl restart ...`. Do not use for AUR helpers such as `yay`. |
-| `lease` | Dotman requests/keeps a sudo lease but runs the command as the user. | User commands that may call sudo later. |
-| `broker` | Dotman exposes a lazy broker to the child through `DOTMAN_ELEVATION_BROKER`; the child calls `dotman elevation request [reason]` only when needed. | Conditional install/setup scripts. |
-| `intercept` | Same broker plus a temporary `sudo` shim first in `PATH`; the shim asks dotman for the lease, then execs real `sudo -n`. | Commands that must keep direct `sudo` calls. |
+| `intercept` | The command runs as the user with a temporary `sudo` shim first in `PATH`. When the command calls `sudo`, the shim asks dotman for the sudo lease, then runs real `sudo -n`. Dotman asks for a password only when a `sudo` call happens. | Commands that call `sudo` themselves, such as install scripts and AUR helpers. |
+
+- `intercept` only sees `sudo` resolved through `PATH`. Call `sudo` by name, not `/usr/bin/sudo`.
+- The shim always passes `-n`, so scripts that pipe a password into `sudo -S` do not work under `intercept`.
+- To authenticate early, for example before a long build, call `sudo -v`; it goes through the shim like any other `sudo` call.
 
 Example conditional package installer:
 
 ```toml
-default_command_elevation = "broker"
+default_command_elevation = "intercept"
 
 [hooks.pre_push]
 commands = ["sh hooks/install-arch-packages.sh"]
@@ -529,7 +531,7 @@ commands = ["sh hooks/install-arch-packages.sh"]
 
 ```sh
 [ -n "$missing_packages" ] || exit 0
-dotman elevation request "install missing Arch packages"
+# yay calls sudo itself; the shim asks for the password only now.
 printf '%s\n' "$missing_packages" |
   xargs -r yay -S --needed --answerdiff=None --answeredit=None
 ```
@@ -616,7 +618,7 @@ commands = [
 - Execution-time pre/post hooks receive `DOTMAN_NO_CONFIRM=1` when global CLI `--no-confirm` is active and `0` otherwise. Planning guards do not receive it.
 - Hooks never auto-escalate through target path permissions, even when adjacent target work touches protected paths. Elevation only comes from explicit command metadata or repo-level `default_command_elevation`.
 - If a hook really must run as root, use explicit command metadata such as `{ run = "systemctl restart sddm", elevation = "root" }`.
-- If a hook only sometimes needs elevation, prefer `elevation = "broker"` and call `dotman elevation request "reason"` after the script proves privileged work is required.
+- If a hook only sometimes needs elevation, use `elevation = "intercept"` and call `sudo` only after the script proves privileged work is required.
 - Repo-wide helper scripts live under `scripts/`.
 - Package-specific scripts live inside the package, for example `hooks/`.
 - Prefer explicit runner commands such as `sh hooks/push.sh`, `python3 hooks/render.py`, or `uv run hooks/render.py` instead of relying on executable bits.
