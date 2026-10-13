@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import pty
+import signal
 import socket
 import subprocess
 import sys
@@ -119,7 +120,7 @@ def test_intercept_sudo_shim_fails_nonzero_when_broker_is_unreachable(monkeypatc
         broker.close()
 
 
-def test_intercept_sudo_shim_normalizes_real_sudo_interruption(
+def test_intercept_sudo_shim_dies_from_sigint_when_real_sudo_is_interrupted(
     monkeypatch,
     tmp_path,
 ) -> None:
@@ -149,7 +150,56 @@ def test_intercept_sudo_shim_normalizes_real_sudo_interruption(
             check=False,
         )
 
-        assert completed.returncode == 130
+        assert completed.returncode == -signal.SIGINT
+    finally:
+        broker.close()
+
+
+def test_hook_script_stops_when_ctrl_c_interrupts_sudo_through_the_intercept_shim(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    # Ctrl-C reaches the whole foreground process group: the hook's shell, the
+    # shim, and the real sudo. A POSIX shell only stops the script when its
+    # child dies from SIGINT, so the shim must not turn that into exit 130.
+    started_marker = tmp_path / "sudo-started"
+    after_marker = tmp_path / "after"
+    real_sudo = tmp_path / "real-sudo"
+    real_sudo.write_text(f'#!/bin/sh\n: > "{started_marker}"\nexec "$@"\n', encoding="utf-8")
+    real_sudo.chmod(0o755)
+    broker = elevation.ElevationBroker()
+    monkeypatch.setattr(elevation, "request_sudo", lambda reason=None: None)
+    monkeypatch.setattr(
+        elevation.shutil,
+        "which",
+        lambda command: str(real_sudo) if command == "sudo" else None,
+    )
+    try:
+        shim_env = broker.env(reason="interrupted hook")
+        # A new session has no controlling terminal, so the shim skips the
+        # broker and runs the real sudo directly; it also keeps the SIGINT
+        # below away from the test runner's process group.
+        hook = subprocess.Popen(
+            ["/bin/sh", "-c", f'sudo sleep 30; echo AFTER > "{after_marker}"'],
+            env={**os.environ, **shim_env},
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        try:
+            deadline = time.monotonic() + 30
+            while not started_marker.exists():
+                assert hook.poll() is None, "hook exited before sudo started"
+                assert time.monotonic() < deadline, "sudo never started"
+                time.sleep(0.01)
+            os.killpg(hook.pid, signal.SIGINT)
+            hook.wait(timeout=10)
+        finally:
+            if hook.poll() is None:
+                os.killpg(hook.pid, signal.SIGKILL)
+                hook.wait(timeout=10)
+
+        assert not after_marker.exists()
+        assert hook.returncode == -signal.SIGINT
     finally:
         broker.close()
 
