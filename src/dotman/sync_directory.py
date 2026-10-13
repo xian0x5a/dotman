@@ -9,7 +9,8 @@ import stat
 from dotman import projection
 from dotman.file_access import read_bytes
 from dotman.ignore import IgnoreMatcher, GitIgnoreChain
-from dotman.manifest import resolve_sync_policy
+from dotman.manifest import resolve_sync_policy, validate_patch_capture
+from dotman.models import repo_qualified_target_text
 
 
 @dataclass(frozen=True)
@@ -163,6 +164,21 @@ def census_directory(
        # An unresolved ignore command (inspection) may exclude anything.
        not metadata.ignore_patterns and metadata.ignore_command is None and not markers and not git_controls
        and not any(failures for failures in entries.values()))
+
+
+def planned_child_metadata(metadata: projection.TargetMetadata, relative: str) -> projection.TargetMetadata:
+    """Settings of a child the run plans, which must keep Patch Capture valid.
+
+    Base inspection uses `child_metadata` instead: a broken rule must not make
+    a stored Base look untracked.
+    """
+    child = child_metadata(metadata, relative)
+    label = repo_qualified_target_text(repo_name=metadata.repo_name, package_id=metadata.package_id,
+                                       target_name=metadata.target_name, bound_profile=metadata.bound_profile)
+    validate_patch_capture(f'target "{label}/{relative}"', render=child.render_command or "raw",
+                           capture=child.capture_command or "raw", compare_repo=child.compare_repo,
+                           compare_live=child.compare_live)
+    return child
 
 
 def child_metadata(metadata: projection.TargetMetadata, relative: str) -> projection.TargetMetadata:

@@ -684,11 +684,6 @@ def build_target_spec(
                                        owner_label=f"target '{target_name}'",
                                        default_command_elevation=default_command_elevation)
                  for name, payload in hooks_payload.items()}
-    if capture == "patch":
-        if render == "raw":
-            raise ValueError(f'package manifest {manifest_path} target "{target_name}" capture = "patch" requires non-raw render')
-        if compare_repo != "render" or compare_live != "raw":
-            raise ValueError(f'package manifest {manifest_path} target "{target_name}" capture = "patch" requires compare.repo = "render" and compare.live = "raw"')
 
     path_rules = normalize_target_path_rules(
         value("path_rules"), manifest_path=manifest_path, target_name=target_name,
@@ -907,13 +902,28 @@ def merge_target_specs(base: TargetSpec, override: TargetSpec) -> TargetSpec:
 
 
 
-def _validate_resolved_package(package: PackageSpec) -> PackageSpec:
+def validate_patch_capture(owner: str, *, render: str, capture: str, compare_repo: str, compare_live: str) -> None:
+    if capture != "patch":
+        return
+    if render == "raw":
+        raise ValueError(f'{owner} capture = "patch" requires non-raw render')
+    if compare_repo != "render" or compare_live != "raw":
+        raise ValueError(f'{owner} capture = "patch" requires compare.repo = "render" and compare.live = "raw"')
+
+
+def _validate_resolved_package(package: PackageSpec, *, repo_name: str) -> PackageSpec:
     for target in (package.targets or {}).values():
         for rule in target.path_rules:
             if not rule.pattern.strip():
                 raise ValueError(
                     f"target '{package.id}:{target.name}' path rule '{rule.name}' must define pattern"
                 )
+        # Extends can split a valid combination across manifests, so only the
+        # merged target is checked. Path Rules refine children, so planning
+        # checks them per child once overlapping rules are folded together.
+        validate_patch_capture(f'target "{repo_name}:{package.id}.{target.name}"', render=target.render,
+                               capture=target.capture, compare_repo=target.compare_repo,
+                               compare_live=target.compare_live)
     return package
 
 

@@ -53,7 +53,7 @@ def test_missing_patch_capture_source_is_valid_push_endpoint(tmp_path, monkeypat
 def test_missing_patch_capture_source_still_validates_static_configuration(tmp_path, monkeypatch):
     invalid_patch_settings = 'capture = "patch"\n[targets.unit.compare]\nrepo = "render"\nlive = "raw"'
     with pytest.raises(ValueError, match='capture = "patch" requires non-raw render'):
-        make_engine(tmp_path, monkeypatch, [("unit", "both", None, b"live", invalid_patch_settings)])
+        make_engine(tmp_path, monkeypatch, [("unit", "both", None, b"live", invalid_patch_settings)]).resolve_sync_scope()
 
 
 @pytest.mark.parametrize("live", [b"live", None])

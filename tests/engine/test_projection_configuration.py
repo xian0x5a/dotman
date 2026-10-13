@@ -20,6 +20,13 @@ def repo(tmp_path, target_lines, directory=False):
 def engine(tmp_path, root, **options):
     return DotmanEngine.from_config_path(write_single_repo_config(tmp_path,repo_name="r",repo_path=root), **options)
 
+def packages_repo(tmp_path, manifests):
+    root = tmp_path/"repo"; (root/"profiles").mkdir(parents=True); (root/"profiles"/"default.toml").write_text("")
+    for package_id, lines in manifests.items():
+        (root/"packages"/package_id).mkdir(parents=True)
+        (root/"packages"/package_id/"package.toml").write_text("\n".join(lines))
+    return root
+
 def tracked_engine(tmp_path, root, **options):
     write_tracked_packages_state(tmp_path/"state", repo_name="r", entries=[("app","default")])
     return engine(tmp_path, root, **options)
@@ -63,7 +70,7 @@ def test_flat_fields_inherit_and_override_by_name(tmp_path):
 def test_patch_capture_requires_flat_comparison_contract(tmp_path):
     root=repo(tmp_path,['render="jinja"','capture="patch"'])
     with pytest.raises(ValueError, match="compare.repo"):
-        engine(tmp_path,root)
+        tracked_engine(tmp_path,root).resolve_sync_scope()
 
 
 def test_matching_path_rules_compose_each_field_without_resetting_lower_priority(tmp_path):
@@ -319,3 +326,60 @@ def test_command_named_after_other_sides_builtin_runs_as_command(tmp_path, monke
         observation = session.view.observations[0]
         assert getattr(observation, side) == FilePresent(b"command-view")
         assert observation.state != "directly-in-sync"
+
+
+@pytest.mark.parametrize("manifests", [
+    pytest.param({
+        "base": ["id='base'", "[targets.x]", "source='files/x'", "path='~/.x'", "preset='jinja-patch'"],
+        "app": ["id='app'", "extends=['base']", "[targets.x]", "render='raw'"],
+    }, id="child-render-raw-over-inherited-patch-capture"),
+])
+def test_patch_capture_validates_effective_settings(tmp_path, manifests):
+    # Extends merges are resolved per tracked package, so resolving the scope is
+    # the earliest point the effective settings exist; Pull must not be reached.
+    with pytest.raises(ValueError, match='capture = "patch" requires'):
+        tracked_engine(tmp_path, packages_repo(tmp_path, manifests)).resolve_sync_scope()
+
+
+def test_patch_capture_settings_may_combine_across_extends(tmp_path):
+    root = packages_repo(tmp_path, {
+        "base": ["id='base'", "[targets.x]", "source='files/x'", "path='~/.x'", "render='jinja'",
+                 "compare={repo='render',live='raw'}"],
+        "app": ["id='app'", "extends=['base']", "[targets.x]", "capture='patch'"],
+    })
+
+    scope = tracked_engine(tmp_path, root).resolve_sync_scope()
+
+    assert scope.targets
+
+
+@pytest.mark.parametrize("rules", [
+    pytest.param(["[targets.x.path_rules.docs]", "pattern='*.md'", "capture='patch'"],
+                 id="path-rule-patch-capture-without-render"),
+    pytest.param(["preset='jinja-patch'", "[targets.x.path_rules.docs]", "pattern='*.md'", "render='raw'"],
+                 id="path-rule-raw-render-under-patch-capture-target"),
+])
+def test_patch_capture_validates_effective_child_settings(tmp_path, rules):
+    from dotman.sync_session import SessionOpenFailed
+
+    # Overlapping Path Rules fold per child, so a matching child is the first
+    # point where the effective settings exist.
+    engine_obj = tracked_engine(tmp_path, repo(tmp_path, rules, directory=True))
+    opened = engine_obj.open_pull_session(engine_obj.resolve_sync_scope())
+
+    assert isinstance(opened, SessionOpenFailed)
+    assert 'r:app.x/a.md" capture = "patch" requires' in opened.diagnostic.message
+
+
+def test_patch_capture_child_settings_may_come_from_overlapping_rules(tmp_path):
+    from dotman.sync_session import SessionOpenFailed
+
+    rules = ["[targets.x.path_rules.templates]", "pattern='*'", "render='jinja'",
+             "compare={repo='render',live='raw'}",
+             "[targets.x.path_rules.docs]", "pattern='*.md'", "priority=1", "capture='patch'"]
+    engine_obj = tracked_engine(tmp_path, repo(tmp_path, rules, directory=True))
+    opened = engine_obj.open_pull_session(engine_obj.resolve_sync_scope())
+
+    assert not isinstance(opened, SessionOpenFailed), opened
+    with opened:
+        pass

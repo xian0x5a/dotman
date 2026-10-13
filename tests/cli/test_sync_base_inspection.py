@@ -5,7 +5,7 @@ import pytest
 
 from dotman.cli import main
 from dotman.operation_lock import OperationLock, OperationBusy
-from dotman.sync_base_store import LAYOUT_FILE_NAME, SyncBaseRecord, SyncBaseStore, FilePresent, Missing
+from dotman.sync_base_store import LAYOUT_FILE_NAME, SyncBaseRecord, SyncBaseStore, DirectoryChildPresent, FilePresent, Missing
 from tests.engine.test_sync_session import make_engine
 
 
@@ -238,6 +238,18 @@ def test_doctor_child_orphans_require_complete_unrestricted_census(tmp_path, mon
     assert check.detail == f"{expected} orphaned Sync Bases"
     assert database.read_bytes() == before
     assert engine.info_sync_base("main:app.tree/gone")["status"] == "usable"
+
+
+def test_child_base_stays_listed_when_its_path_rules_break_patch_capture(tmp_path, monkeypatch):
+    from tests.engine.test_sync_directory_observation import directory_engine, put
+    engine = directory_engine(tmp_path, monkeypatch, extra='[targets.tree.path_rules.docs]\npattern = "*.md"\ncapture = "patch"')
+    put(tmp_path / "repo/packages/app/tree", "a.md")
+    put(tmp_path / "live/tree", "a.md")
+    store_record(engine, identity="main:app.tree/a.md", payload=DirectoryChildPresent(b"bytes", False))
+    # Only planning rejects the broken rule; it is no evidence the Base is orphaned.
+    check = next(check for check in engine.doctor().checks if check.key == "sync_bases_orphaned")
+    assert check.count == 0
+    assert [(entry["identity"], entry["status"]) for entry in engine.list_sync_bases()] == [("main:app.tree/a.md", "usable")]
 
 
 def test_instance_identity_remains_canonical(tmp_path, monkeypatch):

@@ -1417,9 +1417,11 @@ def test_capture_patch_rejects_raw_review_views(tmp_path: Path, monkeypatch: pyt
     (home / ".profile").write_text("export XDG_CONFIG_HOME=\"${XDG_CONFIG_HOME:-$HOME/.config}\"\n", encoding="utf-8")
 
     config_path = write_single_repo_config(tmp_path, repo_name="fixture", repo_path=repo_root)
+    write_tracked_packages_state(tmp_path / "state", repo_name="fixture", entries=[("shell", "default")])
 
+    # Patch Capture is checked on the effective target, once extends are merged.
     with pytest.raises(ValueError, match="compare.repo = \"render\" and compare.live = \"raw\""):
-        DotmanEngine.from_config_path(config_path)
+        DotmanEngine.from_config_path(config_path).resolve_sync_scope()
 
 
 def test_capture_patch_requires_non_raw_render(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1450,9 +1452,11 @@ def test_capture_patch_requires_non_raw_render(tmp_path: Path, monkeypatch: pyte
     (home / ".profile").write_text("greeting = hello\n", encoding="utf-8")
 
     config_path = write_single_repo_config(tmp_path, repo_name="fixture", repo_path=repo_root)
+    write_tracked_packages_state(tmp_path / "state", repo_name="fixture", entries=[("shell", "default")])
 
+    # Patch Capture is checked on the effective target, once extends are merged.
     with pytest.raises(ValueError, match='capture = "patch" requires non-raw render'):
-        DotmanEngine.from_config_path(config_path)
+        DotmanEngine.from_config_path(config_path).resolve_sync_scope()
 
 
 def test_unknown_target_preset_fails_engine_load(tmp_path: Path) -> None:
