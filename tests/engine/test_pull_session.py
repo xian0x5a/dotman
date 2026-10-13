@@ -221,3 +221,24 @@ def test_pull_auxiliary_work_starts_selected_and_can_be_excluded(tmp_path, monke
         session.dispatch(SetIncluded(session.view.session_id, session.view.revision, row.row_id, include))
         assert session.execute().result.status == "completed"
     assert marker.exists() == include
+
+
+@pytest.mark.parametrize("unselect_first", [False, True], ids=["approved", "after-batch-unselect"])
+def test_pull_editor_starts_from_captured_live_content(tmp_path, monkeypatch, unselect_first):
+    """The Pull Editor edits the incoming content even after the row lost its Proposal."""
+    from dotman.sync_session import BatchSetApproval, EditProposal, SetApproval
+    engine = make_engine(tmp_path, monkeypatch, [
+        ("unit", "pull-only", b"old repo\n", b"new live\n",
+         'editor = { run = "printf \'tweak\\\\n\' >> \\"$DOTMAN_SOURCE\\"", io = "pipe" }'),
+    ])
+    with engine.open_pull_session(engine.resolve_sync_scope(), preview=False) as session:
+        def view():
+            return session.view
+        if unselect_first:
+            session.dispatch(BatchSetApproval(
+                view().session_id, view().revision, False, tuple(row.row_id for row in view().rows)))
+        session.dispatch(EditProposal(view().session_id, view().revision, view().rows[0].row_id))
+        if not view().rows[0].approved:
+            session.dispatch(SetApproval(view().session_id, view().revision, view().rows[0].row_id, True))
+        assert session.execute().result.status == "completed"
+    assert (tmp_path / "repo/packages/app/unit").read_bytes() == b"new live\ntweak\n"

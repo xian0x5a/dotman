@@ -42,6 +42,13 @@ class PullSession(ProposalSession):
             additional_changes=self._row_additional(row),
         ))
 
+    def _editor_initial(self, row):
+        # Pull has no Resolution Intent: its outcome is always the Capture, so an
+        # unreviewed row materializes it now, like Sync's Use live.
+        if row.proposal is None and row.intent is None and not row.diagnostics:
+            return self._materialize_row(row).repository
+        return super()._editor_initial(row)
+
     def _publish(self):
         selected = tuple(row for row in self.view.rows
                          if isinstance(row, SessionRow) and row.included
