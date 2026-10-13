@@ -417,6 +417,41 @@ def test_file_system_errors_are_clean_cli_errors(tmp_path, capsys) -> None:
     assert str(output_directory) in capsys.readouterr().err
 
 
+_PLIST_WITH_BAD_DATE = (
+    '<?xml version="1.0" encoding="UTF-8"?>\n'
+    '<plist version="1.0"><dict><key>a</key><date>nope</date></dict></plist>\n'
+)
+
+
+# Each base parses past the syntax layer but fails while building values. The
+# expected message is what ordinary invalid input (e.g. `a: [` or `<plist><dict>`)
+# already reports for that format; TOML syntax errors carry no format prefix.
+@pytest.mark.parametrize(
+    ("transform_format", "content", "expected_message"),
+    [
+        ("toml", "[a]\nb = 1\n[a.b]\n", None),
+        ("yaml", "a: !!bool maybe\n", "invalid YAML in {base}"),
+        ("yaml", "a: !!timestamp nope\n", "invalid YAML in {base}"),
+        ("plist", _PLIST_WITH_BAD_DATE, "invalid plist in {base}"),
+    ],
+)
+def test_malformed_values_are_clean_cli_errors_like_other_invalid_input(
+    transform_format, content, expected_message, tmp_path, capsys
+) -> None:
+    from dotman import cli
+
+    base = tmp_path / f"base.{transform_format}"
+    base.write_text(content, encoding="utf-8")
+
+    exit_code = cli.main(["transform", transform_format, str(base), "--stdout", "--mode", "cleanup", "--selectors", "a"])
+
+    error_output = capsys.readouterr().err
+    assert exit_code == 2
+    assert "detail:" in error_output
+    if expected_message is not None:
+        assert expected_message.format(base=base) in error_output
+
+
 @pytest.mark.parametrize(
     ("transform_format", "base_content"),
     [

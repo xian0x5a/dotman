@@ -11,6 +11,7 @@ from typing import Any, NamedTuple
 from pathlib import Path
 import tomlkit
 from tomlkit.container import Container
+from tomlkit.exceptions import KeyAlreadyPresent
 from tomlkit.items import (
     AbstractTable,
     AoT,
@@ -70,7 +71,13 @@ def parse_document(text: str) -> TOMLDocument:
     # tomlkit keeps CRLF inside multiline string values, while TOML readers like
     # tomllib normalize it to LF; parse LF text so values match what readers see
     # even after a string is re-rendered in another form (e.g. inline).
-    return assign_comment_owners(tomlkit.parse(text.replace("\r\n", "\n")))
+    try:
+        parsed = tomlkit.parse(text.replace("\r\n", "\n"))
+    except KeyAlreadyPresent as error:
+        # Unlike tomlkit's other parse errors, a repeated key or table is not a
+        # ValueError, so it would escape the CLI's invalid-input handling.
+        raise ValueError(str(error)) from error
+    return assign_comment_owners(parsed)
 
 
 def parse_source_text(text: str) -> TOMLDocument:

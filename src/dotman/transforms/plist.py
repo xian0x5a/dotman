@@ -52,8 +52,9 @@ def load_plist(path: Path, *, stdin_bytes: bytes | None = None) -> PlistDict:
 
     try:
         loaded = plistlib.loads(content)
-    except ExpatError as error:
-        # plistlib reports malformed XML plists as ExpatError, not ValueError.
+    except (AttributeError, ExpatError, ValueError) as error:
+        # plistlib reports malformed XML as ExpatError and a malformed value such
+        # as `<date>nope</date>` as AttributeError, not only as ValueError.
         raise ValueError(f"invalid plist in {path}: {error}") from error
 
     if not isinstance(loaded, dict):
