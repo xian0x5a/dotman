@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
+import signal
 import sys
 from typing import Iterator
 
@@ -14,6 +15,20 @@ from dotman.command_runtime import (
     ProductionCommandRuntime,
     command_runtime_session,
 )
+
+
+@pytest.fixture(autouse=True, scope="session")
+def interactive_sigint() -> Iterator[None]:
+    # A shell without job control starts `&` jobs with SIGINT ignored. That
+    # survives exec, and CPython then keeps it instead of installing its own
+    # handler, so every child ignores SIGINT too. Interrupt tests assume a
+    # terminal's default SIGINT (#116).
+    if signal.getsignal(signal.SIGINT) is not signal.SIG_IGN:
+        yield
+        return
+    signal.signal(signal.SIGINT, signal.default_int_handler)
+    yield
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
 
 
 @pytest.fixture(autouse=True)
