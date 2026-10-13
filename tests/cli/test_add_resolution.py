@@ -121,11 +121,13 @@ def test_add_resolver_preserves_noninteractive_exact_partial_and_create_rules(tm
     resolver = AddResolver(engine)
 
     assert resolver.resolve("alpha:git") == AddDestination("alpha", "git")
-    assert resolver.resolve("tools") == AddDestination("beta", "git-tools")
+    assert resolver.resolve("beta:git") == AddDestination("beta", "git")
     assert resolver.resolve("alpha:new/tools") == AddDestination("alpha", "new/tools")
 
     with pytest.raises(ValueError, match="package query is required in non-interactive mode"):
         resolver.resolve(None)
+    with pytest.raises(ValueError, match="no exact match for 'tools'; use exact name 'beta:git-tools'"):
+        resolver.resolve("tools")
     with pytest.raises(
         ValueError,
         match="use an explicit repo-qualified query to create one in non-interactive mode",

@@ -96,14 +96,21 @@ class AddResolver:
                 f"package '{package_query}' is ambiguous: "
                 + ", ".join(self._destination_label(destination) for destination in ranked_exact_matches)
             )
-        if len(ranked_partial_matches) == 1:
-            return ranked_partial_matches[0]
-        if len(ranked_partial_matches) > 1:
-            raise ValueError(
-                f"package '{package_query}' is ambiguous: "
-                + ", ".join(self._destination_label(destination) for destination in ranked_partial_matches)
-            )
+        # Without a prompt a partial match never becomes the destination. A bare query
+        # points at it like other commands do; an exact `repo:package` query that names
+        # no existing package creates it, whatever other package IDs contain the text.
         if repo_query is None:
+            if len(ranked_partial_matches) == 1:
+                raise ValueError(
+                    f"no exact match for '{package_query}'; "
+                    f"use exact name '{self._destination_label(ranked_partial_matches[0])}', "
+                    "or a repo-qualified query to create a new package"
+                )
+            if len(ranked_partial_matches) > 1:
+                raise ValueError(
+                    f"package '{package_query}' is ambiguous: "
+                    + ", ".join(self._destination_label(destination) for destination in ranked_partial_matches)
+                )
             raise ValueError(
                 f"package '{package_query}' did not match any package; "
                 "use an explicit repo-qualified query to create one in non-interactive mode"
