@@ -1,6 +1,9 @@
+import os
 from pathlib import Path
 import pytest
 from dotman.engine import DotmanEngine
+from dotman.sync_base_store import FilePresent
+from tests.engine.test_sync_session import make_engine
 from tests.helpers import initialize_git_repository, resolved_child_metadata, write_single_repo_config, write_tracked_packages_state
 
 def repo(tmp_path, target_lines, directory=False):
@@ -288,3 +291,31 @@ def test_pull_forced_builtin_commands_keep_command_identity(tmp_path, monkeypatc
         assert marker.read_text().splitlines() == ["render", "capture", "patch", "jinja"]
         assert not row.proposal.checkpoint_qualified
     assert live.read_bytes() == b"live"
+
+
+@pytest.mark.parametrize("rule_lines", [[], ["[targets.x.path_rules.docs]", 'pattern="*.md"']])
+@pytest.mark.parametrize("side,builtin", [("live", "render"), ("repo", "capture")])
+def test_compare_side_rejects_other_sides_builtin_at_load(tmp_path, rule_lines, side, builtin):
+    # Render projects the repository and Capture projects live; accepting the
+    # other side's builtin used to compare repository bytes with themselves.
+    root = repo(tmp_path, [*rule_lines, f'compare.{side}="{builtin}"'], directory=bool(rule_lines))
+    with pytest.raises(ValueError, match=rf'(?s)compare\.{side}.*{builtin}.*run'):
+        engine(tmp_path, root)
+
+
+@pytest.mark.parametrize("compare,side", [
+    ('{repo="raw", live={run="render"}}', "comparison_live"),
+    ('{repo={run="capture"}, live="raw"}', "comparison_repository"),
+])
+def test_command_named_after_other_sides_builtin_runs_as_command(tmp_path, monkeypatch, compare, side):
+    bin_root = tmp_path / "bin"
+    bin_root.mkdir()
+    for name in ("render", "capture"):
+        (bin_root / name).write_text("#!/bin/sh\nprintf command-view\n")
+        (bin_root / name).chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_root}:{os.environ['PATH']}")
+    sync_engine = make_engine(tmp_path, monkeypatch, [("unit", "both", b"same", b"drifted", f"compare = {compare}")])
+    with sync_engine.open_sync_session(sync_engine.resolve_sync_scope(), preview=True) as session:
+        observation = session.view.observations[0]
+        assert getattr(observation, side) == FilePresent(b"command-view")
+        assert observation.state != "directly-in-sync"

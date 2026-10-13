@@ -238,6 +238,11 @@ checks the repository file against Capture of the live file.
 Other scalar strings denote custom commands. For Render, Capture, or comparison,
 a table accepts only `run`; for example `render = { run = "jinja" }` forces
 command interpretation. Explicit `raw` cancels inherited Render or Capture.
+Each comparison side rejects the other side's builtin: `compare.live = "render"`
+and `compare.repo = "capture"` fail validation, because Render projects the
+repository and Capture projects live. To compare live against Render, use
+`compare = { repo = "render", live = "raw" }`; for a command with that name, use
+`{ run = "render" }`.
 See [custom Render and Capture commands](#custom-render-and-capture-commands)
 for the command contract.
 
