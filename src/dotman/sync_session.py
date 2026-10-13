@@ -186,7 +186,7 @@ def materialize(
             raise SyncPathError("symlink-authorization-required", "Live symlink replacement requires explicit authorization")
         # A mode-only publication must replace the link too, using frozen bytes.
         if not any(effect.kind == "write" for effect in effects):
-            effects.insert(0, PublicationEffect("write", path, content=live.content))
+            effects.insert(0, PublicationEffect("write", path, content=live.content, mode=mode))
     return Proposal(repository, live, primary, tuple(effects), intent, captured,
                     "three-way merged repository outcome" if intent == "merge" else
                     "captured repository outcome" if intent == "use-live" else "kept repository outcome")
