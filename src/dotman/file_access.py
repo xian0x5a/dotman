@@ -227,9 +227,7 @@ def read_bytes(path: Path) -> bytes:
 def write_bytes_atomic(path: Path, content: bytes, *, restore_root: Path | None = None, mode: int | None = None) -> None:
     if not needs_sudo_for_write(path):
         try:
-            atomic_write_bytes_atomic(path, content)
-            if mode is not None:
-                os.chmod(path, mode)
+            atomic_write_bytes_atomic(path, content, mode=mode)
             return
         except PermissionError:
             # Fall back to sudo if direct path check was too optimistic.

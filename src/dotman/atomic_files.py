@@ -16,6 +16,7 @@ _TEMP_FILE_NAME_PATTERN = re.compile(
     rf"{re.escape(_TEMP_FILE_SUFFIX)}"
 )
 _DEFAULT_FILE_CREATION_MODE = 0o666
+_PRIVATE_FILE_CREATION_MODE = 0o600
 
 
 def _atomic_temp_file_prefix() -> str:
@@ -29,17 +30,23 @@ def _new_atomic_temp_path(directory: Path) -> Path:
 def write_bytes_atomic(path: Path, content: bytes, *, mode: int | None = None) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     cleanup_stale_atomic_temp_files(path.parent)
-    # An explicit mode is applied before the rename so the content never
-    # becomes visible with broader permissions than requested.
     replacement_mode = mode if mode is not None else target_replacement_mode(path)
     candidate_temp_path = _new_atomic_temp_path(path.parent)
     temp_path: Path | None = None
+    # With a known replacement mode the temp file starts owner-only, so its
+    # content is never readable by others before the final mode applies. That
+    # mode is set after the content is flushed, because a write clears
+    # setuid/setgid bits. Otherwise exclusive creation applies the process
+    # umask, which is the final mode of a new file.
+    creation_mode = _PRIVATE_FILE_CREATION_MODE if replacement_mode is not None else _DEFAULT_FILE_CREATION_MODE
     try:
-        with candidate_temp_path.open("xb") as temp_file:
-            temp_path = candidate_temp_path
+        file_descriptor = os.open(candidate_temp_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, creation_mode)
+        temp_path = candidate_temp_path
+        with os.fdopen(file_descriptor, "wb") as temp_file:
             temp_file.write(content)
-        if replacement_mode is not None:
-            os.chmod(temp_path, replacement_mode)
+            if replacement_mode is not None:
+                temp_file.flush()
+                os.fchmod(temp_file.fileno(), replacement_mode)
         temp_path.replace(path)
     finally:
         cleanup_atomic_temp_file(temp_path)

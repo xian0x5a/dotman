@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 import dotman.atomic_files as atomic_files
+import dotman.file_access as file_access
 from dotman.atomic_files import (
     write_bytes_atomic,
     write_symlink_atomic,
@@ -188,3 +189,93 @@ def test_write_symlink_atomic_cleans_its_temporary_path_in_finally(
         write_symlink_atomic(tmp_path / "link", "destination")
 
     assert list(tmp_path.glob(".dotman-*.tmp")) == []
+
+
+def _record_modes_of_files_holding_content(monkeypatch) -> list[tuple[str, int]]:
+    """Record a file's permission bits whenever it already holds content and is
+    about to be chmodded or renamed into place, the points where an atomic
+    writer that fixes permissions late would expose its content."""
+    observations: list[tuple[str, int]] = []
+    original_chmod = os.chmod
+    original_fchmod = os.fchmod
+    original_replace = os.replace
+    original_rename = os.rename
+
+    def observe(label: str, file_status: os.stat_result) -> None:
+        if file_status.st_size > 0:
+            observations.append((label, stat.S_IMODE(file_status.st_mode)))
+
+    def chmod(path, mode, *args, **kwargs):
+        observe(f"chmod {path}", os.stat(path))
+        return original_chmod(path, mode, *args, **kwargs)
+
+    def fchmod(fd, mode):
+        observe(f"fchmod fd {fd}", os.fstat(fd))
+        return original_fchmod(fd, mode)
+
+    def replace(source, destination, *args, **kwargs):
+        observe(f"replace {source}", os.stat(source))
+        return original_replace(source, destination, *args, **kwargs)
+
+    def rename(source, destination, *args, **kwargs):
+        observe(f"rename {source}", os.stat(source))
+        return original_rename(source, destination, *args, **kwargs)
+
+    monkeypatch.setattr(os, "chmod", chmod)
+    monkeypatch.setattr(os, "fchmod", fchmod)
+    monkeypatch.setattr(os, "replace", replace)
+    monkeypatch.setattr(os, "rename", rename)
+    return observations
+
+
+@pytest.mark.parametrize(
+    ("existing_mode", "requested_mode"),
+    [(0o600, None), (None, 0o600)],
+    ids=["replace-existing-0600-file", "explicit-0600-mode"],
+)
+def test_atomic_write_never_holds_content_with_broader_permissions_than_the_final_mode(
+    tmp_path: Path,
+    monkeypatch,
+    existing_mode: int | None,
+    requested_mode: int | None,
+) -> None:
+    target_path = tmp_path / "secret.txt"
+    if existing_mode is not None:
+        target_path.write_bytes(b"old secret\n")
+        target_path.chmod(existing_mode)
+    original_umask = os.umask(0o022)
+    try:
+        observations = _record_modes_of_files_holding_content(monkeypatch)
+        file_access.write_bytes_atomic(target_path, b"new secret\n", mode=requested_mode)
+    finally:
+        os.umask(original_umask)
+        monkeypatch.undo()
+
+    assert observations, "expected the temp file to be observed before it was renamed into place"
+    assert [(label, oct(mode)) for label, mode in observations if mode & ~0o600] == []
+    assert target_path.read_bytes() == b"new secret\n"
+    assert stat.S_IMODE(target_path.stat().st_mode) == 0o600
+
+
+@pytest.mark.parametrize(
+    ("existing_mode", "requested_mode", "expected_mode"),
+    [(0o2750, None, 0o2750), (None, 0o4755, 0o4755)],
+    ids=["replace-existing-setgid-file", "explicit-setuid-mode"],
+)
+def test_atomic_write_keeps_setuid_and_setgid_bits(
+    tmp_path: Path,
+    existing_mode: int | None,
+    requested_mode: int | None,
+    expected_mode: int,
+) -> None:
+    target_path = tmp_path / "tool"
+    if existing_mode is not None:
+        target_path.write_bytes(b"old\n")
+        target_path.chmod(existing_mode)
+        if stat.S_IMODE(target_path.stat().st_mode) != existing_mode:
+            pytest.skip("the filesystem refuses the setgid bit")
+
+    file_access.write_bytes_atomic(target_path, b"new\n", mode=requested_mode)
+
+    assert target_path.read_bytes() == b"new\n"
+    assert stat.S_IMODE(target_path.stat().st_mode) == expected_mode

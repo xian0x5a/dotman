@@ -153,14 +153,7 @@ def materialize(
         if path is None:
             raise ValueError("Publication requires a live endpoint path")
         effects.append(PublicationEffect("reapply", path))
-    if content_changed:
-        if path is None:
-            raise ValueError("Publication requires a live endpoint path")
-        effects.append(
-            PublicationEffect("write", path, content=live.content)
-            if isinstance(live, (FilePresent, DirectoryChildPresent))
-            else PublicationEffect("delete", path)
-        )
+    mode = None
     if isinstance(live, (FilePresent, DirectoryChildPresent)):
         mode = int(observation.chmod, 8) if observation.chmod is not None else None
         if isinstance(live, DirectoryChildPresent) and mode is None:
@@ -170,10 +163,20 @@ def materialize(
                     destination_mode=observation.live_mode if observation.live_mode is not None else default_created_file_mode(),
                     source_mode=stat.S_IXUSR if live.executable else 0,
                 )
-        if mode is not None and (observation.live_mode != mode or isinstance(observation.live, Missing)):
-            if path is None:
-                raise ValueError("Publication requires a live endpoint path")
-            effects.append(PublicationEffect("chmod", path, mode=mode))
+    if content_changed:
+        if path is None:
+            raise ValueError("Publication requires a live endpoint path")
+        effects.append(
+            # The write applies the planned mode itself, so new content is never
+            # readable with broader permissions until the chmod effect runs.
+            PublicationEffect("write", path, content=live.content, mode=mode)
+            if isinstance(live, (FilePresent, DirectoryChildPresent))
+            else PublicationEffect("delete", path)
+        )
+    if mode is not None and (observation.live_mode != mode or isinstance(observation.live, Missing)):
+        if path is None:
+            raise ValueError("Publication requires a live endpoint path")
+        effects.append(PublicationEffect("chmod", path, mode=mode))
     if (
         effects and observation.live_is_symlink
         and observation.file_symlink_mode == "prompt"

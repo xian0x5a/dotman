@@ -461,7 +461,7 @@ def execute_publication(
                                 file_access.chmod(root, int(step.target_plan.chmod, 8))
                         if step.target_plan.child_path is not None and path.is_dir():
                             file_access.remove_empty_directory_tree(path)
-                        file_access.write_bytes_atomic(path, effect.content)
+                        file_access.write_bytes_atomic(path, effect.content, mode=effect.mode)
                     elif effect.kind == "delete":
                         # Following a leaf grants endpoint mutation, not ownership
                         # of its external parent directories.

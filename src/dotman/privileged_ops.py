@@ -14,9 +14,7 @@ class PrivilegedOperationError(RuntimeError):
 
 
 def _write_bytes_atomic(path: Path, *, restore_root: Path | None, mode: int | None) -> None:
-    write_bytes_atomic(path, sys.stdin.buffer.read())
-    if mode is not None:
-        path.chmod(mode)
+    write_bytes_atomic(path, sys.stdin.buffer.read(), mode=mode)
     if restore_root is not None:
         restore_repo_path_access_for_invoking_user(path, repo_root=restore_root)
 
