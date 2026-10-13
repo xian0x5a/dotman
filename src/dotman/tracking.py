@@ -534,6 +534,23 @@ def validate_tracked_package_entries(
 
 
 
+def _skips_conflict_validation(
+    context: TrackedStateContext,
+    raw_entries_by_repo: dict[str, list[FullSpecSelector]],
+    rewritten_repo_names: set[str],
+) -> bool:
+    # Validation is still skipped while rows are invalid (#183), but the guard sees
+    # rewritten repos without the unresolved rows they keep, as when those rows were
+    # dropped; keeping them must not switch validation off.
+    guard_bindings = {
+        repo_name: effective_tracked_package_entries_for_repo(get_repository(context, repo_name), rows)
+        if repo_name in rewritten_repo_names else rows
+        for repo_name, rows in raw_entries_by_repo.items()
+    }
+    return bool(list_invalid_explicit_package_entries(context, bindings_by_repo=guard_bindings))
+
+
+
 def record_tracked_package_entry(
     context: "PlanningContext",
     binding: FullSpecSelector,
@@ -549,7 +566,7 @@ def record_tracked_package_entry(
         expand_tracked_package_entry_in_repo(repo, binding),
     )
     raw_entries_by_repo[repo.config.name] = normalized
-    if validate and not list_invalid_explicit_package_entries(state, bindings_by_repo=raw_entries_by_repo):
+    if validate and not _skips_conflict_validation(state, raw_entries_by_repo, {repo.config.name}):
         validate_tracked_package_entries(
             context,
             effective_tracked_package_entries_by_repo(state, raw_entries_by_repo),
@@ -570,7 +587,7 @@ def validate_tracked_package_entry(
         persisted_tracked_package_entries_for_repo(repo, raw_entries_by_repo.get(repo.config.name, [])),
         expand_tracked_package_entry_in_repo(repo, binding),
     )
-    if not list_invalid_explicit_package_entries(state, bindings_by_repo=raw_entries_by_repo):
+    if not _skips_conflict_validation(state, raw_entries_by_repo, {repo.config.name}):
         validate_tracked_package_entries(
             context,
             effective_tracked_package_entries_by_repo(state, raw_entries_by_repo),
@@ -723,7 +740,8 @@ def remove_persisted_tracked_package_entry(
     if record.repo is not None:
         raw_entries_by_repo = raw_tracked_package_entries_by_repo(state)
         raw_entries_by_repo[record.repo.config.name] = remaining
-        if not list_invalid_explicit_package_entries(state, bindings_by_repo=raw_entries_by_repo):
+        rewritten_repo_names = {record.repo.config.name} if record.issue is None else set()
+        if not _skips_conflict_validation(state, raw_entries_by_repo, rewritten_repo_names):
             try:
                 validate_tracked_package_entries(
                     context,
@@ -771,7 +789,7 @@ def remove_tracked_package_entries(
     if not removed:
         return []
 
-    if not list_invalid_explicit_package_entries(state, bindings_by_repo=raw_entries_by_repo):
+    if not _skips_conflict_validation(state, raw_entries_by_repo, set(remaining_by_repo)):
         try:
             validate_tracked_package_entries(
                 context,
