@@ -1015,7 +1015,7 @@ class ProposalSession:
             ))
             self._emit(SessionChanged(self.view))
             return CommandAccepted(self.view,
-                ApprovalChanged(row.row_id, approved) if isinstance(command, SetApproval)
+                ApprovalChanged(row.row_id, updated.approved) if isinstance(command, SetApproval)
                 else ProposalReview(row.row_id, proposal, diagnostics))
         if isinstance(command, Execute) and view.preview:
             return CommandRejected(view, "preview")
