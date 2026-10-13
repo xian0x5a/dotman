@@ -17,7 +17,7 @@ from dotman.manifest import resolve_sync_policy, sync_policy_allows_operation
 from dotman.models import GuardSkip, ResolvedSyncScope, ResolvedSyncTarget, resolved_package_selection_key
 from dotman.planning_guards import evaluate_directional_guards, evaluate_directory_path_rule_guards
 from dotman.progress import ProgressSink
-from dotman.sync_directory import census_directory, child_metadata, planned_child_metadata
+from dotman.sync_directory import census_directory, child_metadata, validate_planned_child
 from dotman.sync_base_lifecycle import (
     BaseUnit,
     FrozenBaseUnit,
@@ -465,8 +465,9 @@ def observe_scope(
         for relative, failures in census.entries:
             if None not in selected_paths and relative not in selected_paths:
                 continue
-            child = planned_child_metadata(metadata, relative)
+            child = child_metadata(metadata, relative)
             if participates(child):
+                validate_planned_child(metadata, relative, child)
                 children[relative] = (replace(identity, child_path=relative or None), child, failures)
         resolved_directories[identity] = (selected_paths, census, children)
 

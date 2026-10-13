@@ -383,3 +383,16 @@ def test_patch_capture_child_settings_may_come_from_overlapping_rules(tmp_path):
     assert not isinstance(opened, SessionOpenFailed), opened
     with opened:
         pass
+
+
+def test_push_ignores_patch_capture_of_children_it_never_plans(tmp_path):
+    from dotman.sync_session import SessionOpenFailed
+
+    # A pull-only child takes no part in a Push, so its Patch Capture rules cannot block one.
+    rules = ["[targets.x.path_rules.docs]", "pattern='*.md'", "capture='patch'", "sync_policy='pull-only'"]
+    engine_obj = tracked_engine(tmp_path, repo(tmp_path, rules, directory=True))
+    opened = engine_obj.open_push_session(engine_obj.resolve_sync_scope())
+
+    assert not isinstance(opened, SessionOpenFailed), opened
+    with opened:
+        pass

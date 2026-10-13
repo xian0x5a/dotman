@@ -166,19 +166,17 @@ def census_directory(
        and not any(failures for failures in entries.values()))
 
 
-def planned_child_metadata(metadata: projection.TargetMetadata, relative: str) -> projection.TargetMetadata:
-    """Settings of a child the run plans, which must keep Patch Capture valid.
+def validate_planned_child(metadata: projection.TargetMetadata, relative: str, child: projection.TargetMetadata) -> None:
+    """Reject a child the run plans whose folded Path Rules break Patch Capture.
 
-    Base inspection uses `child_metadata` instead: a broken rule must not make
-    a stored Base look untracked.
+    Only planning checks this: a broken rule must not make a stored Base look
+    untracked during Base inspection.
     """
-    child = child_metadata(metadata, relative)
     label = repo_qualified_target_text(repo_name=metadata.repo_name, package_id=metadata.package_id,
                                        target_name=metadata.target_name, bound_profile=metadata.bound_profile)
     validate_patch_capture(f'target "{label}/{relative}"', render=child.render_command or "raw",
                            capture=child.capture_command or "raw", compare_repo=child.compare_repo,
                            compare_live=child.compare_live)
-    return child
 
 
 def child_metadata(metadata: projection.TargetMetadata, relative: str) -> projection.TargetMetadata:
