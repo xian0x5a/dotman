@@ -7,6 +7,7 @@ import pytest
 
 from dotman.command_runtime import INTERRUPTED_EXIT_CODE, CommandResult, MemoryCommandRuntime
 from dotman.config import load_manager_config
+from dotman.engine import DotmanEngine
 from dotman.models import DEFAULT_COMMIT_MESSAGE, ResolvedSyncTarget
 from dotman.sync_commit import probe_work_tree, render_commit_message
 from dotman.sync_session import BatchSetApproval, Preview, SetApproval, SetCommit, SetResolutionIntent
@@ -82,6 +83,32 @@ def test_pull_commits_only_written_sources(tmp_path, monkeypatch):
     ]
     # Unrelated work keeps its exact index and worktree state.
     assert git(repo, "status", "--porcelain").splitlines() == ["A  notes", " M profiles/default.toml"]
+
+
+@pytest.mark.parametrize("source,sibling", [("star*", "start"), ("st?r", "star"), ("[s]tar", "star")])
+def test_pull_commit_treats_source_paths_literally(tmp_path, monkeypatch, source, sibling):
+    make_engine(tmp_path, monkeypatch, [("glob", "both", b"repo", b"live", "")])
+    repo = tmp_path / "repo"
+    package = repo / "packages/app"
+    # Rename the source to one with glob magic, next to a tracked file the glob would match.
+    (package / "package.toml").write_text(
+        (package / "package.toml").read_text().replace('source = "glob"', f'source = "{source}"'))
+    (package / "glob").rename(package / source)
+    (package / sibling).write_text("sibling")
+    git(repo, "add", "-A")
+    git(repo, "-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "-qm", "glob source")
+    (package / sibling).write_text("unrelated unstaged work")
+    engine = DotmanEngine.from_config_path(tmp_path / "config.toml")
+    with engine.open_pull_session(engine.resolve_sync_scope(), commit=True) as session:
+        result = session.execute().result
+    assert result.status == "completed", result
+    assert [(commit.repo, commit.status) for commit in result.commits] == [("main", "committed")]
+    assert (package / source).read_bytes() == b"live"
+    assert git(repo, "show", "--name-only", "--format=", "-z", "HEAD").split("\0")[:-1] == [
+        f"packages/app/{source}",
+    ]
+    # Unrelated work keeps its exact index and worktree state.
+    assert git(repo, "status", "--porcelain", "-z").split("\0")[:-1] == [f" M packages/app/{sibling}"]
 
 
 def test_sync_commit_names_single_target_and_skips_unselected(tmp_path, monkeypatch):
