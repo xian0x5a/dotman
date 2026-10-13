@@ -221,7 +221,7 @@ class EditResolver:
             ),
             single_partial_error=(
                 f"no exact match for '{query_text}'; use exact name "
-                f"'{partial_candidates[0].kind} {partial_candidates[0].ref_text}'"
+                f"'{partial_candidates[0].ref_text}'"
                 if len(partial_candidates) == 1
                 else None
             ),
@@ -307,7 +307,7 @@ class EditResolver:
         exact_error: str,
         partial_error: str,
         not_found_error: str,
-        single_partial_error: str | None = None,
+        single_partial_error: str | None,
         rank_candidates: bool = True,
     ) -> CandidateValue:
         ranked_exact = self._rank_candidates(exact_candidates, query_text, rank_candidates)
@@ -320,10 +320,7 @@ class EditResolver:
             return self._choose_candidate(header_text, ranked_exact)
         if len(ranked_partial) == 1:
             if self._interaction is None:
-                raise ValueError(
-                    single_partial_error
-                    or f"no exact match for '{query_text}'; use exact name '{ranked_partial[0].label}'"
-                )
+                raise ValueError(single_partial_error)
             return self._choose_candidate(header_text, ranked_partial)
         if len(ranked_partial) > 1:
             if self._interaction is None:
