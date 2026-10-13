@@ -574,7 +574,7 @@ def sync_document(args, session, result, *, diagnostic=None) -> dict:
         "operation": getattr(args, "command", "sync"),
         "mode": "dry-run" if args.dry_run else "execute",
         "status": result.status if result else "aborted" if diagnostic and diagnostic["code"] == "interrupted" else "failed",
-        "scope": list(dict.fromkeys([unit["identity"] for unit in units] + [row.scope for row in auxiliary])) if view else list(getattr(args, "scopes", ()) or ([args.binding] if getattr(args, "binding", None) else [])),
+        "scope": list(dict.fromkeys([unit["identity"] for unit in units] + [row.scope for row in auxiliary])) if view else list(args.scopes),
         "summary": {
             "sync_units": len(units),
             "in_sync_units": in_sync_units,

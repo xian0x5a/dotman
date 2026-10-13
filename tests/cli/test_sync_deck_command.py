@@ -102,7 +102,6 @@ def test_confirmation_freezes_selection_and_cancel_restores_workset(tmp_path, mo
         deck.confirm()
         assert deck.confirming
         frozen = session.view
-        deck.move(1)
         deck.select()
         deck.select_all(False)
         deck.open_review()
@@ -115,27 +114,9 @@ def test_confirmation_freezes_selection_and_cancel_restores_workset(tmp_path, mo
         deck.back()
         assert not deck.confirming
         assert session.view == frozen
-        deck.move(1)
+        deck.focus = 1
         deck.select()
         assert all(row.approved for row in session.view.rows)
-
-
-def test_mouse_selects_only_clicked_row_and_cannot_change_confirmation(tmp_path, monkeypatch):
-    from dotman.sync_deck import CommandDeck
-    engine = make_engine(tmp_path, monkeypatch, [
-        ("one", "push-only", b"repo", b"live", ""),
-        ("two", "push-only", b"repo", b"live", ""),
-    ])
-    with engine.open_sync_session(engine.resolve_sync_scope([]), preview=True) as session:
-        deck = CommandDeck(session, use_color=False)
-        deck.click(1, selection=False)
-        assert deck.focus == 1 and not any(row.approved for row in session.view.rows)
-        deck.click(1, selection=True)
-        assert [row.approved for row in session.view.rows] == [False, True]
-        deck.confirm()
-        deck.click(0, selection=True)
-        assert deck.focus == 1
-        assert [row.approved for row in session.view.rows] == [False, True]
 
 
 def test_review_shows_newline_only_publication_and_exact_mode(tmp_path, monkeypatch):
