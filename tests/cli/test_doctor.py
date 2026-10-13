@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from dotman.cli import main
 import dotman.doctor as doctor
 
@@ -159,3 +160,41 @@ def test_doctor_cli_groups_human_output_by_category(
     assert "git is not installed" in output
     assert "repo path does not exist" in output
     assert "no editor configured" in output
+
+
+@pytest.mark.parametrize(
+    "state_text",
+    [
+        pytest.param("schema_version = 1\n[[packages]\n", id="invalid-toml"),
+        pytest.param('[[packages]]\nrepo = "fixture"\npackage_id = "app"\nprofile = "default"\n', id="missing-schema-version"),
+        pytest.param('schema_version = 1\n[[packages]]\nrepo = "fixture"\npackage_id = "app"\n', id="row-missing-profile"),
+    ],
+)
+def test_doctor_cli_reports_corrupt_tracked_state_as_failed_check(
+    tmp_path: Path,
+    capsys,
+    state_text: str,
+) -> None:
+    repo_root = tmp_path / "repo"
+    (repo_root / "profiles").mkdir(parents=True)
+    (repo_root / "profiles" / "default.toml").write_text("", encoding="utf-8")
+    (repo_root / "packages" / "app").mkdir(parents=True)
+    (repo_root / "packages" / "app" / "package.toml").write_text('id = "app"\n', encoding="utf-8")
+    config_path = write_single_repo_config(tmp_path, repo_name="fixture", repo_path=repo_root)
+    state_path = tmp_path / "state" / "dotman" / "repos" / "fixture" / "tracked-packages.toml"
+    state_path.parent.mkdir(parents=True)
+    state_path.write_text(state_text, encoding="utf-8")
+
+    exit_code = main(["--config", str(config_path), "--json", "doctor"])
+
+    captured = capsys.readouterr()
+    assert "Traceback" not in captured.err
+    # Doctor exits 2 for failed checks too, so the report itself is the contract.
+    assert exit_code == 2
+    assert captured.out, f"doctor printed no report; stderr: {captured.err}"
+    payload = json.loads(captured.out)
+    assert payload["ok"] is False
+    assert any(
+        check["status"] == "failed" and check["path"] == str(state_path)
+        for check in payload["checks"]
+    )

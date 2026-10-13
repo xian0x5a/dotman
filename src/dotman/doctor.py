@@ -11,6 +11,7 @@ from dotman.models import FullSpecSelector, TrackedPackageEntryIssue
 from dotman.repository import Repository
 from dotman.toml_utils import TomlLoadError
 from dotman.tracking import (
+    TrackedPackagesFileError,
     TrackedStateContext,
     get_repository,
     list_invalid_explicit_package_entries,
@@ -305,6 +306,17 @@ def _read_configured_package_entries_for_doctor(
                 hint="Fix or remove the broken tracked-packages.toml file.",
             )
         ]
+    except TrackedPackagesFileError as exc:
+        return None, [
+            DoctorCheck(
+                key="tracked_packages_file",
+                status="failed",
+                detail=f"tracked packages file is malformed: {exc.detail}",
+                path=exc.path,
+                repo_name=repo.config.name,
+                hint="Fix or remove the broken tracked-packages.toml file.",
+            )
+        ]
     except OSError as exc:
         return None, [
             DoctorCheck(
@@ -357,6 +369,18 @@ def _collect_orphan_package_entry_issues(
                     status="failed",
                     detail="orphan tracked packages file has invalid TOML",
                     path=exc.path or state_path,
+                    repo_name=None,
+                    hint="Fix or remove this orphan tracked-packages.toml file, or add matching repo config.",
+                )
+            )
+            continue
+        except TrackedPackagesFileError as exc:
+            checks.append(
+                DoctorCheck(
+                    key="orphan_tracked_packages_file",
+                    status="failed",
+                    detail=f"orphan tracked packages file is malformed: {exc.detail}",
+                    path=exc.path,
                     repo_name=None,
                     hint="Fix or remove this orphan tracked-packages.toml file, or add matching repo config.",
                 )
