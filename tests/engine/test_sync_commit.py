@@ -246,6 +246,21 @@ def test_commit_leaves_out_ignored_untracked_sources(tmp_path, monkeypatch):
     assert git(repo, "status", "--porcelain").splitlines() == []
 
 
+def test_commit_keeps_tracked_sources_that_gitignore_matches(tmp_path, monkeypatch):
+    engine = make_engine(tmp_path, monkeypatch, TWO_DRIFTED)
+    repo = tmp_path / "repo"
+    # Git keeps tracking a file that .gitignore starts matching later.
+    (repo / ".gitignore").write_text("/packages/app/first\n")
+    git(repo, "add", ".gitignore")
+    git(repo, "commit", "-qm", "ignore")
+    with engine.open_pull_session(engine.resolve_sync_scope(), commit=True) as session:
+        result = session.execute().result
+    assert result.status == "completed", result
+    assert sorted(git(repo, "show", "--name-only", "--format=", "HEAD").split()) == [
+        "packages/app/first", "packages/app/second",
+    ]
+
+
 def test_commit_reports_no_changes_when_every_written_source_is_ignored(tmp_path, monkeypatch):
     engine = make_engine(tmp_path, monkeypatch, TWO_DRIFTED)
     repo = tmp_path / "repo"
