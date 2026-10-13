@@ -31,7 +31,7 @@ See [Sync lifecycle](sync.md) for convergence semantics and
 
 - `--json` switches command output to machine-readable JSON. It is a global option and must appear before the subcommand.
 - Global `--no-confirm` suppresses every menu, Editor, pager, and prompt throughout command behavior. It uses configured defaults and fails safely when a required decision cannot be resolved.
-- `--no-confirm` does not suppress sudo authentication: when elevation needs a password, sudo authenticates however it is configured: NOPASSWD, a terminal prompt, or the `SUDO_ASKPASS` helper when no terminal is present and a display is available. A terminal nobody watches waits at the prompt until sudo times out. Dotman never substitutes its own prompt.
+- `--no-confirm` does not suppress sudo authentication: when elevation needs a password, sudo authenticates however it is configured: NOPASSWD, a terminal prompt, or the `SUDO_ASKPASS` helper when no terminal is present. Dotman's own sudo login passes `-A` then, so a helper that needs no display also works headless; `sudo` calls inside hooks choose their own flags. A terminal nobody watches waits at the prompt until sudo times out. Dotman never substitutes its own prompt.
 - A missing terminal never implies consent. Without `--no-confirm`, an unavailable required interactive decision fails; `--json` selects output only and never authorizes execution.
 - Execution hooks receive `DOTMAN_NO_CONFIRM=1` under `--no-confirm`, otherwise `0`; planning Guards do not receive it.
 - `--run-noop` is meaningful for `push`, `pull`, and `sync`; Sync retains both surviving directional hook families.

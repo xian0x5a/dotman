@@ -37,6 +37,24 @@ def _sudo_request(*sudo_arguments: str, **request_options) -> CommandRequest:
     )
 
 
+def _askpass_arguments() -> tuple[str, ...]:
+    # Without a terminal, sudo only falls back to SUDO_ASKPASS when a display
+    # is set (#114). `-A` makes it use the helper anyway, so a helper that needs
+    # no display also works in headless runs such as cron.
+    if os.environ.get("SUDO_ASKPASS") and not _has_controlling_terminal():
+        return ("-A",)
+    return ()
+
+
+def _has_controlling_terminal() -> bool:
+    # The same check sudo makes before it prompts on a terminal.
+    try:
+        os.close(os.open("/dev/tty", os.O_RDWR))
+    except OSError:
+        return False
+    return True
+
+
 class _SudoLease:
     def __init__(self, runtime: CommandRuntime | None = None) -> None:
         self._runtime = runtime if runtime is not None else current_command_runtime()
@@ -60,7 +78,7 @@ class _SudoLease:
             # No-confirm suppresses dotman's decisions, not sudo authentication:
             # sudo authenticates however it is configured (terminal, askpass).
             _emit_sudo_notice(reason, password_required=True)
-            result = self._runtime.run(_sudo_request("-v", io="tty"))
+            result = self._runtime.run(_sudo_request(*_askpass_arguments(), "-v", io="tty"))
             raise_for_command_interruption(result)
             if result.exit_code != 0:
                 raise PermissionError("sudo authentication failed")
