@@ -222,3 +222,38 @@ def test_probe_propagates_interruption(tmp_path, outcome, interruption):
 ], ids=["no-git-executable", "not-a-repo"])
 def test_probe_reports_no_work_tree_when_git_cannot_commit(tmp_path, outcome):
     assert probe_work_tree(tmp_path, MemoryCommandRuntime([outcome])) is None
+
+
+def ignore_untracked(repo, *names):
+    """Turn committed sources into untracked, git-ignored machine-local sources."""
+    (repo / ".gitignore").write_text("".join(f"/packages/app/{name}\n" for name in names))
+    git(repo, "rm", "-q", "--cached", *(f"packages/app/{name}" for name in names))
+    git(repo, "add", ".gitignore")
+    git(repo, "commit", "-qm", "ignore")
+
+
+def test_commit_leaves_out_ignored_untracked_sources(tmp_path, monkeypatch):
+    engine = make_engine(tmp_path, monkeypatch, TWO_DRIFTED)
+    repo = tmp_path / "repo"
+    ignore_untracked(repo, "second")
+    with engine.open_pull_session(engine.resolve_sync_scope(), commit=True) as session:
+        result = session.execute().result
+    assert result.status == "completed", result
+    assert [(commit.repo, commit.status) for commit in result.commits] == [("main", "committed")]
+    assert git(repo, "show", "--name-only", "--format=", "HEAD").split() == ["packages/app/first"]
+    assert (repo / "packages/app/second").read_bytes() == b"live second"
+    # Nothing stays staged, and the ignored source stays untracked.
+    assert git(repo, "status", "--porcelain").splitlines() == []
+
+
+def test_commit_reports_no_changes_when_every_written_source_is_ignored(tmp_path, monkeypatch):
+    engine = make_engine(tmp_path, monkeypatch, TWO_DRIFTED)
+    repo = tmp_path / "repo"
+    ignore_untracked(repo, "first", "second")
+    head = git(repo, "rev-parse", "HEAD")
+    with engine.open_pull_session(engine.resolve_sync_scope(), commit=True) as session:
+        result = session.execute().result
+    assert result.status == "completed", result
+    assert [(commit.repo, commit.status) for commit in result.commits] == [("main", "no-changes")]
+    assert git(repo, "rev-parse", "HEAD") == head
+    assert git(repo, "status", "--porcelain").splitlines() == []

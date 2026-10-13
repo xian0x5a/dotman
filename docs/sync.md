@@ -401,7 +401,8 @@ repository sources only through deliberate Editor changes.
 - Each commit covers only paths this run wrote: converged Primary Source Changes
   and applied Additional Source Changes. dotman stages them with
   `git add -A -- <paths>` and commits with `git commit -- <paths>`, so unrelated
-  staged or unstaged work stays out. Files a pull hook writes are not included.
+  staged or unstaged work stays out. Files a pull hook writes are not included,
+  and, as with `git add -A`, neither is an untracked source git ignores.
   A repo with nothing left to commit reports `no-changes`.
 - The message comes from `[git] commit_message` ([config](config.md#git)).
 - A failed commit fails the run; an interrupted one aborts it. Earlier commits

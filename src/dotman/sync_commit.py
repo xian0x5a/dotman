@@ -107,9 +107,13 @@ def commit_sources(root: Path, paths: Sequence[Path], message: str, runtime: Com
     Returns the short commit hash, or None when the paths match HEAD.
     """
     paths = tuple(dict.fromkeys(paths))
-    tracked = {root / name for name in _git(runtime, root, "ls-files", "-z", "--", *map(str, paths)).split("\0") if name}
+    tracked = _listed_paths(runtime, root, paths)
+    # Like `git add -A`, leave out untracked sources git ignores: they are kept
+    # out of history on purpose, and naming one would fail the whole add.
+    ignored = _listed_paths(runtime, root, paths, "--others", "--ignored", "--exclude-standard")
     # A deleted source that git never tracked has nothing to stage; naming it would fail.
-    pathspec = tuple(str(path) for path in paths if path.exists() or path.is_symlink() or path in tracked)
+    pathspec = tuple(str(path) for path in paths
+                     if path not in ignored and (path.exists() or path.is_symlink() or path in tracked))
     if not pathspec:
         return None
     _git(runtime, root, "add", "-A", "--", *pathspec)
@@ -118,6 +122,11 @@ def commit_sources(root: Path, paths: Sequence[Path], message: str, runtime: Com
     # Pathspec commit (`--only`) leaves other staged changes in the index.
     _git(runtime, root, "commit", "--quiet", "--file=-", "--", *pathspec, message=message)
     return _git(runtime, root, "rev-parse", "--short", "HEAD").strip()
+
+
+def _listed_paths(runtime: CommandRuntime, root: Path, paths: Sequence[Path], *options: str) -> set[Path]:
+    listing = _git(runtime, root, "ls-files", "-z", *options, "--", *map(str, paths))
+    return {root / name for name in listing.split("\0") if name}
 
 
 def _git_request(cwd: Path, *args: str, message: str | None = None) -> CommandRequest:
