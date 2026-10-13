@@ -6,9 +6,11 @@ from pathlib import Path
 
 from types import SimpleNamespace
 
+import pytest
+
 import dotman.add as add_module
 import dotman.cli_interaction as cli
-from dotman.add import AddOperationResult, AddReviewResult, review_add_manifest
+from dotman.add import AddOperationResult, AddReviewResult, resolve_live_path_spec, review_add_manifest
 from dotman.cli import main
 from dotman.command_runtime import ArgvCommand, CommandResult, MemoryCommandRuntime
 from dotman.interaction import ConfirmationRequest, ScriptedInteraction
@@ -473,3 +475,21 @@ def test_add_no_confirm_skips_editor_even_with_terminal(tmp_path, monkeypatch) -
 
     assert main(["--config", str(config), "--no-confirm", "add", str(live_path), "fixture:app"]) == 0
     assert "[targets." in (repo_root / "packages/app/package.toml").read_text()
+
+
+@pytest.mark.parametrize("kind", ["file", "directory"])
+def test_add_writes_chmod_the_manifest_accepts(tmp_path: Path, kind: str) -> None:
+    live_path = tmp_path / "live"
+    if kind == "file":
+        live_path.write_text("payload\n", encoding="utf-8")
+    else:
+        live_path.mkdir()
+    live_path.chmod(0o040)
+    try:
+        spec = resolve_live_path_spec(str(live_path), cwd=tmp_path, home=tmp_path)
+    finally:
+        # Let pytest clean up a directory its owner cannot list.
+        live_path.chmod(0o700)
+
+    # The manifest requires 3 or 4 octal digits, so a mode below 0o100 keeps its leading zero.
+    assert spec.chmod == "040"
