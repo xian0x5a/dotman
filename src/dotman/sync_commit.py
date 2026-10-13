@@ -45,6 +45,12 @@ def validate_commit_message_template(template: object) -> str:
         if field not in COMMIT_MESSAGE_FIELDS:
             allowed = ", ".join(f"{{{name}}}" for name in COMMIT_MESSAGE_FIELDS)
             raise ValueError(f"config git.commit_message uses unknown placeholder {{{field}}}; use {allowed}")
+    # Names alone miss bad format specs, conversions and nested fields, which
+    # would otherwise fail only after a run had written its sources.
+    try:
+        template.format(operation="sync", count=1, summary="sync main:app.unit", packages="main:app", repo="main")
+    except (ValueError, LookupError, AttributeError, TypeError) as exc:
+        raise ValueError(f"config git.commit_message is not a valid template: {exc}") from exc
     return template
 
 
