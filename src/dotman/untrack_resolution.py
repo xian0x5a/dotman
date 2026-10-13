@@ -218,7 +218,7 @@ class UntrackResolver:
             if len(partial_entries) == 1:
                 raise ValueError(
                     f"no exact match for '{binding_label}'; use exact name "
-                    f"'{self._persisted_option(partial_entries[0]).display_label}'"
+                    f"'{self._binding_text(partial_entries[0].package_entry)}'"
                 )
             raise ValueError(
                 f"tracked package entry '{binding_label}' is ambiguous: "
@@ -550,10 +550,9 @@ class UntrackResolver:
         if ranked_partial:
             if self._interaction is None:
                 if len(ranked_partial) == 1:
-                    option = option_resolver(ranked_partial[0])
                     raise ValueError(
                         f"no exact match for '{query_text}'; use exact name "
-                        f"'{option.display_label}'"
+                        f"'{value_resolver(ranked_partial[0])}'"
                     )
                 raise ValueError(partial_error_text)
             return self._choose(

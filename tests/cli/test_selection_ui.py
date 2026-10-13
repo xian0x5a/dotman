@@ -10,7 +10,7 @@ from dotman.command_runtime import ArgvCommand, CommandResult, MemoryCommandRunt
 from dotman.models import UiConfig, UiMenusConfig
 from dotman.ui_context import ui_config_scope
 
-from tests.helpers import write_manager_config
+from tests.helpers import EXAMPLE_REPO, write_manager_config, write_named_manager_config_with_state_keys
 
 
 
@@ -687,5 +687,37 @@ def test_single_partial_match_error_suggests_a_name_the_command_accepts(
     assert suggestions, error_output
 
     exit_code = main(["--config", str(config_path), "--no-confirm", *command, f"{suggestions[-1]}{profile_suffix}"])
+
+    assert exit_code == 0, capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("command", "query"),
+    [
+        pytest.param(["untrack"], "gi", id="untrack"),
+        pytest.param(["sync", "--dry-run"], "gitconf", id="sync"),
+    ],
+)
+def test_single_partial_tracked_match_error_suggests_a_name_the_command_accepts(
+    tmp_path: Path,
+    capsys,
+    command: list[str],
+    query: str,
+) -> None:
+    # Same paste-back contract for queries over tracked state. The state key
+    # badges tracked entry labels, and neither badges nor kinds belong in a name.
+    config_path = write_named_manager_config_with_state_keys(
+        tmp_path, {"example": EXAMPLE_REPO}, state_keys={"example": "laptop"}
+    )
+    for binding in ("example:git@basic", "example:nvim@basic"):
+        assert main(["--config", str(config_path), "--no-confirm", "track", binding]) == 0
+    capsys.readouterr()
+
+    assert main(["--config", str(config_path), "--no-confirm", *command, query]) != 0
+    error_output = capsys.readouterr().err
+    suggestions = [quoted for quoted in re.findall(r"'([^']+)'", error_output) if quoted != query]
+    assert suggestions, error_output
+
+    exit_code = main(["--config", str(config_path), "--no-confirm", *command, suggestions[-1]])
 
     assert exit_code == 0, capsys.readouterr().err
