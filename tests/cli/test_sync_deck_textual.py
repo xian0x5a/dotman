@@ -12,6 +12,7 @@ from dotman.sync_deck import CommandDeck, SyncDeckApp, WorksetTable
 
 SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 from tests.engine.test_sync_session import make_engine
+from tests.helpers import wait_until_idle
 
 
 def post_cell_click(app, offset):
@@ -1522,4 +1523,32 @@ def test_workset_keeps_cursor_visible_when_wrapped_detail_grows(tmp_path, monkey
                 assert table.cursor_row == 30
                 visible = [table.render_line(y).text for y in range(table.size.height)]
                 assert any("main:app.zz_" in line for line in visible)
+        run(interact())
+
+
+@pytest.mark.parametrize("open_menu", [("r",), ("enter", "v")], ids=["resolution-menu", "full-view-menu"])
+def test_retry_key_is_refused_while_a_menu_is_open(tmp_path, monkeypatch, open_menu):
+    from textual.widgets import OptionList
+    from tests.engine.test_sync_both_convergence import established
+
+    engine = established(tmp_path, monkeypatch)
+    # A merge conflict gives the review two diffs, so v opens the Full View menu.
+    context = b"".join(b"ctx-%d\n" % index for index in range(10))
+    (tmp_path / "repo/packages/app/unit").write_bytes(b"repository\n" + context)
+    (tmp_path / "live/unit").write_bytes(b"conflict\n" + context)
+    with engine.open_sync_session(engine.resolve_sync_scope([]), preview=True) as session:
+        app = SyncDeckApp(CommandDeck(session, use_color=False))
+
+        async def interact():
+            async with app.run_test(size=(80, 40)) as pilot:
+                menu = app.query_one("#resolution", OptionList)
+                for key in open_menu:
+                    await pilot.press(key)
+                    await wait_until_idle(app, pilot)
+                assert menu.display
+                revision = session.view.revision
+                await pilot.press("t")
+                await wait_until_idle(app, pilot)
+                assert session.view.revision == revision
+                assert menu.display
         run(interact())

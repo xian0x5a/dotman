@@ -1817,9 +1817,7 @@ class SyncDeckApp(App[bool]):
         self.materialize(authorize)
 
     def action_retry(self) -> None:
-        if self.busy:
-            return
-        if self.deck.confirming or self.deck.full_view is not None:
+        if self.busy or self.deck.confirming or self.deck.full_view is not None or self.query_one("#resolution", OptionList).display:
             return
         self.sync_focus()
         row = self.deck.focused_row
