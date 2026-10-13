@@ -26,7 +26,7 @@ class PullSession(ProposalSession):
     def _prepare_workset(self):
         # Pull is opt-out for auxiliary work too; --no-confirm execution must not
         # reapprove the whole workset and thereby retry failed Proposals.
-        self._prepare_fixed_direction_workset(None)
+        self._prepare_fixed_direction_workset("use-live")
 
     def _materialize_row(self, row):
         observation = row.observation
@@ -35,19 +35,12 @@ class PullSession(ProposalSession):
         return self._finalize_proposal(observation, Proposal(
             repository, observation.live,
             repository if repository != observation.repository else None,
-            (), intent="editor" if edited else None,
+            (), intent="editor" if edited else "use-live",
             capture=None if edited else repository,
             reconciliation="edited repository outcome" if edited else "captured repository outcome",
             generation=edited[1] if edited else self._next_generation(row.row_id),
             additional_changes=self._row_additional(row),
         ))
-
-    def _editor_initial(self, row):
-        # Pull has no Resolution Intent: its outcome is always the Capture, so an
-        # unreviewed row materializes it now, like Sync's Use live.
-        if row.proposal is None and row.intent is None and not row.diagnostics:
-            return self._materialize_row(row).repository
-        return super()._editor_initial(row)
 
     def _publish(self):
         selected = tuple(row for row in self.view.rows

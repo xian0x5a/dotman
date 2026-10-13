@@ -12,7 +12,7 @@ def test_pull_fixed_opt_out_frozen_repository_effect(tmp_path, monkeypatch, sour
     with engine.open_pull_session(engine.resolve_sync_scope()) as session:
         row = session.view.rows[0]
         assert row.approved
-        assert row.intent is None
+        assert row.intent == "use-live"
         assert row.allowed_intents == ()
         assert "set-resolution-intent" not in row.allowed_commands
         view = session.view
@@ -242,3 +242,45 @@ def test_pull_editor_starts_from_captured_live_content(tmp_path, monkeypatch, un
             session.dispatch(SetApproval(view().session_id, view().revision, view().rows[0].row_id, True))
         assert session.execute().result.status == "completed"
     assert (tmp_path / "repo/packages/app/unit").read_bytes() == b"new live\ntweak\n"
+
+
+@pytest.mark.parametrize("batch", [False, True], ids=["single", "batch"])
+def test_pull_editor_starts_from_live_after_shared_source_invalidates_unselected_row(
+        tmp_path, monkeypatch, batch):
+    """An unselected Pull row whose Proposal a shared-source change dropped still edits incoming live content."""
+    from dotman.sync_session import AdditionalRow, BatchSetApproval, EditProposal, SetApproval
+    engine = make_engine(tmp_path, monkeypatch, [
+        ("a", "pull-only", b"repo a\n", b"live a\n",
+         'editor = { run = "printf candidate > \\"$DOTMAN_EDITOR_ADDITIONAL_SOURCE_PATHS\\"", '
+         'io = "pipe", additional_sources = ["shared"] }'),
+        ("b", "pull-only", b"old repo\n", b"new live\n",
+         'editor = { run = "printf \'tweak\\\\n\' >> \\"$DOTMAN_SOURCE\\"", '
+         'io = "pipe", additional_sources = ["shared"] }'),
+    ])
+    shared = tmp_path / "repo/packages/app/shared"
+    shared.write_bytes(b"original")
+    with engine.open_pull_session(engine.resolve_sync_scope(), preview=False) as session:
+        def set_approval(row, approved):
+            view = session.view
+            if batch:
+                return session.dispatch(BatchSetApproval(view.session_id, view.revision, approved, (row.row_id,)))
+            return session.dispatch(SetApproval(view.session_id, view.revision, row.row_id, approved))
+
+        def edit(row):
+            view = session.view
+            return session.dispatch(EditProposal(view.session_id, view.revision, row.row_id))
+
+        assert edit(session.view.rows[0]).result.status == "saved"
+        a, b, additional = session.view.rows
+        assert isinstance(additional, AdditionalRow) and additional.approved
+        set_approval(b, False)
+        assert session.view.rows[1].proposal is not None
+        set_approval(additional, False)
+        b = session.view.rows[1]
+        assert not b.approved and b.proposal is None
+        assert edit(b).result.status == "saved"
+        assert session.view.rows[1].proposal.repository.content == b"new live\ntweak\n"
+        set_approval(session.view.rows[1], True)
+        assert session.execute().result.status == "completed"
+    assert (tmp_path / "repo/packages/app/b").read_bytes() == b"new live\ntweak\n"
+    assert shared.read_bytes() == b"original"

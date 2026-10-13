@@ -21,7 +21,7 @@ chmod = "0700"
     put(live, "created/nested", b"frozen").chmod(0o700)
     with engine.open_pull_session(engine.resolve_sync_scope()) as session:
         rows = {row.observation.identity.child_path: row for row in session.view.rows}
-        assert all(row.approved and row.intent is None for row in rows.values())
+        assert all(row.approved and row.intent == "use-live" for row in rows.values())
         assert rows["created/nested"].proposal.repository == DirectoryChildPresent(b"frozen", True)
         assert rows["deleted/nested"].proposal.repository == Missing()
         assert all(not row.proposal.publication_effects for row in rows.values())
