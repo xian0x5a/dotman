@@ -86,9 +86,13 @@ def probe_work_tree(path: Path, runtime: CommandRuntime) -> GitWorkTree | None:
     """The git work tree containing `path`, or None when git cannot commit there."""
     try:
         top = runtime.run(_git_request(path, "rev-parse", "--show-toplevel"))
+        raise_for_command_interruption(top)
         if top.exit_code != 0:
             return None
         branch = runtime.run(_git_request(path, "branch", "--show-current"))
+    except InterruptedError:
+        # Cancellation is an OSError too, but it must stop the operation.
+        raise
     except OSError:
         # No git executable: there is nothing to offer.
         return None
