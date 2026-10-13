@@ -171,13 +171,19 @@ class Repository:
                 package_repo=self.config.name,
                 package_id=package_id,
             )
-            package_id = payload.get("id")
-            if not isinstance(package_id, str):
+            declared_id = payload.get("id")
+            if not isinstance(declared_id, str):
                 raise ValueError(f"package manifest {manifest_path} must define string id")
             try:
-                validate_package_id(package_id)
+                validate_package_id(declared_id)
             except ValueError as exc:
                 raise ValueError(f"package manifest {manifest_path}: {exc}") from None
+            # The folder is the identity; a differing id would let two manifests claim one package.
+            if declared_id != package_id:
+                raise ValueError(
+                    f"package manifest {manifest_path} declares id '{declared_id}', "
+                    f"but its location requires id '{package_id}'"
+                )
             binding_mode = str(payload.get("binding_mode", "singleton"))
             if binding_mode not in {"singleton", "multi_instance"}:
                 raise ValueError(

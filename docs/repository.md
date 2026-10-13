@@ -9,7 +9,7 @@ under `examples/repo/`.
 
 - A package is the atomic install unit.
 - Packages live under `packages/`.
-- A package manifest lives at `packages/<package-id>/package.toml`.
+- A package manifest lives at `packages/<package-id>/package.toml`, and its `id` must equal that `<package-id>`.
 - Namespaced package IDs map to nested directories under `packages/`, for example `work/git` -> `packages/work/git/package.toml`.
 - Packages may define `binding_mode = "singleton" | "multi_instance"`.
 - `binding_mode` defaults to `singleton`.
