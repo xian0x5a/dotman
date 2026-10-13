@@ -189,7 +189,12 @@ PortableSafeDumper.add_representer(AmbiguousPlainScalar, represent_ambiguous_pla
 
 
 def parse_yaml_text(text: str) -> Any:
-    return yaml.load(text, Loader=VersionNeutralSafeLoader)
+    try:
+        return yaml.load(text, Loader=VersionNeutralSafeLoader)
+    except (AttributeError, KeyError, TypeError, ValueError) as error:
+        # PyYAML's constructors fail with plain Python errors on an invalid
+        # explicitly tagged value, such as `!!bool maybe` or `!!timestamp nope`.
+        raise yaml.constructor.ConstructorError(problem=f"invalid tagged value ({error!r})") from error
 
 
 def yaml_key_text(key: Any) -> str:
