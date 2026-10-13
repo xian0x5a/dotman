@@ -126,12 +126,13 @@ def test_add_resolver_preserves_noninteractive_exact_partial_and_create_rules(tm
 
     with pytest.raises(ValueError, match="package query is required in non-interactive mode"):
         resolver.resolve(None)
-    for package_query in ("missing", "tools"):
-        with pytest.raises(
-            ValueError,
-            match="use an explicit repo-qualified query to create one in non-interactive mode",
-        ):
-            resolver.resolve(package_query)
+    with pytest.raises(ValueError, match="no exact match for 'tools'; use exact name 'beta:git-tools'"):
+        resolver.resolve("tools")
+    with pytest.raises(
+        ValueError,
+        match="use an explicit repo-qualified query to create one in non-interactive mode",
+    ):
+        resolver.resolve("missing")
     with pytest.raises(
         ValueError,
         match="cannot create non-interactively without an exact repo",
