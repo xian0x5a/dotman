@@ -575,7 +575,7 @@ class CommandDeck:
         conflict = conflicted.conflict if conflicted else None
         if isinstance(conflict, (FilePresent, DirectoryChildPresent)):
             sections.append(ReviewSection("Merge conflicts", (
-                ReviewNote(render_payload_section_label("Resolve in the Editor (E); it opens with this merge output",
+                ReviewNote(render_payload_section_label("Resolve in the Editor (e); it opens with this merge output",
                                                         use_color=color)),
                 conflict_excerpt(conflict.content, description="merge output", full_context=full_context),
             )))

@@ -152,7 +152,7 @@ otherwise **Use repository** is the visible fallback and Merge is unavailable.
   with two allowed intents it toggles between them; with three or more it opens a menu.
   A saved Editor outcome adds **Edited** as an intent for the rest of the session, so
   switching away never loses it: a one-way Policy toggles with Edited, a two-way one opens the menu.
-  The `R intent` hint appears only when the focused row has a choice. A Resolution
+  The `r intent` hint appears only when the focused row has a choice. A Resolution
   fixed by a one-way Policy (push-only Use repository, pull-only Use live) is dimmed
   like auxiliary work, so only choosable Resolutions keep the emphasis.
 - `Enter` opens focused Proposal Review or canonical Source Change Review;
@@ -221,20 +221,20 @@ otherwise **Use repository** is the visible fallback and Merge is unavailable.
   materialization and the remaining batch, waits for owned process cleanup, and
   exits 130. Completed effects are not rolled back; detached descendants are not
   covered by owned-process cleanup.
-- **E** opens the focused drifted file's Proposal Editor from the workset or
+- `e` opens the focused drifted file's Proposal Editor from the workset or
   review, including one-sided policies and recoverable Proposal failures.
   The Editor works on isolated repository source copies; quitting without changes keeps the
   Resolution and says so; saving a change shows **Edited**
   and rematerializes policy-appropriate effects without writing tracked sources.
   Successful editing preserves Approval; cancellation preserves the previous
   Proposal. Failed materialization clears only that unit's Approval.
-  **T** retries materialization; Editor attempts can be retried with **E**.
+  `t` retries materialization; Editor attempts can be retried with `e`.
   `L` explicitly authorizes prompt-mode live-link replacement for the focused
   Proposal; it does not select or approve it. Review shows authorization in the
   shared warning/success colors. No-confirm Sync cannot supply this decision.
   During editing, `Ctrl+C` or OS SIGINT cancels only the Editor attempt,
   including a sudo password prompt triggered through the intercept shim. Prompt cleanup and terminal
-  restoration finish before the deck resumes; **E** can start a fresh attempt.
+  restoration finish before the deck resumes; `e` can start a fresh attempt.
   Terminal Editors take terminal ownership temporarily and return to the same
   focused deck. No Editor runs automatically or under `--no-confirm`.
 - **Tab** focuses the ringed detail panel below the table so arrow, vim and page
@@ -317,7 +317,7 @@ otherwise **Use repository** is the visible fallback and Merge is unavailable.
   required effects into execution failures.
   Units directly in sync without diagnostics are omitted from `sync_units` and
   `scope`; `summary.in_sync_units` counts them, and human output shows the count
-  as `N in sync` on the final summary line.
+  as `in-sync: N` on the final summary line.
   Execution outcomes identify their repository, package instance or target scope
   canonically, including failed hooks whose units already converged.
 - Human output distinguishes direct agreement, convergence, deliberately pending
@@ -869,7 +869,7 @@ Base or overlay accepts `-` for stdin (at most one). Output `-` or `--stdout` wr
 
 Transforms YAML mappings without repository configuration. Selectors are optional: with no selectors, cleanup is an identity rewrite and merge overlays the whole base. Unprefixed and `exact:` selectors match exact dotted nested YAML mapping key paths; quote a segment containing a literal dot (`"settings.window".width`). `re:` selectors use Python regex search against complete dotted key paths. Matching a mapping selects its subtree; scalars and lists remain atomic. Remove also drops a mapping it leaves empty, in cleanup and merge alike, while one that was already empty stays.
 
-Merge partitions the base by selector, then applies the overlay on top. Merge descends into a mapping present in both the base and the overlay, whether or not selection kept any of it, so base keys left after selection survive and keys keep base order; a mapping selected as a whole is replaced by the overlay value, and with no selectors so is each top-level key the overlay shares with the base. Scalars and lists are atomic: the overlay value replaces the base value whole. `--compare-file PATH` reuses its exact text when parsed YAML values are semantically equal, including line endings. An empty or comment-only document is an empty mapping. Emitted YAML uses block style with insertion order preserved and the detected base/compare indentation (two spaces by default).
+Merge partitions the base by selector, then applies the overlay on top. Merge descends into a mapping present in both the base and the overlay, whether or not selection kept any of it, so base keys left after selection survive and keys keep base order; a mapping selected as a whole is replaced by the overlay value, and with no selectors so is each top-level key the overlay shares with the base. Scalars and lists are atomic: the overlay value replaces the base value whole. `--compare-file PATH` reuses its exact text when parsed YAML values are semantically equal, including line endings. An empty or comment-only document is an empty mapping. Emitted YAML uses block style with insertion order preserved and the detected base/compare indentation (two spaces by default). Emitted YAML carries no comments, and anchors, aliases, and `<<` merge keys are written out as plain copies, so any write that does not reuse compare text drops them, even an identity cleanup.
 
 A plain scalar that YAML 1.1 and YAML 1.2 readers resolve differently, such as `yes`, `y`, `0777`, `22:22`, `1_000`, `1e3`, or `2001-12-14`, loads as a string but keeps its original unquoted spelling when emitted, so neither reader sees a changed value; for compare reuse it equals only the same plain spelling. Other plain scalars, such as `true`, `12`, `1.5`, and `null`, load as typed values. Other strings a YAML 1.1 or 1.2 reader could resolve as non-strings, such as quoted `'on'` or `'1e3'`, are quoted when emitted. Selectors match string keys as spelled in the file and other keys by their emitted spelling (`true`, `null`, `31` for `0x1F`).
 

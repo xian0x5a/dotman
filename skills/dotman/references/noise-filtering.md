@@ -64,3 +64,4 @@ Then, with the package tracked, `dotman --no-confirm pull --dry-run <repo>:<pack
 - Lists are atomic: select a whole list or split at its parent.
 - An app that holds the file in memory rewrites it on exit. Note in a comment that push should run while the app is closed.
 - A secret that shares a subtree with portable keys: exclude it with `not:` so it never enters the repo.
+- YAML output drops comments and writes anchors, aliases and `<<` merge keys out as plain copies whenever the transform writes instead of reusing compare text. Keep notes for a YAML file in the package, not in the synced file.

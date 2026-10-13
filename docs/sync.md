@@ -647,8 +647,8 @@ Additional changes start approved, with no Resolution Intent or Merge.
 Active Probe and retained hook work also start selected and may be excluded.
 Guard exit 100 omits work from Observation, but each omitted scope stays visible
 as unselectable **Guard skipped** auxiliary work so an empty or partial workset
-is explained. Sync has no such rows: it keeps the unit and shows the narrowed
-policy or no-route diagnostic instead.
+is explained. Sync shows the same rows but keeps the unit, with its narrowed
+policy or a no-route diagnostic.
 Unapproval changes provider inputs to their frozen originals and rematerializes
 approved dependants; unapproved dependants stay lazy.
 
