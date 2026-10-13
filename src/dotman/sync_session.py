@@ -873,12 +873,11 @@ class ProposalSession:
             for row in view.rows:
                 if isinstance(row, SessionRow) and row.row_id in changed_references:
                     self._clear_input_cache(row)
-            # Unapprovable units, such as no-ops, keep their Proposal: dropping it
-            # would erase the no-op evidence and make the row look approvable.
+            # Unapprovable units, such as no-ops, keep their Approval state.
             approval_scope = {row.row_id for row in view.rows
                               if row.row_id in scope and isinstance(row, SessionRow) and row.approvable}
             rows = tuple(
-                replace(row, approved=command.approved, proposal=None)
+                replace(row, approved=command.approved)
                 if row.row_id in approval_scope
                 else row if row.row_id not in scope
                 else replace(row, approved=command.approved)
@@ -889,9 +888,12 @@ class ProposalSession:
                 for row in view.rows
             )
             self._view = replace(view, rows=rows)
-            # Rows outside the scope keep their Proposal unless a changed shared source feeds it.
-            self._invalidate_inputs({row.row_id for row in rows if isinstance(row, SessionRow)}
-                                    & (approval_scope | changed_references), clear_cache=False)
+            # Approval alone never changes a Proposal, as with SetApproval: rematerialize
+            # only rows fed by a changed shared source, and approved rows still lacking one.
+            self._invalidate_inputs(changed_references | {
+                row.row_id for row in rows
+                if row.row_id in approval_scope and row.approved and row.proposal is None
+            }, clear_cache=False)
             self._view = replace(self.view, revision=view.revision + 1)
             self._emit(SessionChanged(self.view))
             return CommandAccepted(self.view, BatchApprovalChanged(command.approved))
