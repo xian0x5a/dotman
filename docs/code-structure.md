@@ -88,7 +88,7 @@ Current responsibility split:
 - `sync_session.py` — shared Proposal workset, immutable views, semantic commands, transactional Approval and Sync convergence orchestration
 - `pull_session.py` — fixed live-to-repository Observation, opt-out Proposal/Additional Approval and repository-only completion over the shared workset
 - `push_session.py` — fixed repository-to-live Observation, opt-out Use repository Approval and inherited Live Publication over the shared workset
-- `execution.py` — the shared command-hook execution boundary
+- `execution.py` — the shared command-hook execution boundary, plus live-file write/delete helpers for snapshot restore and directory file-mode sync
 - `sync_editor.py` — isolated configured/default Editor invocation and permitted source staging
 - `sync_observation.py` — file endpoint evidence, policy comparisons, frozen Guards/Base facts and opening-time Base lifecycle
 - `sync_auxiliary.py` — immutable Probe/hook rows, one-shot Probe activity and Guard-admitted directional hook retention
@@ -327,8 +327,8 @@ Restore and unrelated state commands do not participate in this Push/Pull/Sync
 operation lock. It coordinates cooperating operations, not external filesystem
 writers or hostile same-user code.
 
-Projection providers read frozen Primary/live endpoints at their real paths,
-so commands can depend on neighbouring files. Only a repository Proposal, which
+Projection providers read the Primary and live endpoints at their real paths,
+so commands can depend on neighbouring files; the session freezes their output. Only a repository Proposal, which
 has no file on disk, and a protected input are staged as private copies; custom
 commands retain configured dependency access and cwd.
 Session input metadata carries the invoking workflow into every provider,
