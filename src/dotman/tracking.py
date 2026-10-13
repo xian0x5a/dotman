@@ -61,6 +61,16 @@ def candidate_repositories(
     return [context.repositories[repo.name] for repo in context.config.ordered_repos]
 
 
+class TrackedPackagesFileError(ValueError):
+    def __init__(self, path: Path, detail: str) -> None:
+        self.path = path
+        self.detail = detail
+        super().__init__(detail)
+
+    def __str__(self) -> str:
+        return f"tracked packages file '{self.path}' {self.detail}"
+
+
 class PersistedTrackedPackageEntryResolutionError(ValueError):
     def __init__(self, *, reason: str, message: str) -> None:
         self.reason = reason
@@ -299,20 +309,27 @@ def read_tracked_packages_file(state_path: Path) -> list[TrackedPackageEntry]:
     payload = load_toml_file(state_path, context="tracked packages file")
     schema_version = payload.get("schema_version")
     if schema_version != TRACKED_PACKAGES_SCHEMA_VERSION:
-        raise ValueError(
-            f"tracked packages file '{state_path}' must declare schema_version = {TRACKED_PACKAGES_SCHEMA_VERSION}"
-        )
+        raise TrackedPackagesFileError(state_path, f"must declare schema_version = {TRACKED_PACKAGES_SCHEMA_VERSION}")
     packages_payload = payload.get("packages", [])
-    tracked_packages: list[TrackedPackageEntry] = []
-    for package_payload in packages_payload:
-        tracked_packages.append(
-            TrackedPackageEntry(
-                repo=str(package_payload["repo"]),
-                package_id=str(package_payload["package_id"]),
-                profile=str(package_payload["profile"]),
-            )
-        )
-    return tracked_packages
+    if not isinstance(packages_payload, list):
+        raise TrackedPackagesFileError(state_path, "must declare packages as an array of tables")
+    return [
+        _tracked_package_entry_from_row(state_path, row_number, package_payload)
+        for row_number, package_payload in enumerate(packages_payload, start=1)
+    ]
+
+
+def _tracked_package_entry_from_row(state_path: Path, row_number: int, package_payload: object) -> TrackedPackageEntry:
+    if not isinstance(package_payload, dict):
+        raise TrackedPackagesFileError(state_path, f"must declare packages row {row_number} as a table")
+    for key in ("repo", "package_id", "profile"):
+        if not isinstance(package_payload.get(key), str):
+            raise TrackedPackagesFileError(state_path, f"must declare string '{key}' in packages row {row_number}")
+    return TrackedPackageEntry(
+        repo=package_payload["repo"],
+        package_id=package_payload["package_id"],
+        profile=package_payload["profile"],
+    )
 
 
 def read_tracked_package_entries_file(state_path: Path) -> list[FullSpecSelector]:
@@ -358,7 +375,7 @@ def effective_tracked_package_entries_by_repo(
     context: TrackedStateContext,
     raw_entries_by_repo: dict[str, list[FullSpecSelector]] | None = None,
 ) -> dict[str, list[FullSpecSelector]]:
-    current_raw_bindings = raw_entries_by_repo or raw_tracked_package_entries_by_repo(context)
+    current_raw_bindings = raw_tracked_package_entries_by_repo(context) if raw_entries_by_repo is None else raw_entries_by_repo
     return {
         repo_config.name: effective_tracked_package_entries_for_repo(
             get_repository(context, repo_config.name),
@@ -821,7 +838,8 @@ def configured_persisted_tracked_package_entry_records(
 ) -> tuple[list[PersistedTrackedPackageEntryRecord], list[PersistedTrackedPackageEntryRecord]]:
     valid_records: list[PersistedTrackedPackageEntryRecord] = []
     invalid_records: list[PersistedTrackedPackageEntryRecord] = []
-    current_bindings = bindings_by_repo or raw_tracked_package_entries_by_repo(context)
+    # An empty mapping is a real input: doctor passes one when every state file is unreadable.
+    current_bindings = raw_tracked_package_entries_by_repo(context) if bindings_by_repo is None else bindings_by_repo
     for repo_config in context.config.ordered_repos:
         repo = get_repository(context, repo_config.name)
         for binding in current_bindings.get(repo_config.name, []):
