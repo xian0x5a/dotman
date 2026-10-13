@@ -1103,7 +1103,14 @@ class SyncDeckApp(App[bool]):
     def _materialization_finished(self, task: asyncio.Task) -> None:
         if self._materialization is task:
             self._materialization = None
-        if not task.cancelled() and (error := task.exception()) is not None:
+        if task.cancelled():
+            return
+        try:
+            task.result()
+        except Exception as error:
+            # Textual renders its fatal-error traceback from the exception being
+            # handled. A done callback has none, so re-raise it here first;
+            # otherwise the traceback fails to build and the Deck keeps running.
             self._handle_exception(error)
 
     async def _materialize(self, action, *, editor_io: str | None = None) -> None:
