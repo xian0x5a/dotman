@@ -493,3 +493,28 @@ def test_add_writes_chmod_the_manifest_accepts(tmp_path: Path, kind: str) -> Non
 
     # The manifest requires 3 or 4 octal digits, so a mode below 0o100 keeps its leading zero.
     assert spec.chmod == "040"
+
+
+@pytest.mark.parametrize("package_query", ["git", "main:git"])
+def test_add_cli_non_interactive_never_writes_into_a_partial_package_match(
+    tmp_path: Path,
+    monkeypatch,
+    package_query: str,
+) -> None:
+    # Partial package matches are for interactive use; without a prompt, `git`
+    # must not silently land in the only partially matching package `gitui`.
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    live_path = home / ".gitconfig"
+    live_path.write_text("[user]\n", encoding="utf-8")
+
+    repo_root = tmp_path / "repo"
+    _write_repo(repo_root, {"gitui": 'id = "gitui"\n'})
+    gitui_package = repo_root / "packages" / "gitui"
+    manifest_before = (gitui_package / "package.toml").read_bytes()
+    config_path = write_named_manager_config(tmp_path, {"main": repo_root})
+
+    main(["--config", str(config_path), "--no-confirm", "add", str(live_path), package_query])
+
+    assert (gitui_package / "package.toml").read_bytes() == manifest_before
