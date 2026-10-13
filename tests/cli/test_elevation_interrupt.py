@@ -326,7 +326,7 @@ def test_broker_password_prompt_in_tty_editor_cancels_only_editor_attempt(
             process.send_signal(signal.SIGINT)
         _wait_for(lambda: b"Editor cancelled" in output, process, master, output)
         assert process.poll() is None, output.decode(errors="replace")
-        assert b"previous Proposal preserved" in output, output.decode(errors="replace")
+        assert b"Editor cancelled." in output, output.decode(errors="replace")
         assert (source.read_bytes(), live.read_bytes()) == before
         _wait_for(lambda: all(_stopped(pid) for pid in (prompt, shim, editor_process)), process, master, output)
         assert not (termios.tcgetattr(slave)[3] & termios.ICANON), output.decode(errors="replace")

@@ -416,7 +416,7 @@ class CommandDeck:
         if isinstance(result, CommandRejected):
             self.notice = result.reason
         elif result.result.status == "cancelled":
-            self.notice = "Editor cancelled; previous Proposal preserved."
+            self.notice = "Editor cancelled."
         elif result.result.status == "unchanged":
             self.notice = "Editor closed without changes; Resolution kept."
         else:
