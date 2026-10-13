@@ -218,32 +218,52 @@ if not real_sudo:
     print("dotman sudo shim: DOTMAN_REAL_SUDO is not set", file=sys.stderr)
     raise SystemExit(1)
 
-try:
-    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
-        client.connect(broker)
-        client.sendall((json.dumps({"reason": reason}) + "\\n").encode("utf-8"))
-        response = client.makefile("r", encoding="utf-8").readline()
-except KeyboardInterrupt:
-    raise SystemExit(INTERRUPTED_EXIT_CODE)
-except OSError as exc:
-    print(f"dotman sudo shim: elevation broker request failed: {exc}", file=sys.stderr)
-    raise SystemExit(1)
 
-try:
-    payload = json.loads(response)
-except json.JSONDecodeError:
-    print("dotman sudo shim: elevation broker returned invalid response", file=sys.stderr)
-    raise SystemExit(1)
+def has_controlling_terminal() -> bool:
+    try:
+        os.close(os.open("/dev/tty", os.O_RDWR))
+    except OSError:
+        return False
+    return True
 
-if payload.get("interrupted"):
-    raise SystemExit(INTERRUPTED_EXIT_CODE)
-if not payload.get("ok"):
-    print(f"dotman sudo shim: elevation broker denied request: {payload.get('error', 'unknown error')}", file=sys.stderr)
-    raise SystemExit(1)
+
+def request_broker_lease() -> None:
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+            client.connect(broker)
+            client.sendall((json.dumps({"reason": reason}) + "\\n").encode("utf-8"))
+            response = client.makefile("r", encoding="utf-8").readline()
+    except KeyboardInterrupt:
+        raise SystemExit(INTERRUPTED_EXIT_CODE)
+    except OSError as exc:
+        print(f"dotman sudo shim: elevation broker request failed: {exc}", file=sys.stderr)
+        raise SystemExit(1)
+
+    try:
+        payload = json.loads(response)
+    except json.JSONDecodeError:
+        print("dotman sudo shim: elevation broker returned invalid response", file=sys.stderr)
+        raise SystemExit(1)
+
+    if payload.get("interrupted"):
+        raise SystemExit(INTERRUPTED_EXIT_CODE)
+    if not payload.get("ok"):
+        print(f"dotman sudo shim: elevation broker denied request: {payload.get('error', 'unknown error')}", file=sys.stderr)
+        raise SystemExit(1)
+
+
+if has_controlling_terminal():
+    request_broker_lease()
+    sudo_arguments = ("-n", *sys.argv[1:])
+else:
+    # Without a terminal, sudo ties its ticket to the parent process, so dotman's
+    # ticket cannot reach this call (#108). Let sudo authenticate it itself,
+    # through SUDO_ASKPASS or a NOPASSWD rule.
+    sudo_arguments = tuple(sys.argv[1:])
 
 result = ProductionCommandRuntime().run(
     CommandRequest(
-        command=ArgvCommand((real_sudo, "-n", *sys.argv[1:])),
+        command=ArgvCommand((real_sudo, *sudo_arguments)),
         io="tty",
     )
 )
