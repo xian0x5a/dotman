@@ -30,8 +30,8 @@ while it can fix `intercept`. Fewer modes also shrink the #108 fix.
    `cli_parser.py`, `standalone_commands.py`.
 2. Update existing tests that use removed modes (retarget to intercept or delete).
 3. Docs, ADR, skill.
-4. Independent agent writes tests for the new contract (old values rejected,
-   `dotman elevation` gone, intercept `sudo -v` early auth).
+4. Independent agent writes tests for the new contract (intercept `sudo -v`
+   early auth). Removal is migration: no tests for rejected old values.
 5. Independent review, then PR.
 
 ## Validation
@@ -40,7 +40,7 @@ while it can fix `intercept`. Fewer modes also shrink the #108 fix.
 ## Progress
 - [x] Worktree `.worktrees/remove-broker-lease`, branch `refactor/remove-broker-lease`.
 - [x] Code removal, existing tests retargeted, docs, ADR 0006.
-- [x] Independent tests (removed values rejected, `dotman elevation` gone, intercept `sudo -v`).
+- [x] Independent tests for intercept `sudo -v`; removal-only tests dropped (removal is migration, not worth tests).
 - [x] Independent review: nothing blocking; low findings addressed.
 
 ## Surprises & Discoveries

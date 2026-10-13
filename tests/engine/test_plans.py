@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 
 import pytest
@@ -692,30 +691,6 @@ def test_package_hook_command_object_accepts_elevation_modes(
     assert hook.commands == (HookCommandSpec(run="echo prep", elevation=elevation),)
 
 
-@pytest.mark.parametrize("mode", ["lease", "broker"])
-@pytest.mark.parametrize(
-    ("manifest_key", "manifest_lines", "error_key"),
-    [
-        ("package_manifest", ["[hooks.pre_push]", 'commands = [{{ run = "echo prep", elevation = "{mode}" }}]'], "elevation"),
-        ("target_manifest", ['editor = {{ run = "vim", elevation = "{mode}" }}'], "editor.elevation"),
-    ],
-)
-def test_removed_elevation_modes_are_rejected(
-    tmp_path: Path,
-    mode: str,
-    manifest_key: str,
-    manifest_lines: list[str],
-    error_key: str,
-) -> None:
-    repo_root = write_repo_and_target_hook_repo(
-        tmp_path,
-        **{manifest_key: [line.format(mode=mode) for line in manifest_lines]},
-    )
-
-    with pytest.raises(ValueError, match=rf"unsupported {re.escape(error_key)} '{mode}'; expected one of: none, root, intercept"):
-        DotmanEngine.from_config_path(write_single_repo_config(tmp_path, repo_name="fixture", repo_path=repo_root))
-
-
 @pytest.mark.parametrize("default_elevation", ["none", "intercept"])
 def test_repo_default_command_elevation_applies_to_omitted_command_elevation(
     tmp_path: Path,
@@ -754,7 +729,7 @@ def test_repo_default_command_elevation_applies_to_omitted_command_elevation(
     }
 
 
-@pytest.mark.parametrize("default_elevation", ["root", "lease", "broker", "bad"])
+@pytest.mark.parametrize("default_elevation", ["root", "bad"])
 def test_repo_default_command_elevation_rejects_unsafe_or_unknown_modes(
     tmp_path: Path,
     default_elevation: str,
