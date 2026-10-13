@@ -32,15 +32,10 @@ def _take_terminal() -> None:
     signal.pthread_sigmask(signal.SIG_UNBLOCK, {signal.SIGTTOU})
 
 
-def _enter_foreground_job() -> None:
-    # Hand over the terminal before exec, so the job never reads it from the background.
-    os.setpgid(0, 0)
-    _take_terminal()
-
-
 def main() -> None:
     status_dir = Path(sys.argv[1])
-    job = subprocess.Popen(sys.argv[2:], preexec_fn=_enter_foreground_job)
+    # Hand over the terminal before exec, so the job never reads it from the background.
+    job = subprocess.Popen(sys.argv[2:], process_group=0, preexec_fn=_take_terminal)
     _publish(status_dir / "job-pid", str(job.pid))
     returncode = job.wait()
     _take_terminal()
