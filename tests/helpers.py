@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -609,3 +610,13 @@ def resolved_child_metadata(engine, child_path: str):
     inputs, _ = _resolve_inputs(engine.resolve_sync_scope())
     (directory,) = [metadata for _item, metadata in inputs.values() if metadata.target.target_type == "directory"]
     return child_metadata(directory, child_path)
+
+
+async def wait_until_idle(app, pilot) -> None:
+    """Let the Sync Deck finish its background work, then settle the screen."""
+    for _ in range(200):
+        if not app.busy:
+            break
+        await asyncio.sleep(.01)
+    assert not app.busy
+    await pilot.pause()
