@@ -103,7 +103,8 @@ def commit_sources(root: Path, paths: Sequence[Path], message: str, runtime: Com
 
 
 def _git_request(cwd: Path, *args: str, message: str | None = None) -> CommandRequest:
-    return CommandRequest(ArgvCommand(("git", *args)), cwd=cwd,
+    # Source paths are file names, not patterns: `star*` must not also commit `start`.
+    return CommandRequest(ArgvCommand(("git", "--literal-pathspecs", *args)), cwd=cwd,
                           input=message.encode() if message is not None else None)
 
 
