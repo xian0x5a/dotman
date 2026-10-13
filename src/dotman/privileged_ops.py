@@ -13,11 +13,6 @@ class PrivilegedOperationError(RuntimeError):
 
 
 
-def _read_bytes(path: Path) -> None:
-    sys.stdout.buffer.write(path.read_bytes())
-
-
-
 def _write_bytes_atomic(path: Path, *, restore_root: Path | None, mode: int | None) -> None:
     write_bytes_atomic(path, sys.stdin.buffer.read())
     if mode is not None:
@@ -62,11 +57,6 @@ def main(argv: list[str] | None = None) -> int:
 
     command = args.pop(0)
     try:
-        if command == "read-bytes":
-            if len(args) != 1:
-                raise PrivilegedOperationError("read-bytes requires: PATH")
-            _read_bytes(Path(args[0]))
-            return 0
         if command == "write-bytes-atomic":
             if not 1 <= len(args) <= 3:
                 raise PrivilegedOperationError("write-bytes-atomic requires: PATH [RESTORE_ROOT] [MODE]")

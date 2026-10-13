@@ -197,17 +197,6 @@ def needs_sudo_for_write(path: Path) -> bool:
 
 
 
-def needs_sudo_for_chmod(path: Path) -> bool:
-    try:
-        owner = path.stat().st_uid
-    except FileNotFoundError:
-        return False
-    except PermissionError:
-        return True
-    return os.geteuid() != 0 and owner != os.geteuid()
-
-
-
 def sudo_prefix_command(command: str) -> str:
     return f"sudo -n -E /bin/sh -c {shlex.quote(command)}"
 
@@ -315,7 +304,6 @@ def chmod(path: Path, mode: int) -> None:
 __all__ = [
     "chmod",
     "delete_path_and_prune_empty_parents",
-    "needs_sudo_for_chmod",
     "needs_sudo_for_read",
     "needs_sudo_for_write",
     "read_bytes",

@@ -153,15 +153,6 @@ def _execute_step(step: ExecutionStep, *, stream_output: bool, no_confirm: bool)
                 stdout=stdout,
                 stderr=stderr,
             )
-        if exit_code == 100 and _is_guard_step(step):
-            return ExecutionStepResult(
-                step=step,
-                status="skipped",
-                skip_reason="guard",
-                exit_code=exit_code,
-                stdout=stdout,
-                stderr=stderr,
-            )
         return ExecutionStepResult(
             step=step,
             status="failed",
@@ -172,10 +163,6 @@ def _execute_step(step: ExecutionStep, *, stream_output: bool, no_confirm: bool)
         )
     except Exception as exc:  # noqa: BLE001 - fail-fast execution should surface the original error text.
         return ExecutionStepResult(step=step, status="failed", error=str(exc))
-
-
-def _is_guard_step(step: ExecutionStep) -> bool:
-    return step.kind == "hook" and step.action.startswith("guard_")
 
 
 def directory_synced_file_mode(*, destination_mode: int, source_mode: int) -> int:
