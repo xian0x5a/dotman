@@ -1486,6 +1486,8 @@ class SyncDeckApp(App[bool]):
         # x toggles Approval while the Decision section may be scrolled away; the title keeps it in view.
         approval = render_sync_term(review_approval_term(row), use_color=self.deck.use_color)
         self.query_one("#title", Static).update(Text.from_ansi(f"{title} ({approval})"))
+        # Showing the review clears any search, which the hints describe.
+        self.update_hints()
         log.focus()
         self.call_after_refresh(log.scroll_to, *position, animate=False)
 
@@ -1708,7 +1710,6 @@ class SyncDeckApp(App[bool]):
         if self.deck.full_view is not None:
             self.deck.back()
             self.show_review(self._review_position_before_full_view)
-            self.update_hints()
             return
         if self.detail_focused:
             self.query_one(WorksetTable).focus()
