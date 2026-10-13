@@ -375,7 +375,7 @@ def effective_tracked_package_entries_by_repo(
     context: TrackedStateContext,
     raw_entries_by_repo: dict[str, list[FullSpecSelector]] | None = None,
 ) -> dict[str, list[FullSpecSelector]]:
-    current_raw_bindings = raw_entries_by_repo or raw_tracked_package_entries_by_repo(context)
+    current_raw_bindings = raw_tracked_package_entries_by_repo(context) if raw_entries_by_repo is None else raw_entries_by_repo
     return {
         repo_config.name: effective_tracked_package_entries_for_repo(
             get_repository(context, repo_config.name),
