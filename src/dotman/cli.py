@@ -65,6 +65,7 @@ def _repo_command_runner(args: Any, interaction: Interaction | None) -> Any:
     standalone helpers that repo manifests call on every sync stay cheap.
     """
     from dotman import cli_interaction
+    from dotman.config import load_manager_config
     from dotman.engine import DotmanEngine
     from dotman.inspection_commands import InspectionCommandRunner
     from dotman.interaction import TerminalInteraction
@@ -108,7 +109,7 @@ def _repo_command_runner(args: Any, interaction: Interaction | None) -> Any:
             interaction=interaction,
         ),
         RestoreCommandRunner(
-            engine_factory=engine_factory,
+            config_loader=load_manager_config,
             use_color=use_color,
         ),
     )

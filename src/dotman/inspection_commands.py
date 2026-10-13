@@ -7,7 +7,7 @@ from typing import Any, Protocol
 from dotman import cli_emit
 from dotman.config import load_manager_config
 from dotman.engine import DotmanEngine
-from dotman.models import SelectorKind, package_ref_text
+from dotman.models import ManagerConfig, SelectorKind, package_ref_text
 from dotman.repository import Repository
 from dotman.snapshot import SnapshotRecord, list_snapshots
 from dotman.ui_context import ui_config_scope
@@ -67,20 +67,15 @@ class InspectionCommandRunner:
         self._use_color = use_color
 
     def run(self, args: Any) -> int:
-        if args.command == "list" and args.list_command == "repo":
+        if _reads_manager_config_only(args):
             config = load_manager_config(args.config)
             with ui_config_scope(config.ui):
-                return cli_emit.emit_repos(
-                    repos=config.ordered_repos,
-                    json_output=args.json_output,
-                    use_color=self._use_color,
-                )
+                return self._run_config_only(args=args, config=config)
 
         if args.command not in self.command_names:
             raise ValueError(f"unsupported inspection command '{args.command}'")
 
         engine = self._engine_factory(args.config)
-        full_paths = args.full_path if args.full_path is not None else engine.config.ui.full_paths
         with ui_config_scope(engine.config.ui):
             if args.command == "list" and args.list_command == "sync-bases":
                 return cli_emit.emit_sync_bases(
@@ -109,7 +104,7 @@ class InspectionCommandRunner:
                 )
             if args.command == "list":
                 return self._run_list(args=args, engine=engine)
-            return self._run_info(args=args, engine=engine, full_paths=full_paths)
+            return self._run_info(args=args, engine=engine)
 
     def _run_list(self, *, args: Any, engine: DotmanEngine) -> int:
         if args.list_command == "tracked":
@@ -133,16 +128,9 @@ class InspectionCommandRunner:
                 json_output=args.json_output,
                 use_color=self._use_color,
             )
-        if args.list_command == "snapshots":
-            return cli_emit.emit_snapshot_list(
-                snapshots=list_snapshots(engine.config.snapshots.path),
-                json_output=args.json_output,
-                max_generations=engine.config.snapshots.max_generations,
-                use_color=self._use_color,
-            )
         raise ValueError(f"unsupported list command '{args.list_command}'")
 
-    def _run_info(self, *, args: Any, engine: DotmanEngine, full_paths: bool) -> int:
+    def _run_info(self, *, args: Any, engine: DotmanEngine) -> int:
         if args.info_command == "tracked":
             repo, package_id, bound_profile = self._runtime.resolve_tracked_package_text(
                 engine,
@@ -181,15 +169,38 @@ class InspectionCommandRunner:
                 json_output=args.json_output,
                 use_color=self._use_color,
             )
-        if args.info_command == "snapshot":
+        raise ValueError(f"unsupported info command '{args.info_command}'")
+
+    def _run_config_only(self, *, args: Any, config: ManagerConfig) -> int:
+        if args.command == "list" and args.list_command == "repo":
+            return cli_emit.emit_repos(
+                repos=config.ordered_repos,
+                json_output=args.json_output,
+                use_color=self._use_color,
+            )
+        if args.command == "list" and args.list_command == "snapshots":
+            return cli_emit.emit_snapshot_list(
+                snapshots=list_snapshots(config.snapshots.path),
+                json_output=args.json_output,
+                max_generations=config.snapshots.max_generations,
+                use_color=self._use_color,
+            )
+        if args.command == "info" and args.info_command == "snapshot":
             return cli_emit.emit_snapshot_detail(
                 snapshot=self._runtime.resolve_snapshot_record(
-                    engine.config.snapshots.path,
+                    config.snapshots.path,
                     args.snapshot,
                     json_output=args.json_output,
                 ),
                 json_output=args.json_output,
-                full_paths=full_paths,
+                full_paths=args.full_path if args.full_path is not None else config.ui.full_paths,
                 use_color=self._use_color,
             )
-        raise ValueError(f"unsupported info command '{args.info_command}'")
+        raise ValueError(f"unsupported config-only command '{args.command}'")
+
+
+def _reads_manager_config_only(args: Any) -> bool:
+    """Repo and snapshot views must work even when repo manifests do not load."""
+    if args.command == "list":
+        return args.list_command in {"repo", "snapshots"}
+    return args.command == "info" and args.info_command == "snapshot"
