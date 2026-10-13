@@ -377,7 +377,7 @@ dotman --no-confirm sync main:app.settings
 - Search is read-only and does not mutate tracked state.
 - For full catalog browsing, use `dotman list trackables`.
 - Exact repo-qualified or bare selector matches should rank ahead of prefix, substring, and description matches.
-- Human output should render the selector as a badge-style label like `[package]` or `[group]`, followed by the canonical `repo:selector` form and a dim description in parentheses.
+- Human output should render the canonical `repo:selector` form, followed by badge-style labels like `[package]` or `[group]` and a dim description in parentheses.
 - JSON output should include the operation name, original query, and the ordered `matches` list.
 - An empty query should fail fast.
 

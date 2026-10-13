@@ -129,7 +129,7 @@ def add_run_noop_argument(parser: argparse.ArgumentParser) -> None:
         "--run-noop",
         action="store_true",
         dest="run_noop",
-        help="Keep push/pull packages with only noop targets alive so hooks rerun",
+        help="Keep packages with only noop targets alive so hooks rerun",
     )
 
 
