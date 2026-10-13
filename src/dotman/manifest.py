@@ -282,9 +282,29 @@ def normalize_compare(value: Any, *, manifest_path: Path, target_name: str) -> t
     if not isinstance(value, dict):
         raise ValueError(f"package manifest {manifest_path} target '{target_name}' compare must be a table")
     validate_supported_keys(value, supported_keys={"repo", "live"}, context=f"package manifest {manifest_path} target '{target_name}' compare")
-    repo = normalize_projection(value.get("repo"), field_name="compare.repo", default="raw", builtins=("raw", "render"))
-    live = normalize_projection(value.get("live"), field_name="compare.live", default="capture", builtins=("raw", "capture"))
+    context = f"package manifest {manifest_path} target '{target_name}'"
+    repo = normalize_compare_side(value.get("repo"), side="repo", field_name="compare.repo", default="raw", context=context)
+    live = normalize_compare_side(value.get("live"), side="live", field_name="compare.live", default="capture", context=context)
     return repo, live
+
+
+# Each comparison side's own builtin view; the other is Render or Capture.
+COMPARE_SIDE_VIEWS: dict[str, str] = {"repo": "render", "live": "capture"}
+
+
+def normalize_compare_side(value: Any, *, side: str, field_name: str, default: str, context: str) -> str:
+    other_side = "live" if side == "repo" else "repo"
+    other_view = COMPARE_SIDE_VIEWS[other_side]
+    # The other side's builtin would project the wrong endpoint: live Render
+    # yields repository bytes, so drift hides. A command of that name needs
+    # run, and is forced so projection never reads it as the builtin.
+    if value == other_view:
+        raise ValueError(
+            f'{context} compare.{side} = "{other_view}" is a compare.{other_side} view; '
+            f'set compare.{other_side} = "{other_view}" instead, or use {{ run = "{other_view}" }} for a command named {other_view}'
+        )
+    return normalize_projection(value, field_name=field_name, default=default,
+                                builtins=("raw", COMPARE_SIDE_VIEWS[side], other_view))
 
 
 def normalize_editor(value: Any, *, manifest_path: Path, target_name: str, default_elevation: DefaultCommandElevationMode = "none") -> EditorSpec:
@@ -488,10 +508,11 @@ def normalize_target_path_rules(
                                     context=f"package manifest {manifest_path} target '{target_name}' path_rules.{name}.compare")
         compare_payload = dict(preset_compare or {})
         compare_payload.update(rule_compare or {})
-        compare_repo = normalize_projection(compare_payload.get("repo"),
-                                            field_name="path rule compare.repo", default=inherited_compare_repo, builtins=("raw", "render"))
-        compare_live = normalize_projection(compare_payload.get("live"),
-                                            field_name="path rule compare.live", default=inherited_compare_live, builtins=("raw", "capture"))
+        rule_context = f"package manifest {manifest_path} target '{target_name}' path_rules.{name}"
+        compare_repo = normalize_compare_side(compare_payload.get("repo"), side="repo", field_name="path rule compare.repo",
+                                              default=inherited_compare_repo, context=rule_context)
+        compare_live = normalize_compare_side(compare_payload.get("live"), side="live", field_name="path rule compare.live",
+                                              default=inherited_compare_live, context=rule_context)
         preset_editor_payload = preset_payload.get("editor")
         rule_editor_payload = payload.get("editor")
         editor_label = f"{target_name} path_rules.{name}"
