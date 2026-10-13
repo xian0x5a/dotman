@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from pathlib import Path
 from string import Formatter
-from typing import Literal, Sequence
+from typing import Iterator, Literal, Sequence
 
 from dotman.command_runtime import (
     ArgvCommand, CommandRequest, CommandRuntime, first_output_line, raise_for_command_interruption,
@@ -34,11 +34,19 @@ class RepositoryCommit:
     error: str | None = None
 
 
+def _template_fields(template: str) -> Iterator[str]:
+    # A format spec may nest fields, as in {summary:{width}}.
+    for _, field, spec, _ in Formatter().parse(template):
+        if field is not None:
+            yield field
+            yield from _template_fields(spec or "")
+
+
 def validate_commit_message_template(template: object) -> str:
     if not isinstance(template, str) or not template.strip():
         raise ValueError("config git.commit_message must be a non-empty string")
     try:
-        fields = [field for _, field, _, _ in Formatter().parse(template) if field is not None]
+        fields = list(_template_fields(template))
     except ValueError as exc:
         raise ValueError(f"config git.commit_message is not a valid template: {exc}") from exc
     for field in fields:
