@@ -1165,7 +1165,7 @@ class SyncDeckApp(App[bool]):
             self._editing = False
             if self._progress is not None:
                 self._progress.stop()
-        if self._aborting or any(d.code == "interrupted" for row in self.deck.session.view.rows for d in row.diagnostics):
+        if self._aborting or any(d.code == "interrupted" for row in self.deck.session.view.rows for d in row_diagnostics(row)):
             self.exit(False)
             return
         self.update_workset()

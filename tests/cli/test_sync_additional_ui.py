@@ -9,6 +9,7 @@ from dotman.sync_deck import CommandDeck, SyncDeckApp, WorksetTable
 from dotman.sync_deck_command import sync_document
 from dotman.sync_editor import AdditionalEdit
 from dotman.sync_session import AdditionalRow, BatchSetApproval, PrepareSourceReview
+from tests.helpers import wait_until_idle
 
 
 def additional_row():
@@ -106,3 +107,34 @@ def test_unapproved_source_review_labels_bytes_as_candidate():
     assert "Approval: unapproved" in text
     assert "candidate Additional Source" in text
     assert "approved Additional Source" not in text
+
+
+def test_deck_actions_keep_working_once_an_additional_row_exists(tmp_path, monkeypatch):
+    from tests.engine.test_sync_session import make_engine
+
+    editor = tmp_path / "edit-additional"
+    editor.write_text('#!/bin/sh\nprintf candidate > "$DOTMAN_EDITOR_ADDITIONAL_SOURCE_PATHS"\n')
+    editor.chmod(0o700)
+    engine = make_engine(tmp_path, monkeypatch, [
+        ("unit", "push-only", b"repo", b"live",
+         f'editor = {{ run = "{editor}", io = "pipe", additional_sources = ["shared"] }}'),
+    ])
+    (tmp_path / "repo/packages/app/shared").write_bytes(b"original")
+    with engine.open_sync_session(engine.resolve_sync_scope([]), preview=True) as session:
+        app = SyncDeckApp(CommandDeck(session, use_color=False))
+
+        async def interact():
+            async with app.run_test(size=(100, 24)) as pilot:
+                table = app.query_one(WorksetTable)
+                # The Editor save writes the declared Additional Source, adding its row.
+                await pilot.press("e")
+                await wait_until_idle(app, pilot)
+                assert app.is_running
+                assert table.row_count == 2
+                assert "Additional Source Change" in str(table.get_row_at(1)[3])
+                await pilot.press("down", "x")
+                await wait_until_idle(app, pilot)
+                assert app.is_running
+                assert isinstance(session.view.rows[1], AdditionalRow) and session.view.rows[1].approved
+                assert str(table.get_row_at(1)[0]) == "[x]"
+        asyncio.run(asyncio.wait_for(interact(), timeout=5))
