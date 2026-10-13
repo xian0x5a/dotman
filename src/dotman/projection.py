@@ -409,8 +409,9 @@ def render_target_path_rules(
             chmod=rule.chmod,
             render=render_template_string(rule.render, context, base_dir=base_dir, source_path=base_dir) if rule.render != "raw" else "raw",
             capture=render_template_string(rule.capture, context, base_dir=base_dir, source_path=base_dir) if rule.capture != "raw" else "raw",
-            compare_repo=render_template_string(rule.compare_repo, context, base_dir=base_dir, source_path=base_dir) if rule.compare_repo not in {"raw", "render"} else rule.compare_repo,
-            compare_live=render_template_string(rule.compare_live, context, base_dir=base_dir, source_path=base_dir) if rule.compare_live not in {"raw", "capture"} else rule.compare_live,
+            # Compare commands render once, when the view is projected, as at target level.
+            compare_repo=rule.compare_repo,
+            compare_live=rule.compare_live,
             editor=rule.editor,
             sync_policy=rule.sync_policy,
             additional_sources=rule.additional_sources,

@@ -417,3 +417,24 @@ def test_package_gitignore_boolean_overrides_repository_for_sync_and_push(tmp_pa
             names = {item.identity.child_path for item in session.view.observations}
             assert ("private" in names) is not enabled
             assert "visible" in names
+
+
+@pytest.mark.parametrize('literal', ['{{literal}}', 'a{#x#}b'])
+def test_path_rule_compare_command_renders_once_like_target_level(tmp_path, monkeypatch, literal):
+    command = "printf '%s' '{% raw %}" + literal + "{% endraw %}'"
+    engine = directory_engine(tmp_path, monkeypatch, policy='pull-only', extra=f'''
+[targets.tree.compare]
+live = """{command}"""
+[targets.tree.path_rules.rule]
+pattern = "ruled/*"
+[targets.tree.path_rules.rule.compare]
+live = """{command}"""
+''')
+    repo, live = tmp_path / 'repo/packages/app/tree', tmp_path / 'live/tree'
+    for name in ('plain', 'ruled/file'):
+        put(repo, name, literal.encode()); put(live, name, b'anything')
+    with open_directory(engine) as session:
+        units = {unit.identity.child_path: unit for unit in session.view.observations}
+        outcomes = {name: (unit.state, unit.comparison_live, unit.diagnostics) for name, unit in units.items()}
+    in_sync = ('directly-in-sync', DirectoryChildPresent(literal.encode(), False), ())
+    assert outcomes == {'plain': in_sync, 'ruled/file': in_sync}
