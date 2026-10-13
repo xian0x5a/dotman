@@ -1580,3 +1580,30 @@ def test_unexpected_background_error_stops_the_deck(tmp_path, monkeypatch):
             run(interact())
         assert running_after_failure == [False]
         assert app.return_code == 1
+
+
+def test_review_refresh_keeps_search_hints_true_to_the_search(tmp_path, monkeypatch):
+    repo, live = search_repo_and_live()
+    engine = make_engine(tmp_path, monkeypatch, [("one", "push-only", repo, live, "")])
+    with engine.open_sync_session(engine.resolve_sync_scope([]), preview=True) as session:
+        app = SyncDeckApp(CommandDeck(session, use_color=False))
+
+        async def interact():
+            async with app.run_test(size=(80, 24)) as pilot:
+                await pilot.press("enter")
+                await wait_until_idle(app, pilot)
+                await pilot.press("slash", "v", "i", "e", "w", "enter")
+                await pilot.pause()
+                assert "Esc clear" in help_text(app)
+                # x refreshes the review after its work.
+                await pilot.press("x")
+                await wait_until_idle(app, pilot)
+                assert session.view.rows[0].approved
+                # Whatever the refresh did to the search, Esc must do what the help line says:
+                # "Esc clear" stays in the review, "Esc return" leaves it.
+                advertises_search = "Esc clear" in help_text(app)
+                assert advertises_search or "Esc return" in help_text(app)
+                await pilot.press("escape")
+                await pilot.pause()
+                assert title_text(app).startswith(":: Proposal Review") == advertises_search
+        run(interact())
