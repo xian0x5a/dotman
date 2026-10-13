@@ -530,3 +530,40 @@ def test_config_rejects_wrongly_typed_scalar_settings(
 
     with pytest.raises(ValueError, match=field_pattern):
         DotmanEngine.from_config_path(config_path)
+
+
+def write_chmod_repo(tmp_path: Path, *, target_chmod: str | None = None, path_rule_chmod: str | None = None) -> Path:
+    repo_root = tmp_path / "repo"
+    package_manifest_path = repo_root / "packages" / "app" / "package.toml"
+    package_manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    lines = [
+        'id = "app"',
+        "",
+        "[targets.config]",
+        'source = "files/config"',
+        'path = "~/.config/app"',
+        'type = "directory"',
+    ]
+    if target_chmod is not None:
+        lines.append(f'chmod = "{target_chmod}"')
+    if path_rule_chmod is not None:
+        lines.extend(["", "[targets.config.path_rules.secrets]", 'pattern = "*.conf"', f'chmod = "{path_rule_chmod}"'])
+    package_manifest_path.write_text("\n".join([*lines, ""]), encoding="utf-8")
+    return write_single_repo_config(tmp_path, repo_name="fixture", repo_path=repo_root)
+
+
+@pytest.mark.parametrize("location", ["target_chmod", "path_rule_chmod"])
+@pytest.mark.parametrize("chmod", ["77777", "-755", "8", "75", "0o755"])
+def test_repository_rejects_chmod_outside_three_or_four_octal_digits(tmp_path: Path, location: str, chmod: str) -> None:
+    config_path = write_chmod_repo(tmp_path, **{location: chmod})
+
+    with pytest.raises(ValueError, match="chmod"):
+        DotmanEngine.from_config_path(config_path)
+
+
+@pytest.mark.parametrize("location", ["target_chmod", "path_rule_chmod"])
+@pytest.mark.parametrize("chmod", ["644", "600", "0755", "0700", "4755"])
+def test_repository_accepts_three_or_four_digit_octal_chmod(tmp_path: Path, location: str, chmod: str) -> None:
+    config_path = write_chmod_repo(tmp_path, **{location: chmod})
+
+    DotmanEngine.from_config_path(config_path)
