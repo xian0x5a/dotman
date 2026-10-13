@@ -307,6 +307,10 @@ class Repository:
             if current_id in stack:
                 cycle = " -> ".join([*stack, current_id])
                 raise ValueError(f"profile include cycle detected in repo '{self.config.name}': {cycle}")
+            if current_id not in self.profiles:
+                raise ValueError(
+                    f"profile '{stack[-1]}' includes unknown profile '{current_id}' in repo '{self.config.name}'"
+                )
             profile = self.profiles[current_id]
             merged: dict[str, Any] = {}
             for include_id in profile.includes:
@@ -319,10 +323,13 @@ class Repository:
     def resolve_package(self, package_id: str) -> PackageSpec:
         return self._resolve_package(package_id, validate=True)
 
-    def _resolve_package(self, package_id: str, *, validate: bool) -> PackageSpec:
+    def _resolve_package(self, package_id: str, *, validate: bool, extending: tuple[str, ...] = ()) -> PackageSpec:
         cached = self._resolved_packages.get(package_id)
         if cached is not None:
             return cached
+        if package_id in extending:
+            cycle = " -> ".join([*extending, package_id])
+            raise ValueError(f"package extends cycle detected in repo '{self.config.name}': {cycle}")
         if package_id not in self.packages:
             raise ValueError(f"unknown package '{package_id}' in repo '{self.config.name}'")
         loaded = self.packages[package_id]
@@ -330,7 +337,7 @@ class Repository:
         for parent_id in loaded.extends or ():
             # A parent may contribute only part of a keyed path rule. Defer
             # completeness checks until all parents and the child are merged.
-            parent_spec = self._resolve_package(parent_id, validate=False)
+            parent_spec = self._resolve_package(parent_id, validate=False, extending=(*extending, package_id))
             merged = parent_spec if merged is None else merge_package_specs(merged, parent_spec)
         current = strip_package_extensions(loaded)
         merged = current if merged is None else merge_package_specs(merged, current)
