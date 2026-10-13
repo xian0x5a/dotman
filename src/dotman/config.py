@@ -121,7 +121,7 @@ def load_manager_config(config_path: str | Path | None = None) -> ManagerConfig:
         order_value = repo_payload.get("order")
         if not isinstance(repo_path_value, str):
             raise ValueError(f"repo '{repo_name}' must define string path")
-        if not isinstance(order_value, int):
+        if not isinstance(order_value, int) or isinstance(order_value, bool):
             raise ValueError(f"repo '{repo_name}' must define integer order")
         if order_value in seen_orders:
             raise ValueError(
@@ -166,14 +166,17 @@ def load_manager_config(config_path: str | Path | None = None) -> ManagerConfig:
     if not isinstance(enabled_value, bool):
         raise ValueError("config snapshots.enabled must be a boolean")
     snapshot_path_value = snapshots_payload.get("path")
+    if snapshot_path_value is not None and not isinstance(snapshot_path_value, str):
+        raise ValueError("config snapshots.path must be a string")
     snapshot_path = (
         expand_path(snapshot_path_value, base_dir=resolved_path.parent)
-        if isinstance(snapshot_path_value, str)
+        if snapshot_path_value is not None
         else default_snapshot_root().resolve()
     )
-    max_generations_value = snapshots_payload.get("max_generations", 10)
-    if not isinstance(max_generations_value, int) or max_generations_value <= 0:
-        raise ValueError("config snapshots.max_generations must be a positive integer")
+    max_generations_value = validate_positive_integer(
+        snapshots_payload.get("max_generations", 10),
+        field_name="snapshots.max_generations",
+    )
 
     if "selection_menu" in payload:
         raise ValueError("config [selection_menu] is no longer supported; use [ui] and [ui.menus]")

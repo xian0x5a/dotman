@@ -499,3 +499,34 @@ def test_repository_rejects_profile_include_of_missing_profile(tmp_path: Path) -
         engine.resolve_sync_scope(["fixture:app"])
 
     assert "profile" in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    ("repo_lines", "extra_lines", "field_pattern"),
+    [
+        (["order = true"], [], r"\border\b"),
+        (["order = 10"], ["[snapshots]", "max_generations = true"], r"max_generations"),
+        (["order = 10"], ["[snapshots]", "path = 123"], r"snapshots.*path"),
+    ],
+    ids=["repo-order-bool", "snapshots-max-generations-bool", "snapshots-path-int"],
+)
+def test_config_rejects_wrongly_typed_scalar_settings(
+    tmp_path: Path, repo_lines: list[str], extra_lines: list[str], field_pattern: str
+) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "[repos.example]",
+                f'path = "{EXAMPLE_REPO}"',
+                *repo_lines,
+                "",
+                *extra_lines,
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match=field_pattern):
+        DotmanEngine.from_config_path(config_path)
