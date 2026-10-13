@@ -11,4 +11,6 @@ Rejected: the shim hands its arguments, cwd, environment, and stdio descriptors 
 - It changed the terminal path that every intercept call uses, to fix a rare case. The first version leaked Ctrl-C because the sudo dotman started inherited dotman's ignored SIGINT; that part was fixable.
 - Any process of the same user that can reach the broker socket could get root commands run without a password while an intercept command was active. Before, it could only make dotman ask for a password. Closing that needs a caller ancestry check per platform.
 
+Also rejected (#114): the shim adding `-A` when `SUDO_ASKPASS` is set, so askpass works without a display. Commands choose their own sudo flags (`sudo -A`, yay's `--sudoflags -A`), and rewriting them meant mirroring sudo's option parser to avoid its `-A`/`-S` conflict. Only dotman's own login passes `-A`.
+
 Revisit if tty-less runs with many `sudo` calls per hook become common enough that per-call prompts hurt. Then forward only tty-less calls and add the ancestry check.

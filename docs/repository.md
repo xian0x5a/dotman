@@ -506,7 +506,7 @@ exit 0
 - `default_command_elevation` does not support `root`; set it on specific command objects instead.
 - Explicit command metadata wins over the repo default. Use `elevation = "none"` to opt a command out of a repo default.
 - `default_command_elevation = "intercept"` gives every command without explicit `elevation` the temporary `sudo` shim in `PATH`.
-- Every mode authenticates the same way under `--no-confirm`: when the sudo ticket is missing, sudo authenticates however it is configured (NOPASSWD, a terminal prompt, or the `SUDO_ASKPASS` helper when no terminal is present).
+- Every mode authenticates the same way under `--no-confirm`: when the sudo ticket is missing, sudo authenticates however it is configured (NOPASSWD, a terminal prompt, or the `SUDO_ASKPASS` helper when no terminal is present). Without a terminal, when `SUDO_ASKPASS` is set, dotman's own sudo login passes `-A`, so the helper runs even without a display; a graphical helper still fails there.
 
 Elevation modes:
 
@@ -519,7 +519,8 @@ Elevation modes:
 - `intercept` only sees `sudo` resolved through `PATH`. Call `sudo` by name, not `/usr/bin/sudo`.
 - With a terminal, the shim passes `-n`, so scripts that pipe a password into `sudo -S` do not work under `intercept`.
 - To authenticate early, for example before a long build, call `sudo -v`; it goes through the shim like any other `sudo` call.
-- Without a terminal (agent harnesses, cron), dotman's sudo login cannot reach the command's `sudo` calls, so the shim runs real `sudo` without `-n` and lets each call authenticate itself through `SUDO_ASKPASS` or a NOPASSWD rule. Expect one askpass prompt per `sudo` call. sudo only uses askpass this way when a display is available (`DISPLAY`, or `WAYLAND_DISPLAY` on sudo 1.9.18+), so headless runs such as cron need NOPASSWD. Otherwise the call fails with sudo's own `a terminal is required to read the password` error.
+- Without a terminal (agent harnesses, cron), dotman's sudo login cannot reach the command's `sudo` calls, so the shim runs real `sudo` without `-n` and lets each call authenticate itself through `SUDO_ASKPASS` or a NOPASSWD rule. Expect one askpass prompt per `sudo` call. sudo only uses askpass this way when a display is available (`DISPLAY`, or `WAYLAND_DISPLAY` on sudo 1.9.18+). Otherwise the call fails with sudo's own `a terminal is required to read the password` error.
+- The shim forwards the command's `sudo` arguments unchanged, so the command chooses how it authenticates. For headless runs such as cron, call `sudo -A` in your own scripts (or set the tool's equivalent, such as yay's `--sudoflags -A`) with a helper that needs no display, or use NOPASSWD.
 
 Example conditional package installer:
 

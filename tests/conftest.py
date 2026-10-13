@@ -63,6 +63,13 @@ def isolate_xdg_state_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
 
 
 @pytest.fixture(autouse=True)
+def isolate_sudo_askpass(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Without a terminal, a set SUDO_ASKPASS adds `-A` to dotman's sudo calls.
+    # Keep the user's helper from changing expected argv in agent or CI runs.
+    monkeypatch.delenv("SUDO_ASKPASS", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def git_identity(monkeypatch: pytest.MonkeyPatch) -> None:
     # The Deck starts with Commit Work on, so any interactive run over a git repo
     # commits; commits need an identity and HOME is isolated from the user's.
