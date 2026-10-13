@@ -170,7 +170,6 @@ def test_run_review_item_diff_uses_explicit_pager_when_stdout_is_tty(monkeypatch
         before_bytes=b"before\n",
         after_bytes=b"after\n",
     )
-    recorded: dict[str, object] = {}
 
     monkeypatch.setattr("sys.stdout.isatty", lambda: True)
     monkeypatch.setattr("dotman.diff_review._select_review_pager_command", lambda: DEFAULT_REVIEW_PAGER)

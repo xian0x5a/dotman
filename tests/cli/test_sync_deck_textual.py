@@ -333,7 +333,7 @@ def test_fixed_resolution_is_recessive_and_offers_no_intent_key(tmp_path, monkey
         ("push", "push-only", b"repo", b"live", ""),
     ])
     with engine.open_sync_session(engine.resolve_sync_scope([]), preview=True) as session:
-        both, pull, push = session.view.rows
+        _both, pull, push = session.view.rows
         # Push-only and pull-only follow from Policy; only real choices keep the Resolution emphasis.
         assert render_row_resolution(pull, use_color=True) != render_sync_term("Use live", use_color=True)
         assert render_row_resolution(push, use_color=True) != render_sync_term("Use repository", use_color=True)

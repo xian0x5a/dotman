@@ -165,7 +165,7 @@ def test_directory_child_metadata_policy_and_exact_reset(tmp_path, monkeypatch):
     from tests.engine.test_sync_directory_observation import directory_engine
     engine = directory_engine(tmp_path, monkeypatch, extra='[targets.tree.path_rules.only]\npattern = "*.private"\nsync_policy = "push-only"')
     # Missing children remain exact identities; no payload census is required.
-    path = store_record(engine, identity="main:app.tree/nested/file", payload=DirectoryChildPresent(b"private", True))
+    store_record(engine, identity="main:app.tree/nested/file", payload=DirectoryChildPresent(b"private", True))
     info = engine.info_sync_base("main:app.tree/nested/file")
     assert info["status"] == "usable" and info["payload"]["executable"] is True
     assert engine.info_sync_base("main:app.tree/secret.private")["reason"] == "ineligible"
