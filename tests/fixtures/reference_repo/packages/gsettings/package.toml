@@ -1,4 +1,3 @@
-id = "gsettings"
 description = "Fixture gsettings package"
 
 [targets.desktop]

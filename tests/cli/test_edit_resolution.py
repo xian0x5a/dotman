@@ -24,7 +24,7 @@ def _write_repo(repo_root: Path) -> None:
         source_path = package_root / source
         source_path.parent.mkdir(parents=True, exist_ok=True)
         source_path.write_text(package_id, encoding="utf-8")
-        package_header = [f'id = "{package_id}"']
+        package_header = []
         target_path = f"~/.config/{package_id}"
         target_options: list[str] = []
         if package_id == "git":

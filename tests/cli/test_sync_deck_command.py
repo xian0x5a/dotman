@@ -328,9 +328,7 @@ def test_json_failed_hook_identifies_exact_instance_target(tmp_path, monkeypatch
          '[targets.unit.hooks]\npost_push = "exit 7"'),
     ])
     manifest = tmp_path / "repo/packages/app/package.toml"
-    manifest.write_text(manifest.read_text().replace(
-        'id = "app"', 'id = "app"\nbinding_mode = "multi_instance"',
-    ))
+    manifest.write_text('binding_mode = "multi_instance"\n' + manifest.read_text())
     engine = DotmanEngine(engine.config)
     assert runner_for(engine).run(arguments(dry_run=False)) == 1
     payload = json.loads(capsys.readouterr().out)
@@ -427,7 +425,7 @@ def test_failed_planning_commands_do_not_copy_output_into_json(tmp_path, monkeyp
     if command == "guard":
         manifest.write_text(manifest.read_text() + '\n[targets.unit.hooks]\nguard_push = "printf private-command-output >&2; exit 7"\n')
     else:
-        manifest.write_text('id = "app"\n[targets.unit]\nprobe = "printf private-command-output >&2; exit 7"\nsync_policy = "push-only"\n')
+        manifest.write_text('[targets.unit]\nprobe = "printf private-command-output >&2; exit 7"\nsync_policy = "push-only"\n')
     from dotman.engine import DotmanEngine
     engine = DotmanEngine.from_config_path(engine.config.config_path)
     assert runner_for(engine).run(arguments()) == 1
@@ -511,7 +509,7 @@ def test_failed_planning_commands_show_reason_in_human_output(tmp_path, monkeypa
     if command == "guard":
         manifest.write_text(manifest.read_text() + '\n[targets.unit.hooks]\nguard_push = "printf \'\\nguard reason\\n\' >&2; exit 7"\n')
     else:
-        manifest.write_text('id = "app"\n[targets.unit]\nprobe = "printf \'\\nguard reason\\n\' >&2; exit 7"\nsync_policy = "push-only"\n')
+        manifest.write_text('[targets.unit]\nprobe = "printf \'\\nguard reason\\n\' >&2; exit 7"\nsync_policy = "push-only"\n')
     from dotman.engine import DotmanEngine
     engine = DotmanEngine.from_config_path(engine.config.config_path)
     assert runner_for(engine).run(arguments(json_output=False)) == 1

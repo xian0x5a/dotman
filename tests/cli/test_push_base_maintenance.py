@@ -38,7 +38,7 @@ def test_push_query_retains_unselected_and_eligible_bases(tmp_path, monkeypatch,
     peer.mkdir()
     (peer / 'unit').write_bytes(b'same')
     (peer / 'package.toml').write_text(
-        f'id = "peer"\n[targets.unit]\nsource = "unit"\npath = "{tmp_path / "live/peer"}"\ntype = "file"\nsync_policy = "both"'
+        f'[targets.unit]\nsource = "unit"\npath = "{tmp_path / "live/peer"}"\ntype = "file"\nsync_policy = "both"'
     )
     write_tracked_packages_state(tmp_path / 'state', repo_name='main', entries=[('app', 'default'), ('peer', 'default')])
     engine = DotmanEngine(engine.config)

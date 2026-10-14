@@ -67,7 +67,7 @@ def test_untrack_resolver_resolves_group_members_across_singleton_profiles(
         package_root = repo_root / "packages" / package_id
         package_root.mkdir(parents=True)
         (package_root / "package.toml").write_text(
-            f'id = "{package_id}"\n', encoding="utf-8"
+            '', encoding="utf-8"
         )
     (repo_root / "groups").mkdir()
     (repo_root / "groups" / "bundle.toml").write_text(
@@ -102,7 +102,7 @@ def test_untrack_resolver_prefers_interactive_persisted_partial_over_exact_group
         package_root = repo_root / "packages" / package_id
         package_root.mkdir(parents=True)
         (package_root / "package.toml").write_text(
-            f'id = "{package_id}"\n', encoding="utf-8"
+            '', encoding="utf-8"
         )
     (repo_root / "groups").mkdir()
     (repo_root / "groups" / "bundle.toml").write_text(

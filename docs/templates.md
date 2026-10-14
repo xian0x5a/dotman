@@ -128,10 +128,9 @@ That preset supplies the same defaults as `jinja-patch`, plus:
 
 ## Example
 
-`package.toml`:
+`packages/shell/package.toml`:
 
 ```toml
-id = "shell"
 description = "Shell profile"
 
 [targets.profile]
@@ -143,7 +142,6 @@ preset = "jinja-editor"
 Equivalent explicit form:
 
 ```toml
-id = "shell"
 description = "Shell profile"
 
 [targets.profile]
@@ -158,7 +156,6 @@ editor = { type = "jinja" }
 Or, if you want a fully explicit custom editor command:
 
 ```toml
-id = "shell"
 description = "Shell profile"
 
 [targets.profile]

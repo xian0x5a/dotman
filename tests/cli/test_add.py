@@ -47,7 +47,7 @@ def test_add_cli_updates_existing_package_manifest_in_json_mode(
     live_path.chmod(0o600)
 
     repo_root = tmp_path / "repo"
-    _write_repo(repo_root, {"git": 'id = "git"\n'})
+    _write_repo(repo_root, {"git": ''})
     manifest_path = repo_root / "packages" / "git" / "package.toml"
     manifest_path.chmod(0o600)
     config_path = write_named_manager_config(tmp_path, {"fixture": repo_root})
@@ -122,8 +122,6 @@ def test_add_cli_creates_new_package_manifest_from_relative_live_path(
     manifest_path = repo_root / "packages" / "newpkg" / "package.toml"
     assert manifest_path.read_text(encoding="utf-8") == "\n".join(
         [
-            'id = "newpkg"',
-            "",
             "[targets.f_config_nvim_init_lua]",
             'source = "files/config/nvim/init.lua"',
             'path = "~/.config/nvim/init.lua"',
@@ -150,7 +148,6 @@ def test_add_cli_suffixes_duplicate_target_key_in_same_package(
         {
             "git": "\n".join(
                 [
-                    'id = "git"',
                     "",
                     "[targets.f_gitconfig]",
                     'source = "files/other"',
@@ -197,7 +194,6 @@ def test_add_cli_fails_when_package_already_declares_same_live_path(
         {
             "git": "\n".join(
                 [
-                    'id = "git"',
                     "",
                     "[targets.existing]",
                     'source = "files/gitconfig"',
@@ -271,7 +267,7 @@ def test_add_cli_interactively_allows_create_when_package_query_is_omitted(
     live_path.write_text("value\n", encoding="utf-8")
 
     repo_root = tmp_path / "repo"
-    _write_repo(repo_root, {"existing": 'id = "existing"\n'})
+    _write_repo(repo_root, {"existing": ''})
     config_path = write_named_manager_config(tmp_path, {"fixture": repo_root})
 
     interaction = ScriptedInteraction(
@@ -298,7 +294,7 @@ def test_review_add_manifest_uses_dedicated_add_review_wording(
     monkeypatch,
 ) -> None:
     manifest_path = tmp_path / "package.toml"
-    manifest_path.write_text('id = "git"\n', encoding="utf-8")
+    manifest_path.write_text('', encoding="utf-8")
     monkeypatch.setenv("EDITOR", "nvim")
 
     recorded: dict[str, object] = {}
@@ -324,7 +320,7 @@ def test_review_add_manifest_uses_dedicated_add_review_wording(
         assert f"- editable manifest copy: {editable_path}" in review_text
         assert "--- current package.toml" in review_text
         assert "+++ proposed package.toml" in review_text
-        editable_path.write_text('id = "git"\n\n[targets.f_gitconfig]\n', encoding="utf-8")
+        editable_path.write_text('[targets.f_gitconfig]\n', encoding="utf-8")
         return SimpleNamespace(returncode=0)
 
     def run_editor(request):
@@ -345,14 +341,14 @@ def test_review_add_manifest_uses_dedicated_add_review_wording(
         config_path="~/.gitconfig",
         chmod=None,
         created_package=False,
-        before_text='id = "git"\n',
-        after_text='id = "git"\n\n[targets.f_gitconfig]\n',
+        before_text='',
+        after_text='[targets.f_gitconfig]\n',
     )
 
     review_result = review_add_manifest(result)
     assert review_result is not None
     assert review_result.exit_code == 0
-    assert review_result.manifest_text == 'id = "git"\n\n[targets.f_gitconfig]\n'
+    assert review_result.manifest_text == '[targets.f_gitconfig]\n'
     assert recorded["check"] is False
     assert recorded["command"][0] == "nvim"
 
@@ -375,7 +371,7 @@ def test_add_cli_reports_no_effective_package_config_changes_after_editor_review
     repo_root.mkdir()
     manifest_path = repo_root / "packages" / "git" / "package.toml"
     manifest_path.parent.mkdir(parents=True)
-    manifest_path.write_text('id = "git"\n', encoding="utf-8")
+    manifest_path.write_text('', encoding="utf-8")
     config_path = write_named_manager_config(tmp_path, {"fixture": repo_root})
 
     monkeypatch.setattr(cli, "add_editor_available", lambda: True)
@@ -396,7 +392,7 @@ def test_add_cli_reports_no_effective_package_config_changes_after_editor_review
     output = capsys.readouterr().out
     assert interaction.requests == []
     assert "No package config changes." in output
-    assert manifest_path.read_text(encoding="utf-8") == 'id = "git"\n'
+    assert manifest_path.read_text(encoding="utf-8") == ''
 
 
 
@@ -450,7 +446,7 @@ def test_add_json_does_not_authorize_manifest_write(tmp_path, monkeypatch, capsy
     live_path = tmp_path / "live"
     live_path.write_text("content")
     repo_root = tmp_path / "repo"
-    _write_repo(repo_root, {"app": 'id = "app"\n'})
+    _write_repo(repo_root, {"app": ''})
     manifest = repo_root / "packages/app/package.toml"
     before = manifest.read_bytes()
     config = write_named_manager_config(tmp_path, {"fixture": repo_root})
@@ -465,7 +461,7 @@ def test_add_no_confirm_skips_editor_even_with_terminal(tmp_path, monkeypatch) -
     live_path = tmp_path / "live"
     live_path.write_text("content")
     repo_root = tmp_path / "repo"
-    _write_repo(repo_root, {"app": 'id = "app"\n'})
+    _write_repo(repo_root, {"app": ''})
     config = write_named_manager_config(tmp_path, {"fixture": repo_root})
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     def unexpected_editor(*args, **kwargs):
@@ -510,7 +506,7 @@ def test_add_cli_non_interactive_never_writes_into_a_partial_package_match(
     live_path.write_text("[user]\n", encoding="utf-8")
 
     repo_root = tmp_path / "repo"
-    _write_repo(repo_root, {"gitui": 'id = "gitui"\n'})
+    _write_repo(repo_root, {"gitui": ''})
     gitui_package = repo_root / "packages" / "gitui"
     manifest_before = (gitui_package / "package.toml").read_bytes()
     config_path = write_named_manager_config(tmp_path, {"main": repo_root})
@@ -536,7 +532,7 @@ def test_add_cli_adds_non_ascii_live_path_to_a_loadable_manifest(
     live_path.write_text("value\n", encoding="utf-8")
 
     repo_root = tmp_path / "repo"
-    _write_repo(repo_root, {"app": 'id = "app"\n'})
+    _write_repo(repo_root, {"app": ''})
     config_path = write_named_manager_config(tmp_path, {"fixture": repo_root})
 
     add_exit_code = main(["--config", str(config_path), "--no-confirm", "add", str(live_path), "fixture:app"])

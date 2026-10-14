@@ -36,7 +36,6 @@ def _write_guarded_target_package(
         else:
             projection_line = f'capture = "printf projected > {marker}; cat \\"$DOTMAN_LIVE_PATH\\""'
     lines = [
-        'id = "app"',
         "",
         "[targets.config]",
         'source = "files/config.txt"',
@@ -140,7 +139,6 @@ def test_package_guard_commands_preserve_order_stop_on_skip_and_support_elevatio
     package_root.joinpath("package.toml").write_text(
         "\n".join(
             [
-                'id = "app"',
                 "",
                 "[targets.config]",
                 'source = "files/config.txt"',
@@ -184,7 +182,7 @@ def test_package_guard_runs_once_per_instance_per_session_open_and_never_enters_
         package_root = repo_root / "packages" / package_id
         package_root.mkdir(parents=True)
         (package_root / "package.toml").write_text(
-            f'id = "{package_id}"\ndepends = ["app"]\n',
+            'depends = ["app"]\n',
             encoding="utf-8",
         )
     engine = _engine(tmp_path, repo_root)
@@ -211,7 +209,6 @@ def test_run_noop_admits_package_hooks_and_guard_never_runs_as_a_hook(
     package_root.joinpath("package.toml").write_text(
         "\n".join(
             [
-                'id = "app"',
                 "",
                 "[hooks]",
                 f'guard_push = "printf guard >> {marker}"',
@@ -252,7 +249,7 @@ def test_package_guard_manifest_rejects_interactive_io_and_run_noop(
     package_root = repo_root / "packages" / "app"
     package_root.mkdir(parents=True)
     package_root.joinpath("package.toml").write_text(
-        f'id = "app"\n\n[hooks]\n{guard_manifest}\n',
+        f'[hooks]\n{guard_manifest}\n',
         encoding="utf-8",
     )
 

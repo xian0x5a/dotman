@@ -48,7 +48,6 @@ def _write_basic_execution_repo(
     (package_root / "package.toml").write_text(
         "\n".join(
             [
-                f'id = "{package_id}"',
                 "",
                 "[targets.config]",
                 'source = "files/config.txt"',
@@ -85,7 +84,6 @@ def _write_directory_execution_repo(
     (repo_root / "profiles" / "default.toml").write_text("", encoding="utf-8")
     (package_root / "files" / "config" / "nested.txt").write_text("repo directory value\n", encoding="utf-8")
     target_lines = [
-        f'id = "{package_id}"',
         "",
         "[targets.config]",
         'source = "files/config"',

@@ -21,7 +21,7 @@ def _write_plain_packages(repo_root: Path, package_ids: list[str], *, profiles: 
         (repo_root / "profiles" / f"{profile}.toml").write_text("", encoding="utf-8")
     for package_id in package_ids:
         (repo_root / "packages" / package_id).mkdir(parents=True)
-        (repo_root / "packages" / package_id / "package.toml").write_text(f'id = "{package_id}"\n', encoding="utf-8")
+        (repo_root / "packages" / package_id / "package.toml").write_text('', encoding="utf-8")
 
 
 def _listed_package_entries(config_path: Path, capsys) -> set[tuple[str, str, str]]:

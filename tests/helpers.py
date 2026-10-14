@@ -141,7 +141,7 @@ def _write_sync_package(
 ) -> None:
     package = root / "repo" / "packages" / package_id
     package.mkdir(parents=True)
-    lines = [f'id = "{package_id}"']
+    lines = []
     if depends:
         lines.append("depends = [" + ", ".join(f'"{name}"' for name in depends) + "]")
     if package_extra:
@@ -263,7 +263,6 @@ def write_profile_switch_repo(repo_root: Path) -> None:
     (repo_root / "packages" / "alpha" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "alpha"',
                 "",
                 "[targets.alpha]",
                 'source = "files/alpha.conf"',
@@ -276,7 +275,6 @@ def write_profile_switch_repo(repo_root: Path) -> None:
     (repo_root / "packages" / "beta" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "beta"',
                 "",
                 "[targets.beta]",
                 'source = "files/beta.conf"',
@@ -303,7 +301,6 @@ def write_implicit_conflict_repo(repo_root: Path) -> None:
     (repo_root / "packages" / "alpha" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "alpha"',
                 "",
                 "[targets.shared]",
                 'source = "files/shared.conf"',
@@ -316,7 +313,6 @@ def write_implicit_conflict_repo(repo_root: Path) -> None:
     (repo_root / "packages" / "beta" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "beta"',
                 "",
                 "[targets.shared]",
                 'source = "files/shared.conf"',
@@ -329,7 +325,6 @@ def write_implicit_conflict_repo(repo_root: Path) -> None:
     (repo_root / "packages" / "alpha-meta" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "alpha-meta"',
                 'depends = ["alpha"]',
                 "",
             ]
@@ -339,7 +334,6 @@ def write_implicit_conflict_repo(repo_root: Path) -> None:
     (repo_root / "packages" / "beta-meta" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "beta-meta"',
                 'depends = ["beta"]',
                 "",
             ]
@@ -364,7 +358,6 @@ def write_untrack_conflict_repo(repo_root: Path) -> None:
     (repo_root / "packages" / "shared" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "shared"',
                 "",
                 "[targets.shared]",
                 'source = "files/shared.conf"',
@@ -378,7 +371,6 @@ def write_untrack_conflict_repo(repo_root: Path) -> None:
     (repo_root / "packages" / "stack-a" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "stack-a"',
                 'depends = ["shared"]',
                 "",
             ]
@@ -388,7 +380,6 @@ def write_untrack_conflict_repo(repo_root: Path) -> None:
     (repo_root / "packages" / "stack-b" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "stack-b"',
                 'depends = ["shared"]',
                 "",
             ]
@@ -410,7 +401,7 @@ def write_profile_ambiguous_dependency_repo(repo_root: Path, *, shared_binding_m
         "profile={{ profile }}\n",
         encoding="utf-8",
     )
-    shared_lines = ['id = "shared"']
+    shared_lines = []
     if shared_binding_mode != "singleton":
         shared_lines.append(f'binding_mode = "{shared_binding_mode}"')
     shared_lines.extend(
@@ -431,7 +422,6 @@ def write_profile_ambiguous_dependency_repo(repo_root: Path, *, shared_binding_m
         (repo_root / "packages" / package_id / "package.toml").write_text(
             "\n".join(
                 [
-                    f'id = "{package_id}"',
                     'depends = ["shared"]',
                     "",
                 ]
@@ -454,7 +444,6 @@ def write_multi_instance_repo(repo_root: Path) -> None:
     (repo_root / "packages" / "profiled" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "profiled"',
                 'binding_mode = "multi_instance"',
                 "",
                 "[targets.managed]",
@@ -481,7 +470,6 @@ def write_shared_stack_repo(repo_root: Path) -> None:
     (repo_root / "packages" / "shared" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "shared"',
                 "",
                 "[targets.shared]",
                 'source = "files/shared.conf"',
@@ -494,7 +482,6 @@ def write_shared_stack_repo(repo_root: Path) -> None:
     (repo_root / "packages" / "shared-stack" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "shared-stack"',
                 'depends = ["shared"]',
                 "",
             ]
@@ -523,7 +510,6 @@ def write_package_override_preview_repo(repo_root: Path) -> None:
     (repo_root / "packages" / "alpha" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "alpha"',
                 "",
                 "[targets.shared]",
                 'source = "files/shared.conf"',
@@ -540,7 +526,6 @@ def write_package_override_preview_repo(repo_root: Path) -> None:
     (repo_root / "packages" / "beta" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "beta"',
                 "",
                 "[targets.shared]",
                 'source = "files/shared.conf"',
@@ -557,7 +542,6 @@ def write_package_override_preview_repo(repo_root: Path) -> None:
     (repo_root / "packages" / "alpha-meta" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "alpha-meta"',
                 'depends = ["alpha"]',
                 "",
             ]
@@ -567,7 +551,6 @@ def write_package_override_preview_repo(repo_root: Path) -> None:
     (repo_root / "packages" / "beta-meta" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "beta-meta"',
                 'depends = ["beta"]',
                 "",
             ]

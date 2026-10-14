@@ -1,4 +1,3 @@
-id = "sunshine"
 description = "Fixture Sunshine package"
 
 [targets.config]

@@ -26,7 +26,6 @@ def _write_directory_package(
     (repo_root / "profiles" / "default.toml").write_text("", encoding="utf-8")
 
     lines = [
-        'id = "app"',
         "",
         "[targets.config]",
         'source = "files/config"',

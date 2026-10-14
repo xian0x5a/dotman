@@ -65,7 +65,6 @@ def _write_snapshot_execution_repo(
     (package_root / "package.toml").write_text(
         "\n".join(
             [
-                f'id = "{package_id}"',
                 "",
                 "[targets.config]",
                 'source = "files/config.txt"',
@@ -703,7 +702,6 @@ def test_push_snapshot_of_non_bmp_live_path_stays_listable_and_restorable(
     (package_root / "package.toml").write_text(
         "\n".join(
             [
-                'id = "app"',
                 "",
                 "[targets.notes]",
                 'source = "files/notes.txt"',

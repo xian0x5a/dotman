@@ -257,7 +257,7 @@ def test_instance_identity_remains_canonical(tmp_path, monkeypatch):
     from tests.helpers import write_tracked_packages_state
     engine = fixture_engine(tmp_path, monkeypatch)
     manifest = tmp_path / "repo/packages/app/package.toml"
-    manifest.write_text(manifest.read_text().replace('id = "app"', 'id = "app"\nbinding_mode = "multi_instance"'))
+    manifest.write_text('binding_mode = "multi_instance"\n' + manifest.read_text())
     (tmp_path / "repo/profiles/work.v2.toml").write_text("")
     write_tracked_packages_state(tmp_path / "state", repo_name="main", entries=[("app", "work.v2")])
     engine = DotmanEngine.from_config_path(engine.config.config_path)

@@ -14,7 +14,7 @@ def repo(tmp_path, target_lines, directory=False):
     else:
         (root/"packages"/"app"/"files"/"x").write_text("hello")
     (root/"profiles"/"default.toml").write_text("")
-    (root/"packages"/"app"/"package.toml").write_text("\n".join(["id='app'","[targets.x]","source='files/x'","path='~/.x'","type='directory'" if directory else ""]+target_lines))
+    (root/"packages"/"app"/"package.toml").write_text("\n".join(["[targets.x]","source='files/x'","path='~/.x'","type='directory'" if directory else ""]+target_lines))
     return root
 
 def engine(tmp_path, root, **options):
@@ -218,20 +218,17 @@ def test_resolve_package_merges_partial_named_path_rule_across_actual_parent_man
     (root / "profiles").mkdir()
     (root / "profiles" / "default.toml").write_text("", encoding="utf-8")
     (root / "packages" / "parent-a" / "package.toml").write_text("""
-id = "parent-a"
 
 [targets.config.path_rules.docs]
 pattern = "*.md"
 """, encoding="utf-8")
     (root / "packages" / "parent-b" / "package.toml").write_text("""
-id = "parent-b"
 
 [targets.config.path_rules.docs]
 priority = 7
 render = "jinja"
 """, encoding="utf-8")
     (root / "packages" / "child" / "package.toml").write_text("""
-id = "child"
 extends = ["parent-a", "parent-b"]
 
 [targets.config]

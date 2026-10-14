@@ -1,4 +1,3 @@
-id = "1password"
 description = "Fixture base 1Password package"
 
 [targets.ssh_dir]

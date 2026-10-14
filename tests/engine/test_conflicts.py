@@ -31,7 +31,6 @@ def write_same_live_path_repo(repo_root: Path, *, same_source_bytes: bool = True
         (repo_root / "packages" / package_id / "package.toml").write_text(
             "\n".join(
                 [
-                    f'id = "{package_id}"',
                     "",
                     "[targets.shared]",
                     'source = "files/shared.conf"',
@@ -44,7 +43,6 @@ def write_same_live_path_repo(repo_root: Path, *, same_source_bytes: bool = True
         (repo_root / "packages" / f"{package_id}-meta" / "package.toml").write_text(
             "\n".join(
                 [
-                    f'id = "{package_id}-meta"',
                     f'depends = ["{package_id}"]',
                     "",
                 ]
@@ -62,7 +60,6 @@ def write_static_multi_instance_repo(repo_root: Path) -> None:
     (repo_root / "packages" / "profiled" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "profiled"',
                 'binding_mode = "multi_instance"',
                 "",
                 "[targets.managed]",
@@ -91,7 +88,6 @@ def write_nested_pull_only_repo(repo_root: Path, *, nested_repo_paths: bool) -> 
     (repo_root / "packages" / "parent" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "parent"',
                 "",
                 "[targets.config]",
                 'source = "files/config"',
@@ -105,7 +101,6 @@ def write_nested_pull_only_repo(repo_root: Path, *, nested_repo_paths: bool) -> 
     (repo_root / "packages" / "child" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "child"',
                 "",
                 "[targets.generated]",
                 f'source = "{child_source}"',
@@ -127,7 +122,6 @@ def write_same_package_nested_pull_only_repo(repo_root: Path) -> None:
     (repo_root / "packages" / "app" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "app"',
                 "",
                 "[targets.config]",
                 'source = "files/config"',
@@ -156,7 +150,6 @@ def write_pull_only_same_live_path_repo(repo_root: Path) -> None:
         (repo_root / "packages" / package_id / "package.toml").write_text(
             "\n".join(
                 [
-                    f'id = "{package_id}"',
                     "",
                     "[targets.shared]",
                     'source = "files/shared.conf"',
@@ -180,7 +173,6 @@ def write_pull_only_same_repo_path_repo(repo_root: Path) -> None:
         (repo_root / "packages" / package_id / "package.toml").write_text(
             "\n".join(
                 [
-                    f'id = "{package_id}"',
                     "",
                     "[targets.shared]",
                     f'source = "{source}"',
@@ -357,7 +349,6 @@ def test_package_reserved_paths_conflict_with_other_package_target(
     (repo_root / "packages" / "alpha" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "alpha"',
                 'reserved_paths = ["~/.config/shared"]',
                 "",
                 "[targets.alpha]",
@@ -371,7 +362,6 @@ def test_package_reserved_paths_conflict_with_other_package_target(
     (repo_root / "packages" / "beta" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "beta"',
                 "",
                 "[targets.beta]",
                 'source = "files/beta.conf"',
@@ -409,7 +399,6 @@ def test_package_reserved_paths_conflict_with_other_package_reserved_paths(
     (repo_root / "packages" / "alpha" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "alpha"',
                 'reserved_paths = ["~/.cache/shared"]',
                 "",
             ]
@@ -419,7 +408,6 @@ def test_package_reserved_paths_conflict_with_other_package_reserved_paths(
     (repo_root / "packages" / "beta" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "beta"',
                 'reserved_paths = ["~/.cache/shared/session"]',
                 "",
             ]

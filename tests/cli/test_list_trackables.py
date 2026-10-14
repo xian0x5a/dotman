@@ -16,7 +16,6 @@ def write_trackables_repo(repo_root: Path) -> None:
     (repo_root / "packages" / "git" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "git"',
                 'description = "Base Git configuration"',
                 "",
             ]
@@ -26,7 +25,6 @@ def write_trackables_repo(repo_root: Path) -> None:
     (repo_root / "packages" / "profiled" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "profiled"',
                 'binding_mode = "multi_instance"',
                 'description = "Profile-driven package"',
                 "",

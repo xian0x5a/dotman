@@ -35,7 +35,6 @@ def _write_edit_repo(repo_root: Path) -> None:
     (repo_root / "packages" / "git" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "git"',
                 "",
                 "[targets.gitconfig]",
                 'source = "files/gitconfig"',
@@ -56,7 +55,6 @@ def _write_edit_repo(repo_root: Path) -> None:
     (repo_root / "packages" / "altgit" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "altgit"',
                 "",
                 "[targets.gitconfig]",
                 'source = "files/gitconfig"',
@@ -69,7 +67,6 @@ def _write_edit_repo(repo_root: Path) -> None:
     (repo_root / "packages" / "ssh" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "ssh"',
                 "",
                 "[targets.ssh_dir]",
                 'source = "files/ssh"',
@@ -82,7 +79,6 @@ def _write_edit_repo(repo_root: Path) -> None:
     (repo_root / "packages" / "nvim" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "nvim"',
                 "",
                 "[targets.init_lua]",
                 'source = "files/config/nvim/init.lua"',
@@ -95,7 +91,6 @@ def _write_edit_repo(repo_root: Path) -> None:
     (repo_root / "packages" / "note" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "note"',
                 "",
                 "[targets.note]",
                 'source = "files/note.txt"',
@@ -530,7 +525,6 @@ def test_edit_cli_sugar_keeps_repo_qualified_target_query_target_intent(
     (beta_root / "packages" / "nvim" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "nvim"',
                 "",
                 "[targets.init_lua]",
                 'source = "files/config/nvim/init.lua"',
@@ -686,7 +680,6 @@ def test_edit_target_cli_resolves_repo_qualified_target_query(
     (beta_root / "packages" / "nvim" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "nvim"',
                 "",
                 "[targets.init_lua]",
                 'source = "files/config/nvim/init.lua"',

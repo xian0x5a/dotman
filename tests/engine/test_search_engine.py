@@ -12,7 +12,6 @@ def write_search_repo(repo_root: Path, *, package_description: str) -> None:
     (repo_root / "packages" / "git" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "git"',
                 f'description = "{package_description}"',
                 "",
             ]

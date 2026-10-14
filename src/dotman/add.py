@@ -163,11 +163,7 @@ def prepare_add_to_package(*, repo_root: Path, repo_name: str, package_id: str, 
         chmod=live_spec.chmod,
     )
     created_package = not manifest_path.exists()
-    after_text = (
-        render_new_manifest(package_id=package_id, target_block=target_block)
-        if created_package
-        else append_target_block(before_text=before_text, target_block=target_block)
-    )
+    after_text = append_target_block(before_text=before_text, target_block=target_block)
     return AddOperationResult(
         repo_name=repo_name,
         package_id=package_id,
@@ -209,14 +205,6 @@ def validate_manifest_text(
         package_repo=repo_name,
         package_id=package_id,
     )
-    manifest_id = payload.get("id")
-    if not isinstance(manifest_id, str):
-        raise ValueError("edited package manifest must define string id")
-    validate_package_id(manifest_id)
-    if manifest_id != package_id:
-        raise ValueError(
-            f"edited package manifest id must stay '{package_id}', got '{manifest_id}'"
-        )
     targets_payload = payload.get("targets")
     if isinstance(targets_payload, dict):
         for target_name in targets_payload:
@@ -279,10 +267,6 @@ def render_target_block(*, target_name: str, source_path: str, config_path: str,
     if chmod is not None:
         target["chmod"] = chmod
     return tomlkit.dumps({"targets": {target_name: target}})
-
-
-def render_new_manifest(*, package_id: str, target_block: str) -> str:
-    return f"{tomlkit.dumps({'id': package_id})}\n{target_block}"
 
 
 def append_target_block(*, before_text: str, target_block: str) -> str:

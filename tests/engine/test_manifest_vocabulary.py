@@ -31,7 +31,6 @@ def write_manifest_repo(
     (repo_root / "packages" / "app" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "app"',
                 "",
                 "[targets.config]",
                 'source = "files/config"',

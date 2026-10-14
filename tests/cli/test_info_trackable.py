@@ -58,7 +58,6 @@ def test_info_trackable_cli_exposes_declared_target_type_in_json(
     (repo_root / "packages" / "sample" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "sample"',
                 "",
                 "[targets.profile]",
                 'type = "file"',
@@ -94,7 +93,6 @@ def test_info_trackable_cli_exposes_probe_targets_in_json_and_text(
     (repo_root / "packages" / "sample" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "sample"',
                 "",
                 "[targets.version]",
                 'probe = "exit 0"',
@@ -133,7 +131,6 @@ def test_info_trackable_cli_emits_partial_group_status_in_text_output(
     (repo_root / "packages" / "beta" / "files" / "beta.conf").write_text("beta\n", encoding="utf-8")
     (repo_root / "packages" / "alpha" / "package.toml").write_text(
         '\n'.join([
-            'id = "alpha"',
             '',
             '[targets.alpha]',
             'source = "files/alpha.conf"',
@@ -144,7 +141,6 @@ def test_info_trackable_cli_emits_partial_group_status_in_text_output(
     )
     (repo_root / "packages" / "beta" / "package.toml").write_text(
         '\n'.join([
-            'id = "beta"',
             '',
             '[targets.beta]',
             'source = "files/beta.conf"',

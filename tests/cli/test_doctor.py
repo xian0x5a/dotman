@@ -179,7 +179,7 @@ def test_doctor_cli_reports_corrupt_tracked_state_as_failed_check(
     (repo_root / "profiles").mkdir(parents=True)
     (repo_root / "profiles" / "default.toml").write_text("", encoding="utf-8")
     (repo_root / "packages" / "app").mkdir(parents=True)
-    (repo_root / "packages" / "app" / "package.toml").write_text('id = "app"\n', encoding="utf-8")
+    (repo_root / "packages" / "app" / "package.toml").write_text('', encoding="utf-8")
     config_path = write_single_repo_config(tmp_path, repo_name="fixture", repo_path=repo_root)
     state_path = tmp_path / "state" / "dotman" / "repos" / "fixture" / "tracked-packages.toml"
     state_path.parent.mkdir(parents=True)

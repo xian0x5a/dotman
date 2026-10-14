@@ -363,7 +363,6 @@ def test_repository_reports_toml_parse_error_with_package_context(tmp_path: Path
     package_manifest_path.write_text(
         "\n".join(
             [
-                'id = "git"',
                 "",
                 "[targets.git]",
                 'source = "files/gitconfig"',
@@ -384,9 +383,9 @@ def test_repository_reports_toml_parse_error_with_package_context(tmp_path: Path
 
 def test_repository_rejects_package_ids_with_dots(tmp_path: Path) -> None:
     repo_root = tmp_path / "repo"
-    package_manifest_path = repo_root / "packages" / "git" / "package.toml"
+    package_manifest_path = repo_root / "packages" / "git.ui" / "package.toml"
     package_manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    package_manifest_path.write_text('id = "git.ui"\n', encoding="utf-8")
+    package_manifest_path.write_text('', encoding="utf-8")
     config_path = write_single_repo_config(tmp_path, repo_name="fixture", repo_path=repo_root)
 
     with pytest.raises(
@@ -403,7 +402,6 @@ def test_repository_rejects_target_names_with_slashes(tmp_path: Path) -> None:
     package_manifest_path.write_text(
         "\n".join(
             [
-                'id = "git"',
                 "",
                 '[targets."git/config"]',
                 'source = "files/gitconfig"',
@@ -429,7 +427,6 @@ def test_repository_rejects_target_names_with_dots(tmp_path: Path) -> None:
     package_manifest_path.write_text(
         "\n".join(
             [
-                'id = "git"',
                 "",
                 '[targets."git.config"]',
                 'source = "files/gitconfig"',
@@ -460,7 +457,7 @@ def write_tracked_fixture_repo(
     for package_id, manifest_lines in packages.items():
         package_root = repo_root / "packages" / package_id
         package_root.mkdir(parents=True)
-        (package_root / "package.toml").write_text("\n".join([f'id = "{package_id}"', *manifest_lines, ""]), encoding="utf-8")
+        (package_root / "package.toml").write_text("\n".join([*manifest_lines, ""]), encoding="utf-8")
     write_tracked_packages_state(
         tmp_path / "state",
         repo_name="fixture",
@@ -537,7 +534,6 @@ def write_chmod_repo(tmp_path: Path, *, target_chmod: str | None = None, path_ru
     package_manifest_path = repo_root / "packages" / "app" / "package.toml"
     package_manifest_path.parent.mkdir(parents=True, exist_ok=True)
     lines = [
-        'id = "app"',
         "",
         "[targets.config]",
         'source = "files/config"',
