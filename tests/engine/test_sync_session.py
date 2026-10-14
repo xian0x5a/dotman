@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import stat
 from dataclasses import FrozenInstanceError
 
 import pytest
@@ -630,6 +632,30 @@ def test_push_only_exact_live_outcome_includes_configured_file_mode(
         assert unit.state == "drifted"
         assert unit.live_mode == 0o644
         assert unit.chmod == "600"
+
+
+@pytest.mark.parametrize("live", [None, b"old secret"], ids=["new-live-file", "existing-0644-live-file"])
+def test_push_never_exposes_content_beyond_the_configured_file_mode(tmp_path, monkeypatch, live):
+    from tests.test_atomic_files import _record_modes_of_files_holding_content
+
+    engine = make_engine(tmp_path, monkeypatch, [("unit", "push-only", b"secret", live, 'chmod = "600"')])
+    live_path = tmp_path / "live/unit"
+    if live is not None:
+        live_path.chmod(0o644)
+    original_umask = os.umask(0o022)
+    try:
+        observations = _record_modes_of_files_holding_content(monkeypatch)
+        with engine.open_push_session(engine.resolve_sync_scope()) as session:
+            result = session.execute().result
+    finally:
+        os.umask(original_umask)
+
+    live_observations = [(label, mode) for label, mode in observations if str(live_path.parent) in label]
+    assert result.status == "completed"
+    assert live_observations, "expected the live write to be observed"
+    assert [(label, oct(mode)) for label, mode in live_observations if mode & ~0o600] == []
+    assert live_path.read_bytes() == b"secret"
+    assert stat.S_IMODE(live_path.stat().st_mode) == 0o600
 
 
 def test_unit_local_base_read_failure_preserves_unrelated_observation(

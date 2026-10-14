@@ -474,9 +474,7 @@ def execute_restore_action(action: RestoreAction) -> RestoreActionResult:
         elif action.action in {"create", "update"}:
             if target_path.is_dir() and not target_path.is_symlink():
                 remove_empty_directory_tree(target_path)
-            write_bytes_atomic(target_path, action.after_bytes)
-            if action.desired_mode is not None:
-                target_path.chmod(action.desired_mode)
+            write_bytes_atomic(target_path, action.after_bytes, mode=action.desired_mode)
         elif action.action == "delete":
             delete_path_and_prune_empty_parents(target_path, root=action.prune_root or target_path.parent)
         else:

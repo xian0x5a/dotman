@@ -85,3 +85,13 @@ def test_push_cli_human_preview_names_leaf_targets_not_root_package(tmp_path, mo
     assert "Use repository" in output
     assert "core-cli-meta" not in output
     assert not (tmp_path / "home/.gitconfig").exists()
+
+
+def test_push_cli_reports_the_planned_mode_only_on_the_chmod_effect(tmp_path, monkeypatch, capsys) -> None:
+    # The write applies the mode atomically, but the mode change is reported once, as chmod.
+    config_path = write_push_repo(tmp_path, monkeypatch, "git")
+
+    assert main(["--config", str(config_path), "--json", "--no-confirm", "push", "-d"]) == 0
+
+    effects = json.loads(capsys.readouterr().out)["sync_units"][0]["effects"]
+    assert [(effect["kind"], effect.get("mode")) for effect in effects] == [("write", None), ("chmod", "0600")]

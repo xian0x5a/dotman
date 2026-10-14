@@ -645,7 +645,9 @@ def effect_summary(effect) -> dict:
     summary = {"kind": effect.kind, "path": str(effect.path)}
     if effect.content is not None:
         summary["bytes"] = len(effect.content)
-    if effect.mode is not None:
+    # A write also carries its planned mode, but only to apply it atomically;
+    # the chmod effect is the one that reports the mode change.
+    if effect.kind == "chmod" and effect.mode is not None:
         summary["mode"] = format(effect.mode, "04o")
     return summary
 

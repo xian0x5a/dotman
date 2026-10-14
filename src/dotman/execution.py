@@ -172,8 +172,8 @@ def directory_synced_file_mode(*, destination_mode: int, source_mode: int) -> in
     return destination_mode & ~exec_bits
 
 
-def write_bytes_atomic(path: Path, content: bytes) -> None:
-    atomic_write_bytes_atomic(path, content)
+def write_bytes_atomic(path: Path, content: bytes, *, mode: int | None = None) -> None:
+    atomic_write_bytes_atomic(path, content, mode=mode)
 
 
 def write_symlink_atomic(path: Path, target: str | Path) -> None:
