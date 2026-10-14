@@ -143,7 +143,7 @@ chmod = "600"
 - Path-rule `preset` reuses built-in target presets as defaults for matching child files. Useful example: `preset = "jinja-patch"` applies Jinja render, patch capture, and the required patch-review views for that path rule.
 - Path-rule `render`, `capture`, `compare`, `editor`, and `sync_policy` override target defaults. Priority defaults to `0`; evaluate lower to higher priority, then lexical rule name. Higher-priority non-empty fields win independently. Names are unique in the effective target, contain neither `.` nor `/`, and annotate diagnostics rather than identity. Package inheritance merges rules by name; Guards use the same order.
 - Child Pull Views resolve from the effective inherited `compare` pair; `compare.live` defaults to `capture`, whose default provider is `raw`.
-- `capture = "patch"` is allowed for directory child files when the effective child settings satisfy the same file-like requirements: effective non-raw `render`, `compare.repo = "render"`, and `compare.live = "raw"`.
+- `capture = "patch"` is allowed for directory child files when the effective child settings satisfy the same file-like requirements: effective non-raw `render`, `compare.repo = "render"`, and `compare.live = "raw"`. A child whose folded Path Rule settings break them fails planning for the run.
 - Path-rule `chmod` values apply during Push and Sync live publication only. `pull` still stores only bytes plus the Git executable bit because Git cannot represent full child file modes such as `600`.
 - If multiple path rules match the same child file, fields compose independently in ascending priority and lexical rule-name order; an explicitly set field from a later rule wins without resetting other fields. Matching guards run in that same deterministic order and must all pass.
 - A Path Rule Guard becomes active when its pattern matches managed repository-side or live-side candidates after unified exclusions and control-file filtering.
@@ -250,8 +250,8 @@ The comparison pair produces repository and live Pull Views during Pull and
 live-to-repository-capable Sync. When that capability does not survive Guards,
 comparison remains validated but inactive without warning.
 Patch Capture requires effective non-raw Render, `compare.repo = "render"`,
-and `compare.live = "raw"`. Invalid combinations fail validation; defaults are
-not silently rewritten.
+and `compare.live = "raw"`, checked on the target once `extends` merges it.
+Invalid combinations fail validation; defaults are not silently rewritten.
 
 An Editor is a scalar provider or a table with exactly one of `type` or `run`.
 Built-in `type` values are `default` and `jinja`; other scalar strings are

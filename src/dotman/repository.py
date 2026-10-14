@@ -348,7 +348,7 @@ class Repository:
             default_command_elevation=self.default_command_elevation,
         )
         if validate:
-            merged = _validate_resolved_package(merged)
+            merged = _validate_resolved_package(merged, repo_name=self.config.name)
             self._resolved_packages[package_id] = merged
         return merged
 
