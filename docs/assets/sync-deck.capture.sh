@@ -40,7 +40,6 @@ add_target() {  # package target source live_path policy content
     local package=$1 target=$2 source=$3 live_path=$4 policy=$5 content=$6
     mkdir -p "$repo/packages/$package/files/$(dirname "$source")"
     printf '%b' "$content" > "$repo/packages/$package/files/$source"
-    [[ -f $repo/packages/$package/package.toml ]] || printf 'id = "%s"\n' "$package" > "$repo/packages/$package/package.toml"
     printf '\n[targets.%s]\nsource = "files/%s"\npath = "%s"\nsync_policy = "%s"\n' \
         "$target" "$source" "$live_path" "$policy" >> "$repo/packages/$package/package.toml"
 }

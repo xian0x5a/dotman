@@ -21,7 +21,7 @@ def _write_packages(repo_root: Path, *package_ids: str) -> None:
     for package_id in package_ids:
         package_root = repo_root / "packages" / Path(*package_id.split("/"))
         package_root.mkdir(parents=True, exist_ok=True)
-        (package_root / "package.toml").write_text(f'id = "{package_id}"\n', encoding="utf-8")
+        (package_root / "package.toml").write_text('', encoding="utf-8")
 
 
 def _engine(tmp_path: Path, repos: dict[str, tuple[str, ...]]) -> DotmanEngine:

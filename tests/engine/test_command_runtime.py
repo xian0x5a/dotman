@@ -26,7 +26,6 @@ def test_push_session_uses_injected_runtime_for_guard_probe_and_projection(
     (package_root / "package.toml").write_text(
         "\n".join(
             [
-                'id = "app"',
                 "",
                 "[hooks]",
                 'guard_push = "guard-command"',

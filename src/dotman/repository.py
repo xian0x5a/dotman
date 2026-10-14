@@ -68,7 +68,6 @@ PACKAGE_MANIFEST_TOP_LEVEL_KEYS = {
     "description",
     "extends",
     "hooks",
-    "id",
     "ignore",
     "remove",
     "reserved_paths",
@@ -171,9 +170,11 @@ class Repository:
                 package_repo=self.config.name,
                 package_id=package_id,
             )
-            package_id = payload.get("id")
-            if not isinstance(package_id, str):
-                raise ValueError(f"package manifest {manifest_path} must define string id")
+            if "id" in payload:
+                raise ValueError(
+                    f"package manifest {manifest_path} must not define id: "
+                    f"the package id '{package_id}' comes from its folder; remove the id line"
+                )
             try:
                 validate_package_id(package_id)
             except ValueError as exc:

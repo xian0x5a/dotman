@@ -887,7 +887,7 @@ def test_track_cli_round_trips_profile_names_with_toml_special_characters(
     (repo_root / "profiles").mkdir(parents=True)
     (repo_root / "profiles" / f"{profile}.toml").write_text("", encoding="utf-8")
     (repo_root / "packages" / "app").mkdir(parents=True)
-    (repo_root / "packages" / "app" / "package.toml").write_text('id = "app"\n', encoding="utf-8")
+    (repo_root / "packages" / "app" / "package.toml").write_text('', encoding="utf-8")
     config_path = write_named_manager_config(tmp_path, {"main": repo_root})
 
     assert main(["--config", str(config_path), "--no-confirm", "track", f"main:app@{profile}"]) == 0

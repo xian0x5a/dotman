@@ -47,7 +47,6 @@ def write_override_repo(
         sync_policy = "pull-only"
 
     loser_lines = [
-        'id = "loser"',
         "",
         "[targets.shared]",
         f'source = "{loser_source}"',
@@ -69,13 +68,12 @@ def write_override_repo(
         encoding="utf-8",
     )
     (repo_root / "packages" / "loser-meta" / "package.toml").write_text(
-        '\n'.join(['id = "loser-meta"', 'depends = ["loser"]', ""]),
+        '\n'.join(['depends = ["loser"]', ""]),
         encoding="utf-8",
     )
     (repo_root / "packages" / "winner" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "winner"',
                 "",
                 "[targets.shared]",
                 f'source = "{winner_source}"',
@@ -120,7 +118,6 @@ def write_conflicting_projection_repo(
         (package_root / "package.toml").write_text(
             "\n".join(
                 [
-                    f'id = "{package_id}"',
                     "",
                     "[targets.shared]",
                     f'source = "{source}"',
@@ -148,7 +145,6 @@ def write_nested_collision_repo(repo_root: Path) -> None:
     (repo_root / "packages" / "parent" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "parent"',
                 "",
                 "[targets.shared]",
                 'source = "files/shared"',
@@ -162,7 +158,6 @@ def write_nested_collision_repo(repo_root: Path) -> None:
     (repo_root / "packages" / "child" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "child"',
                 "",
                 "[targets.child]",
                 'source = "files/child.conf"',
@@ -192,7 +187,6 @@ def write_same_package_conflict_repo(repo_root: Path, *, operation: str) -> None
     (package_root / "package.toml").write_text(
         "\n".join(
             [
-                'id = "app"',
                 "",
                 "[targets.a]",
                 f'source = "{first_source}"',
@@ -366,7 +360,6 @@ def test_push_does_not_scan_overridden_directory(
         (repo_root / "packages" / package_id / "package.toml").write_text(
             "\n".join(
                 [
-                    f'id = "{package_id}"',
                     "",
                     "[targets.shared]",
                     'source = "files/shared"',
@@ -379,7 +372,7 @@ def test_push_does_not_scan_overridden_directory(
             encoding="utf-8",
         )
     (repo_root / "packages" / "loser-meta" / "package.toml").write_text(
-        '\n'.join(['id = "loser-meta"', 'depends = ["loser"]', ""]),
+        '\n'.join(['depends = ["loser"]', ""]),
         encoding="utf-8",
     )
 

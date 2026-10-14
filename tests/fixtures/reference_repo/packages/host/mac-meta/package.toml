@@ -1,4 +1,3 @@
-id = "host/mac-meta"
 description = "Fixture macOS host entrypoint"
 
 depends = [

@@ -60,7 +60,7 @@ def write_sample_package(
     if repo_toml is not None:
         (repo_root / "repo.toml").write_text(repo_toml, encoding="utf-8")
     (repo_root / "packages" / "sample" / "package.toml").write_text(
-        f'id = "sample"\n{package_extra}\n'
+        f'{package_extra}\n'
         f'[targets.config]\nsource = "files/config"\npath = "~/.config/sample"\n{target_extra}\n',
         encoding="utf-8",
     )
@@ -351,7 +351,7 @@ def test_repository_gitignore_chain_is_symmetric(tmp_path, monkeypatch, operatio
     (root / "profiles/default.toml").write_text("")
     (root / "repo.toml").write_text("[ignore]\ngitignore = true\n")
     (root / "packages/sample/package.toml").write_text(
-        'id = "sample"\n[ignore]\ngitignore = ' + str(enabled).lower() +
+        '[ignore]\ngitignore = ' + str(enabled).lower() +
         '\n[targets.config]\nsource = "files/config"\npath = "~/config"\n')
     (root / ".gitignore").write_text('/packages/*/files/config/root-*\n*.log\n')
     (root / "packages/.gitignore").write_text('sample/files/config/ancestor-*\n')
@@ -416,7 +416,7 @@ def test_gitignore_exclusion_allows_separately_owned_nested_target(tmp_path, mon
     (root / "profiles/default.toml").write_text("")
     (root / "repo.toml").write_text("[ignore]\ngitignore = true\n")
     (package / "package.toml").write_text(
-        'id = "app"\n[targets.tree]\nsource = "tree"\npath = "~/tree"\n'
+        '[targets.tree]\nsource = "tree"\npath = "~/tree"\n'
         '[targets.owned]\nsource = "owned"\npath = "~/tree/owned"\n')
     initialize_git_repository(root)
     write_tracked_packages_state(tmp_path / "state", repo_name="fixture", entries=[("app", "default")])

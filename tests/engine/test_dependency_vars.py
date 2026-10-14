@@ -17,14 +17,14 @@ def _write_repo(repo_root: Path, *, owners: dict[str, str]) -> None:
     shared_root.mkdir(parents=True)
     (shared_root / "value.conf").write_text("shared\n", encoding="utf-8")
     (repo_root / "packages" / "shared" / "package.toml").write_text(
-        'id = "shared"\n\n[vars]\nwhere = "own"\n\n'
+        '[vars]\nwhere = "own"\n\n'
         '[targets.shared]\nsource = "files/value.conf"\npath = "~/.config/{{ vars.where }}.conf"\n',
         encoding="utf-8",
     )
     for owner, where in owners.items():
         (repo_root / "packages" / owner).mkdir(parents=True)
         (repo_root / "packages" / owner / "package.toml").write_text(
-            f'id = "{owner}"\ndepends = ["shared"]\n\n[vars]\nwhere = "{where}"\n',
+            f'depends = ["shared"]\n\n[vars]\nwhere = "{where}"\n',
             encoding="utf-8",
         )
 

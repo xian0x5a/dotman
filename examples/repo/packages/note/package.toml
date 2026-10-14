@@ -1,4 +1,3 @@
-id = "note"
 description = "Minimal single-file package example"
 
 [targets.note]

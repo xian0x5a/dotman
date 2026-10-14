@@ -336,7 +336,7 @@ def test_failed_hook_outcomes_identify_exact_semantic_scope(tmp_path, monkeypatc
     manifest = tmp_path / "repo/packages/app/package.toml"
     content = manifest.read_text()
     if multi_instance:
-        content = content.replace('id = "app"', 'id = "app"\nbinding_mode = "multi_instance"')
+        content = 'binding_mode = "multi_instance"\n' + content
     content += '\n[hooks]\npre_push = "true"\n'
     manifest.write_text(content)
     (tmp_path / "repo/repo.toml").write_text('[hooks]\npre_push = "true"\n')

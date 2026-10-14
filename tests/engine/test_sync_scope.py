@@ -22,7 +22,6 @@ def _write_repo(repo_root: Path, *, repo_name: str, package_id: str = "app", mul
     (repo_root / "packages" / package_id / "package.toml").write_text(
         "\n".join(
             [
-                f'id = "{package_id}"',
                 binding.rstrip(),
                 "",
                 "[targets.config]",
@@ -84,7 +83,6 @@ def _write_base_dependency(repo_root: Path) -> None:
     (repo_root / "packages" / "base" / "package.toml").write_text(
         '\n'.join(
             [
-                'id = "base"',
                 "",
                 "[targets.base]",
                 'source = "files/base.conf"',
@@ -251,7 +249,6 @@ def _write_policy_package(repo_root: Path, package_id: str, policy: str) -> None
     (repo_root / "packages" / package_id / "package.toml").write_text(
         "\n".join(
             [
-                f'id = "{package_id}"',
                 f'sync_policy = "{policy}"',
                 "",
                 f"[targets.{package_id}]",
@@ -295,13 +292,13 @@ def test_resolved_sync_scope_uses_explicit_singleton_profile_winner(
     shared_root.mkdir(parents=True)
     (shared_root / "value.conf").write_text("shared\n", encoding="utf-8")
     (repo_root / "packages" / "shared" / "package.toml").write_text(
-        'id = "shared"\n\n[targets.shared]\nsource = "files/value.conf"\npath = "~/.config/shared.conf"\n',
+        '[targets.shared]\nsource = "files/value.conf"\npath = "~/.config/shared.conf"\n',
         encoding="utf-8",
     )
     meta_root = repo_root / "packages" / "meta"
     meta_root.mkdir(parents=True)
     (meta_root / "package.toml").write_text(
-        'id = "meta"\ndepends = ["shared"]\n',
+        'depends = ["shared"]\n',
         encoding="utf-8",
     )
     write_tracked_packages_state(
@@ -338,7 +335,6 @@ def test_resolved_sync_scope_checks_collisions_outside_requested_selector(
         (repo_root / "packages" / package_id / "package.toml").write_text(
             "\n".join(
                 [
-                    f'id = "{package_id}"',
                     "",
                     f"[targets.{package_id}]",
                     'source = "files/value.conf"',
@@ -369,17 +365,17 @@ def test_resolved_sync_scope_keeps_explicit_ownership_winner_over_dependency_los
         package_root.mkdir(parents=True)
         (package_root / "value.conf").write_text(package_id + "\n", encoding="utf-8")
     (repo_root / "packages" / "winner" / "package.toml").write_text(
-        'id = "winner"\n\n[targets.shared]\nsource = "files/value.conf"\npath = "~/.config/shared.conf"\n',
+        '[targets.shared]\nsource = "files/value.conf"\npath = "~/.config/shared.conf"\n',
         encoding="utf-8",
     )
     (repo_root / "packages" / "loser" / "package.toml").write_text(
-        'id = "loser"\nsync_policy = "push-only"\n\n[targets.shared]\nsource = "../winner/files/value.conf"\npath = "~/.config/shared.conf"\n',
+        'sync_policy = "push-only"\n\n[targets.shared]\nsource = "../winner/files/value.conf"\npath = "~/.config/shared.conf"\n',
         encoding="utf-8",
     )
     meta_root = repo_root / "packages" / "meta"
     meta_root.mkdir(parents=True)
     (meta_root / "package.toml").write_text(
-        'id = "meta"\ndepends = ["loser"]\n',
+        'depends = ["loser"]\n',
         encoding="utf-8",
     )
     write_tracked_packages_state(
@@ -460,7 +456,7 @@ def test_on_demand_targets_leave_package_scope_including_dependencies_unless_nam
     _write_repo(repo_root, repo_name="main")
     (repo_root / "packages" / "base").mkdir()
     (repo_root / "packages" / "base" / "package.toml").write_text(
-        'id = "base"\n[targets.update]\nprobe = "true"\non_demand = true\n', encoding="utf-8",
+        '[targets.update]\nprobe = "true"\non_demand = true\n', encoding="utf-8",
     )
     app_manifest = repo_root / "packages" / "app" / "package.toml"
     app_manifest.write_text(

@@ -207,7 +207,7 @@ def test_pull_auxiliary_work_starts_selected_and_can_be_excluded(tmp_path, monke
     manifest = tmp_path / "repo/packages/app/package.toml"
     if probe:
         manifest.write_text(
-            'id = "app"\n[targets.probe]\nprobe = "true"\n'
+            '[targets.probe]\nprobe = "true"\n'
             f'[targets.probe.hooks]\npre_pull = "touch {marker}"\npre_push = "exit 9"\n'
         )
     else:

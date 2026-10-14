@@ -263,7 +263,7 @@ def test_untrack_cli_removes_group_singletons_across_profiles_without_prompt(
     (repo_root / "profiles" / "work.toml").write_text("", encoding="utf-8")
     for package_id in ("alpha", "beta"):
         (repo_root / "packages" / package_id).mkdir(parents=True)
-        (repo_root / "packages" / package_id / "package.toml").write_text(f'id = "{package_id}"\n', encoding="utf-8")
+        (repo_root / "packages" / package_id / "package.toml").write_text('', encoding="utf-8")
     (repo_root / "groups").mkdir()
     (repo_root / "groups" / "bundle.toml").write_text('members = ["alpha", "beta"]\n', encoding="utf-8")
     config_path = write_named_manager_config(tmp_path, {"fixture": repo_root})

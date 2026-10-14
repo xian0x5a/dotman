@@ -1,4 +1,3 @@
-id = "profile-note"
 description = "Minimal multi-instance example"
 binding_mode = "multi_instance"
 

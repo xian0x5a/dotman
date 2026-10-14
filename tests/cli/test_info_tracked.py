@@ -264,7 +264,6 @@ def test_info_tracked_cli_handles_empty_directory_targets_when_repo_source_is_mi
     (repo_root / "packages" / "claude" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "claude"',
                 "",
                 "[targets.hooks]",
                 'source = "files/claude/hooks"',
@@ -429,7 +428,6 @@ def test_info_tracked_cli_shows_effective_values_for_target_preset(
     (repo_root / "packages" / "shell" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "shell"',
                 "",
                 "[targets.profile]",
                 'source = "files/profile"',
@@ -501,7 +499,6 @@ def test_info_tracked_cli_shows_capture_and_editor_values_for_target_preset(
     (repo_root / "packages" / "shell" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "shell"',
                 "",
                 "[targets.profile]",
                 'source = "files/profile"',

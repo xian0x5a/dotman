@@ -36,7 +36,6 @@ def _write_progress_fixture(tmp_path: Path, *, render_command: str | None = None
     (package_root / "files").mkdir(parents=True)
     (package_root / "files" / "config.txt").write_text("source\n", encoding="utf-8")
     package_lines = [
-        'id = "app"',
         "",
         "[targets.config]",
         'source = "files/config.txt"',

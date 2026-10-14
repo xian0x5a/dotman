@@ -36,7 +36,7 @@ def _write_file_package(
 ) -> None:
     package_root = repo_root / "packages" / package_id
     (package_root / "files").mkdir(parents=True, exist_ok=True)
-    lines = [f'id = "{package_id}"']
+    lines = []
     if depends:
         lines.append(f"depends = {json.dumps(list(depends))}")
     for target_name, live_path, target_guard, projection_command in targets:
@@ -220,7 +220,6 @@ def test_target_guard_skip_prevents_projection_and_directory_children_but_keeps_
     package_root.joinpath("package.toml").write_text(
         "\n".join(
             [
-                'id = "app"',
                 "",
                 "[targets.tree]",
                 'source = "files/tree"',
@@ -259,7 +258,6 @@ def test_probe_target_guard_runs_before_probe_and_distinguishes_guard_skip_from_
     package_root.joinpath("package.toml").write_text(
         "\n".join(
             [
-                'id = "app"',
                 "",
                 "[targets.skipped]",
                 f'probe = "printf probe > {skipped_probe_marker}; exit 0"',
@@ -349,7 +347,7 @@ def test_repo_package_and_target_guards_are_deduplicated_per_session_open(
         package_root = repo_root / "packages" / package_id
         package_root.mkdir(parents=True)
         package_root.joinpath("package.toml").write_text(
-            f'id = "{package_id}"\ndepends = ["app"]\n',
+            'depends = ["app"]\n',
             encoding="utf-8",
         )
     engine = _engine(tmp_path, repo_root)
@@ -445,7 +443,6 @@ def test_target_guard_diagnostic_uses_package_instance_identity(
     package_root.joinpath("package.toml").write_text(
         "\n".join(
             [
-                'id = "profiled"',
                 'binding_mode = "multi_instance"',
                 "",
                 "[targets.config]",
@@ -482,7 +479,6 @@ def test_target_guard_hard_failure_fails_push_for_package_instance(
     package_root.joinpath("package.toml").write_text(
         "\n".join(
             [
-                'id = "profiled"',
                 'binding_mode = "multi_instance"',
                 "",
                 "[targets.config]",
@@ -578,7 +574,6 @@ def test_repo_and_target_guard_manifests_reject_interactive_io_and_run_noop(
     package_root.joinpath("package.toml").write_text(
         "\n".join(
             [
-                'id = "app"',
                 "",
                 "[targets.config]",
                 'source = "files/config.txt"',

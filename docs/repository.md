@@ -10,6 +10,7 @@ under `examples/repo/`.
 - A package is the atomic install unit.
 - Packages live under `packages/`.
 - A package manifest lives at `packages/<package-id>/package.toml`.
+- The manifest's folder path under `packages/` is the package ID. Manifests have no `id` field, and dotman rejects a manifest that defines one.
 - Namespaced package IDs map to nested directories under `packages/`, for example `work/git` -> `packages/work/git/package.toml`.
 - Packages may define `binding_mode = "singleton" | "multi_instance"`.
 - `binding_mode` defaults to `singleton`.
@@ -116,7 +117,7 @@ under `examples/repo/`.
 Example:
 
 ```toml
-id = "linux/1password"
+# packages/linux/1password/package.toml
 extends = ["1password"]
 
 [targets.quickaccess_desktop]
@@ -451,7 +452,7 @@ command = "sh hooks/managed-skill-ignores.sh"
 Example sync policy split:
 
 ```toml
-id = "shell"
+# packages/shell/package.toml
 sync_policy = "push-only"
 
 [targets.profile]

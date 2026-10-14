@@ -1,4 +1,3 @@
-id = "nvim"
 description = "Neovim configuration with a rendered target and an interactive editor step"
 
 [vars.nvim]

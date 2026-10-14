@@ -104,7 +104,6 @@ def test_main_formats_toml_load_error_with_package_path_and_error_fields(
     package_manifest_path.write_text(
         "\n".join(
             [
-                'id = "git"',
                 "",
                 "[targets.git]",
                 'source = "files/gitconfig"',

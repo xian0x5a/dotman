@@ -70,7 +70,7 @@ def test_probe_uses_workflow_while_guards_and_hooks_keep_direction(tmp_path, mon
     make_engine(tmp_path, monkeypatch, [])
     manifest = tmp_path / "repo/packages/app/package.toml"
     manifest.write_text(
-        'id = "app"\n[targets.probe]\n'
+        '[targets.probe]\n'
         f'probe = \'test "$DOTMAN_OPERATION" = {operation}\'\n'
         '[targets.probe.hooks]\n'
         'guard_push = \'test "$DOTMAN_OPERATION" = push\'\n'

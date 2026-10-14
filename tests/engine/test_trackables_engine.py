@@ -12,7 +12,6 @@ def _write_trackable_repo(repo_root: Path, *, package_id: str, package_descripti
     (repo_root / "packages" / package_id / "package.toml").write_text(
         "\n".join(
             [
-                f'id = "{package_id}"',
                 f'description = "{package_description}"',
                 "",
             ]

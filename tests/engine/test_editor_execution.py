@@ -148,11 +148,11 @@ def test_pull_inherited_editor_sources_keep_each_declaring_package_root(tmp_path
     marker = tmp_path / "source-order"
     command = json.dumps(f'cat "$2" "$3" > {marker}' if append else f'cat "$2" > {marker}')
     (parent / "package.toml").write_text(
-        'id = "parent"\n[targets.unit]\nsource = "unit"\npath = "~/unit"\n'
+        '[targets.unit]\nsource = "unit"\npath = "~/unit"\n'
         f'editor = {{run = {command}, io = "pipe", additional_sources = ["context"]}}\n'
     )
     (child / "package.toml").write_text(
-        'id = "child"\nextends = ["parent"]\n[targets.unit]\nsource = "unit"\npath = "~/unit"\n'
+        'extends = ["parent"]\n[targets.unit]\nsource = "unit"\npath = "~/unit"\n'
         + ('[append.targets.unit.editor]\nadditional_sources = ["context"]\n' if append else "")
     )
     (tmp_path / "home").mkdir()

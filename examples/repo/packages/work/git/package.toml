@@ -1,4 +1,3 @@
-id = "work/git"
 description = "Work Git variant that extends the base git package"
 extends = ["git"]
 

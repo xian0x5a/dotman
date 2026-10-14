@@ -115,7 +115,7 @@ def test_pull_cli_returns_130_when_command_deck_aborts(
 def test_pull_cli_accepts_package_owned_by_tracked_root(pull_repo, capsys):
     root = pull_repo / "repo/packages/root"
     root.mkdir()
-    (root / "package.toml").write_text('id = "root"\ndepends = ["app"]\n')
+    (root / "package.toml").write_text('depends = ["app"]\n')
     write_tracked_packages_state(
         pull_repo / "state", repo_name="main", entries=[("root", "default")],
     )

@@ -36,7 +36,6 @@ def write_sync_policy_repo(
     (repo_root / "packages" / package_id / "package.toml").write_text(
         "\n".join(
             [
-                f'id = "{package_id}"',
                 *package_manifest,
                 *(hook_manifest or []),
                 "",
@@ -68,7 +67,6 @@ def write_sync_policy_repo_with_extends(
     (repo_root / "packages" / "base" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "base"',
                 *base_manifest,
                 "",
                 "[targets.config]",
@@ -82,7 +80,6 @@ def write_sync_policy_repo_with_extends(
     (repo_root / "packages" / "child" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "child"',
                 'extends = ["base"]',
                 *child_manifest,
                 "",
@@ -106,7 +103,6 @@ def write_hook_metadata_repo(
     (repo_root / "packages" / package_id / "package.toml").write_text(
         "\n".join(
             [
-                f'id = "{package_id}"',
                 *package_manifest,
                 "",
             ]
@@ -130,7 +126,6 @@ def write_probe_repo(
     (repo_root / "packages" / "app" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "app"',
                 *(package_manifest or []),
                 "",
                 "[targets.version]",
@@ -163,7 +158,6 @@ def write_repo_and_target_hook_repo(
     (repo_root / "packages" / "app" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "app"',
                 *(package_manifest or []),
                 "",
                 "[targets.config]",
@@ -181,7 +175,6 @@ def write_repo_and_target_hook_repo(
         (repo_root / "packages" / "child" / "package.toml").write_text(
             "\n".join(
                 [
-                    'id = "child"',
                     'extends = ["app"]',
                     *child_manifest,
                     "",
@@ -215,7 +208,6 @@ def write_target_ref_repo(
     (repo_root / "packages" / "alpha" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "alpha"',
                 *(alpha_manifest or []),
                 *alpha_target_lines,
                 "",
@@ -229,7 +221,6 @@ def write_target_ref_repo(
         (repo_root / "packages" / "beta" / "package.toml").write_text(
             "\n".join(
                 [
-                    'id = "beta"',
                     *beta_manifest,
                     "",
                 ]
@@ -242,7 +233,6 @@ def write_target_ref_repo(
         (repo_root / "packages" / "gamma" / "package.toml").write_text(
             "\n".join(
                 [
-                    'id = "gamma"',
                     *gamma_manifest,
                     "",
                 ]
@@ -321,7 +311,7 @@ def write_sample_directory_repo(
     package_root = repo_root / "packages" / "sample"
     package_root.mkdir(parents=True)
     (package_root / "package.toml").write_text(
-        "\n".join(['id = "sample"', "", "[targets.config]", 'source = "files/config"', 'path = "~/.config/sample"', *target_lines, ""]),
+        "\n".join(["", "[targets.config]", 'source = "files/config"', 'path = "~/.config/sample"', *target_lines, ""]),
         encoding="utf-8",
     )
     source_path = package_root / "files" / "config"
@@ -433,14 +423,13 @@ def test_probe_target_does_not_create_direct_collision_candidate(
     probe_package_root.mkdir(parents=True)
     (file_package_root / "files").mkdir(parents=True)
     (repo_root / "profiles" / "default.toml").write_text("", encoding="utf-8")
-    (probe_package_root / "package.toml").write_text('id = "probe-app"\n\n[targets.version]\nprobe = "exit 0"\n', encoding="utf-8")
+    (probe_package_root / "package.toml").write_text('[targets.version]\nprobe = "exit 0"\n', encoding="utf-8")
     (file_package_root / "files" / "config.txt").write_text("config\n", encoding="utf-8")
     # If probe targets entered path collision validation, their internal placeholder path
     # would be the probe package root and would conflict with this nested live path.
     (file_package_root / "package.toml").write_text(
         "\n".join(
             [
-                'id = "file-app"',
                 "",
                 "[targets.config]",
                 'source = "files/config.txt"',
@@ -1197,7 +1186,6 @@ def test_meta_package_depends_on_group_expands_group_members(
     (repo_root / "groups" / "tooling.toml").write_text('members = ["git", "nvim"]\n', encoding="utf-8")
     (repo_root / "packages" / "tooling-meta" / "package.toml").write_text(
         '\n'.join([
-            'id = "tooling-meta"',
             'depends = ["tooling"]',
             '',
         ]),
@@ -1206,7 +1194,6 @@ def test_meta_package_depends_on_group_expands_group_members(
     (repo_root / "packages" / "git" / "files" / "git.conf").write_text("git\n", encoding="utf-8")
     (repo_root / "packages" / "git" / "package.toml").write_text(
         '\n'.join([
-            'id = "git"',
             '',
             '[targets.git]',
             'source = "files/git.conf"',
@@ -1218,7 +1205,6 @@ def test_meta_package_depends_on_group_expands_group_members(
     (repo_root / "packages" / "nvim" / "files" / "init.lua").write_text("nvim\n", encoding="utf-8")
     (repo_root / "packages" / "nvim" / "package.toml").write_text(
         '\n'.join([
-            'id = "nvim"',
             '',
             '[targets.nvim]',
             'source = "files/init.lua"',
@@ -1253,7 +1239,6 @@ def test_dependency_resolution_allows_mixed_package_and_group_cycles_without_rev
     (repo_root / "packages" / "alpha" / "files" / "alpha.txt").write_text("alpha\n", encoding="utf-8")
     (repo_root / "packages" / "alpha" / "package.toml").write_text(
         '\n'.join([
-            'id = "alpha"',
             'depends = ["bundle"]',
             '',
             '[targets.alpha]',
@@ -1266,7 +1251,6 @@ def test_dependency_resolution_allows_mixed_package_and_group_cycles_without_rev
     (repo_root / "packages" / "beta" / "files" / "beta.txt").write_text("beta\n", encoding="utf-8")
     (repo_root / "packages" / "beta" / "package.toml").write_text(
         '\n'.join([
-            'id = "beta"',
             'depends = ["alpha"]',
             '',
             '[targets.beta]',
@@ -1321,7 +1305,6 @@ def test_push_renders_directory_children_matched_by_path_rule(
     (package_root / "package.toml").write_text(
         "\n".join(
             [
-                'id = "shell"',
                 "",
                 '[vars]',
                 'greeting = "hello"',
@@ -1359,7 +1342,6 @@ def test_unknown_path_rule_preset_fails_engine_load(tmp_path: Path) -> None:
     (package_root / "package.toml").write_text(
         "\n".join(
             [
-                'id = "shell"',
                 "",
                 "[targets.profile]",
                 'source = "files/profile"',
@@ -1392,7 +1374,6 @@ def test_capture_patch_rejects_raw_review_views(tmp_path: Path, monkeypatch: pyt
     (repo_root / "packages" / "shell" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "shell"',
                 "",
                 "[targets.profile]",
                 'source = "files/profile"',
@@ -1435,7 +1416,6 @@ def test_capture_patch_requires_non_raw_render(tmp_path: Path, monkeypatch: pyte
     (repo_root / "packages" / "shell" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "shell"',
                 "",
                 "[targets.profile]",
                 'source = "files/profile"',
@@ -1466,7 +1446,6 @@ def test_unknown_target_preset_fails_engine_load(tmp_path: Path) -> None:
     (repo_root / "packages" / "shell" / "package.toml").write_text(
         "\n".join(
             [
-                'id = "shell"',
                 "",
                 "[targets.profile]",
                 'source = "files/profile"',
@@ -1508,7 +1487,7 @@ def test_push_renders_file_only_when_render_is_explicit(
     (repo_root / "packages" / "shell" / "files").mkdir(parents=True)
     (repo_root / "profiles").mkdir()
     (repo_root / "packages" / "shell" / "package.toml").write_text(
-        "\n".join(['id = "shell"', "", "[targets.profile]", 'source = "files/profile"', 'path = "~/.profile"', *target_lines, ""]),
+        "\n".join(["", "[targets.profile]", 'source = "files/profile"', 'path = "~/.profile"', *target_lines, ""]),
         encoding="utf-8",
     )
     (repo_root / "packages" / "shell" / "files" / "profile").write_text(source_text, encoding="utf-8")
@@ -1671,8 +1650,7 @@ def test_sync_policy_resolution_survives_profile_and_local_context(tmp_path: Pat
     (repo_root / "profiles" / "work.toml").write_text("", encoding="utf-8")
     (repo_root / "local.example.toml").write_text('[vars]\nsuffix = "local"\n', encoding="utf-8")
     (repo_root / "packages" / "app" / "package.toml").write_text(
-        '''id = "app"
-sync_policy = "push-only"
+        '''sync_policy = "push-only"
 
 [targets.config]
 source = "files/config"
