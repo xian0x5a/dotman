@@ -61,6 +61,7 @@ def normalize_skip_markers(value: Any, *, repo_config_path: Path) -> tuple[str, 
     return tuple(markers)
 
 
+PACKAGE_MANIFEST_FILE_NAME = "package.toml"
 PACKAGE_MANIFEST_TOP_LEVEL_KEYS = {
     "binding_mode",
     "append",
@@ -162,7 +163,7 @@ class Repository:
     def _load_packages(self) -> dict[str, PackageSpec]:
         packages: dict[str, PackageSpec] = {}
         packages_root = self.root / "packages"
-        for manifest_path in sorted(packages_root.glob("**/package.toml")):
+        for manifest_path in _discover_package_manifests(packages_root):
             package_id = manifest_path.relative_to(packages_root).parent.as_posix()
             payload = load_toml_file(
                 manifest_path,
@@ -385,3 +386,19 @@ class Repository:
 
         visit(group_id, ())
         return ordered
+
+
+def _discover_package_manifests(packages_root: Path) -> list[Path]:
+    """Find package manifests, treating everything inside a package folder as package content.
+
+    A folder holding `package.toml` is a package, so the walk stops descending there:
+    packages cannot nest, and a dotfile source that is itself named `package.toml`
+    (for example `packages/app/files/package.toml`) is not mistaken for a manifest.
+    Folders without a manifest are namespaces, e.g. `packages/work/git/package.toml`.
+    """
+    manifest_paths: list[Path] = []
+    for directory, child_directories, file_names in packages_root.walk():
+        if PACKAGE_MANIFEST_FILE_NAME in file_names:
+            manifest_paths.append(directory / PACKAGE_MANIFEST_FILE_NAME)
+            child_directories.clear()
+    return sorted(manifest_paths)

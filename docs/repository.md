@@ -12,6 +12,7 @@ under `examples/repo/`.
 - A package manifest lives at `packages/<package-id>/package.toml`.
 - The manifest's folder path under `packages/` is the package ID. Manifests have no `id` field, and dotman rejects a manifest that defines one.
 - Namespaced package IDs map to nested directories under `packages/`, for example `work/git` -> `packages/work/git/package.toml`.
+- A folder holding `package.toml` is a package, and dotman does not look for manifests below it. Packages cannot nest, and a `package.toml` inside a package folder (for example a dotfile source at `packages/app/files/package.toml`) is package content, not a manifest. Namespace folders have no `package.toml` of their own.
 - Packages may define `binding_mode = "singleton" | "multi_instance"`.
 - `binding_mode` defaults to `singleton`.
 - `singleton` means the package has one tracked identity regardless of bound profile.
