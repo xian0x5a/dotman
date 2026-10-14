@@ -488,6 +488,21 @@ def effective_tracked_package_entries_for_repo(
 
 
 
+def persisted_tracked_package_entries_for_repo(
+    repo: Repository,
+    raw_bindings: list[FullSpecSelector],
+) -> list[FullSpecSelector]:
+    # Rows that do not resolve right now (package on another branch, profile removed)
+    # are kept verbatim so they stay listed and removable after unrelated writes.
+    unresolved_bindings: list[FullSpecSelector] = []
+    for binding in raw_bindings:
+        try:
+            expand_tracked_package_entry_in_repo(repo, binding)
+        except PersistedTrackedPackageEntryResolutionError:
+            unresolved_bindings.append(binding)
+    return [*effective_tracked_package_entries_for_repo(repo, raw_bindings), *unresolved_bindings]
+
+
 def tracked_entries_by_repo_from_bindings(
     bindings_by_repo: dict[str, list[FullSpecSelector]] | None,
 ) -> dict[str, list[TrackedPackageEntry]] | None:
@@ -519,6 +534,23 @@ def validate_tracked_package_entries(
 
 
 
+def _skips_conflict_validation(
+    context: TrackedStateContext,
+    raw_entries_by_repo: dict[str, list[FullSpecSelector]],
+    rewritten_repo_names: set[str],
+) -> bool:
+    # Validation is still skipped while rows are invalid (#183), but the guard sees
+    # rewritten repos without the unresolved rows they keep, as when those rows were
+    # dropped; keeping them must not switch validation off.
+    guard_bindings = {
+        repo_name: effective_tracked_package_entries_for_repo(get_repository(context, repo_name), rows)
+        if repo_name in rewritten_repo_names else rows
+        for repo_name, rows in raw_entries_by_repo.items()
+    }
+    return bool(list_invalid_explicit_package_entries(context, bindings_by_repo=guard_bindings))
+
+
+
 def record_tracked_package_entry(
     context: "PlanningContext",
     binding: FullSpecSelector,
@@ -530,17 +562,11 @@ def record_tracked_package_entry(
     raw_entries_by_repo = raw_tracked_package_entries_by_repo(state)
     normalized = normalize_tracked_package_entry_set(
         state,
-        effective_tracked_package_entries_for_repo(
-            repo,
-            raw_entries_by_repo.get(repo.config.name, []),
-        ),
+        persisted_tracked_package_entries_for_repo(repo, raw_entries_by_repo.get(repo.config.name, [])),
         expand_tracked_package_entry_in_repo(repo, binding),
     )
     raw_entries_by_repo[repo.config.name] = normalized
-    if validate and not list_invalid_explicit_package_entries(
-        state,
-        bindings_by_repo=raw_entries_by_repo,
-    ):
+    if validate and not _skips_conflict_validation(state, raw_entries_by_repo, {repo.config.name}):
         validate_tracked_package_entries(
             context,
             effective_tracked_package_entries_by_repo(state, raw_entries_by_repo),
@@ -558,13 +584,10 @@ def validate_tracked_package_entry(
     raw_entries_by_repo = raw_tracked_package_entries_by_repo(state)
     raw_entries_by_repo[repo.config.name] = normalize_tracked_package_entry_set(
         state,
-        effective_tracked_package_entries_for_repo(
-            repo,
-            raw_entries_by_repo.get(repo.config.name, []),
-        ),
+        persisted_tracked_package_entries_for_repo(repo, raw_entries_by_repo.get(repo.config.name, [])),
         expand_tracked_package_entry_in_repo(repo, binding),
     )
-    if not list_invalid_explicit_package_entries(state, bindings_by_repo=raw_entries_by_repo):
+    if not _skips_conflict_validation(state, raw_entries_by_repo, {repo.config.name}):
         validate_tracked_package_entries(
             context,
             effective_tracked_package_entries_by_repo(state, raw_entries_by_repo),
@@ -710,42 +733,15 @@ def remove_persisted_tracked_package_entry(
     from dotman.collisions import TrackedTargetConflictError
 
     state = context.tracked_state
-    state_path = tracked_packages_file_path(record.state_dir)
+    persisted_entries = read_tracked_package_entries_file(tracked_packages_file_path(record.state_dir))
     if record.repo is not None and record.issue is None:
-        raw_entries_by_repo = raw_tracked_package_entries_by_repo(state)
-        remaining = remove_tracked_package_entry_record(
-            read_effective_tracked_package_entries(record.repo),
-            record.package_entry,
-        )
-        raw_entries_by_repo[record.repo.config.name] = remaining
-        if not list_invalid_explicit_package_entries(
-            state,
-            bindings_by_repo=raw_entries_by_repo,
-        ):
-            try:
-                validate_tracked_package_entries(
-                    context,
-                    effective_tracked_package_entries_by_repo(state, raw_entries_by_repo),
-                )
-            except TrackedTargetConflictError as exc:
-                binding_label = f"{record.package_entry.repo}:{record.package_entry.selector}@{record.package_entry.profile}"
-                raise ValueError(
-                    f"cannot {operation} '{binding_label}': removing this binding would expose {exc}"
-                ) from None
-        write_tracked_package_entries_file(record.state_dir, remaining)
-        return record.package_entry
-
-    remaining = remove_tracked_package_entry_record(
-        read_tracked_package_entries_file(state_path),
-        record.package_entry,
-    )
+        persisted_entries = persisted_tracked_package_entries_for_repo(record.repo, persisted_entries)
+    remaining = remove_tracked_package_entry_record(persisted_entries, record.package_entry)
     if record.repo is not None:
         raw_entries_by_repo = raw_tracked_package_entries_by_repo(state)
         raw_entries_by_repo[record.repo.config.name] = remaining
-        if not list_invalid_explicit_package_entries(
-            state,
-            bindings_by_repo=raw_entries_by_repo,
-        ):
+        rewritten_repo_names = {record.repo.config.name} if record.issue is None else set()
+        if not _skips_conflict_validation(state, raw_entries_by_repo, rewritten_repo_names):
             try:
                 validate_tracked_package_entries(
                     context,
@@ -778,7 +774,10 @@ def remove_tracked_package_entries(
     for binding in unique_bindings:
         repo = get_repository(state, binding.repo)
         if repo.config.name not in remaining_by_repo:
-            remaining_by_repo[repo.config.name] = read_effective_tracked_package_entries(repo)
+            remaining_by_repo[repo.config.name] = persisted_tracked_package_entries_for_repo(
+                repo,
+                raw_entries_by_repo[repo.config.name],
+            )
         remaining = remaining_by_repo[repo.config.name]
         updated_remaining = remove_tracked_package_entry_record(remaining, binding)
         if updated_remaining == remaining:
@@ -790,7 +789,7 @@ def remove_tracked_package_entries(
     if not removed:
         return []
 
-    if not list_invalid_explicit_package_entries(state, bindings_by_repo=raw_entries_by_repo):
+    if not _skips_conflict_validation(state, raw_entries_by_repo, set(remaining_by_repo)):
         try:
             validate_tracked_package_entries(
                 context,
