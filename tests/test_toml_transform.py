@@ -1450,6 +1450,29 @@ def test_selectors_reach_into_inline_tables(tmp_path: Path) -> None:
     assert middle_removed == "a = {b = 1, e = 3}  # note\n"
 
 
+@pytest.mark.parametrize("base_text", ["x = {c = 2, a.b = 1}\n", "x = {a.b = 1, c = 2}\n"])
+@pytest.mark.parametrize(
+    ("selector_args", "expected"),
+    [
+        (("--selector-type", "remove", "--selectors", "x.a.b"), {"x": {"c": 2}}),
+        (("--selectors", "x.a"), {"x": {"a": {"b": 1}}}),
+        (("--selectors", "x.a.b"), {"x": {"a": {"b": 1}}}),
+    ],
+)
+def test_selectors_reach_dotted_keys_inside_inline_tables(
+    tmp_path: Path, base_text: str, selector_args: tuple[str, ...], expected: dict
+) -> None:
+    output = run_toml_transform(tmp_path, base_text, *selector_args)
+
+    assert tomllib.loads(output) == expected
+
+
+def test_merge_retains_live_keys_beside_dotted_keys_inside_inline_tables(tmp_path: Path) -> None:
+    output = run_toml_transform(tmp_path, "x = {a = {b = 1}}\n", "--selectors", "x.a.b", overlay_text="x = {a.e = 5}\n")
+
+    assert output == "x = {a = {b = 1, e = 5}}\n"
+
+
 def test_merge_keeps_retained_live_keys_across_inline_and_table_styles(tmp_path: Path) -> None:
     inline_overlay = run_toml_transform(
         tmp_path,
