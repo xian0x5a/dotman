@@ -327,8 +327,8 @@ def test_command_named_after_other_sides_builtin_runs_as_command(tmp_path, monke
 
 @pytest.mark.parametrize("manifests", [
     pytest.param({
-        "base": ["id='base'", "[targets.x]", "source='files/x'", "path='~/.x'", "preset='jinja-patch'"],
-        "app": ["id='app'", "extends=['base']", "[targets.x]", "render='raw'"],
+        "base": ["[targets.x]", "source='files/x'", "path='~/.x'", "preset='jinja-patch'"],
+        "app": ["extends=['base']", "[targets.x]", "render='raw'"],
     }, id="child-render-raw-over-inherited-patch-capture"),
 ])
 def test_patch_capture_validates_effective_settings(tmp_path, manifests):
@@ -340,9 +340,9 @@ def test_patch_capture_validates_effective_settings(tmp_path, manifests):
 
 def test_patch_capture_settings_may_combine_across_extends(tmp_path):
     root = packages_repo(tmp_path, {
-        "base": ["id='base'", "[targets.x]", "source='files/x'", "path='~/.x'", "render='jinja'",
+        "base": ["[targets.x]", "source='files/x'", "path='~/.x'", "render='jinja'",
                  "compare={repo='render',live='raw'}"],
-        "app": ["id='app'", "extends=['base']", "[targets.x]", "capture='patch'"],
+        "app": ["extends=['base']", "[targets.x]", "capture='patch'"],
     })
 
     scope = tracked_engine(tmp_path, root).resolve_sync_scope()
