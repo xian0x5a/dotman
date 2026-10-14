@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import stat
@@ -9,6 +8,8 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Sequence
+
+import tomlkit
 
 from dotman.file_access import remove_empty_directory_tree
 from dotman.atomic_files import write_text_atomic
@@ -509,46 +510,41 @@ def _iter_push_snapshot_entries(plans: Sequence[PackagePlan]):
 
 def _write_snapshot_manifest(snapshot: SnapshotRecord) -> None:
     snapshot.root.mkdir(parents=True, exist_ok=True)
-    manifest_path = snapshot.root / "manifest.toml"
-    lines = [
-        f"snapshot_id = {json.dumps(snapshot.snapshot_id)}",
-        f"created_at = {json.dumps(snapshot.created_at)}",
-        f"status = {json.dumps(snapshot.status)}",
-        f"entry_count = {snapshot.entry_count}",
-        f"restore_count = {snapshot.restore_count}",
-    ]
-    if snapshot.last_restored_at is not None:
-        lines.append(f"last_restored_at = {json.dumps(snapshot.last_restored_at)}")
-    lines.append("")
-    for entry in snapshot.entries:
-        lines.extend(
-            [
-                "[[entries]]",
-                f"live_path = {json.dumps(str(entry.live_path))}",
-                f"existed_before = {_toml_bool(entry.existed_before)}",
-                f"push_action = {json.dumps(entry.push_action)}",
-                f"path_kind = {json.dumps(entry.path_kind)}",
-            ]
-        )
-        if entry.symlink_target is not None:
-            lines.append(f"symlink_target = {json.dumps(entry.symlink_target)}")
-        lines.append(f"preserve_symlink_identity = {_toml_bool(entry.preserve_symlink_identity)}")
-        if entry.restore_path is not None:
-            lines.append(f"restore_path = {json.dumps(str(entry.restore_path))}")
-        if entry.content_path is not None:
-            lines.append(f"content_path = {json.dumps(str(entry.content_path))}")
-        if entry.mode is not None:
-            lines.append(f"mode = {entry.mode}")
-        if entry.repo_name is not None:
-            lines.append(f"repo_name = {json.dumps(entry.repo_name)}")
-        if entry.selection_label is not None:
-            lines.append(f"selection_label = {json.dumps(entry.selection_label)}")
-        if entry.package_id is not None:
-            lines.append(f"package_id = {json.dumps(entry.package_id)}")
-        if entry.target_name is not None:
-            lines.append(f"target_name = {json.dumps(entry.target_name)}")
-        lines.append("")
-    write_text_atomic(manifest_path, "\n".join(lines))
+    manifest = {
+        "snapshot_id": snapshot.snapshot_id,
+        "created_at": snapshot.created_at,
+        "status": snapshot.status,
+        "entry_count": snapshot.entry_count,
+        "restore_count": snapshot.restore_count,
+        "last_restored_at": snapshot.last_restored_at,
+        "entries": [_snapshot_entry_manifest_table(entry) for entry in snapshot.entries],
+    }
+    write_text_atomic(snapshot.root / "manifest.toml", tomlkit.dumps(_without_none_values(manifest)))
+
+
+def _snapshot_entry_manifest_table(entry: SnapshotEntry) -> dict[str, object]:
+    return _without_none_values(
+        {
+            "live_path": str(entry.live_path),
+            "existed_before": entry.existed_before,
+            "push_action": entry.push_action,
+            "path_kind": entry.path_kind,
+            "symlink_target": entry.symlink_target,
+            "preserve_symlink_identity": entry.preserve_symlink_identity,
+            "restore_path": str(entry.restore_path) if entry.restore_path is not None else None,
+            "content_path": str(entry.content_path) if entry.content_path is not None else None,
+            "mode": entry.mode,
+            "repo_name": entry.repo_name,
+            "selection_label": entry.selection_label,
+            "package_id": entry.package_id,
+            "target_name": entry.target_name,
+        }
+    )
+
+
+def _without_none_values(table: dict[str, object]) -> dict[str, object]:
+    # TOML has no null; optional manifest fields are omitted instead.
+    return {key: value for key, value in table.items() if value is not None}
 
 
 def _new_snapshot_id() -> str:
@@ -561,10 +557,6 @@ def _utc_now() -> datetime:
 
 def _format_snapshot_timestamp(instant: datetime) -> str:
     return instant.astimezone(UTC).isoformat(timespec="microseconds").replace("+00:00", "Z")
-
-
-def _toml_bool(value: bool) -> str:
-    return "true" if value else "false"
 
 
 def _snapshot_restore_display_path(snapshot: SnapshotRecord, live_path: Path) -> Path:

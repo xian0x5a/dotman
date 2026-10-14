@@ -681,3 +681,53 @@ def test_snapshot_commands_ignore_broken_repo_manifests(
     assert exit_code == 0, captured.err
     assert snapshot_id in captured.out
     assert live_path.read_text(encoding="utf-8") == "mutated after push\n"
+
+
+def test_push_snapshot_of_non_bmp_live_path_stays_listable_and_restorable(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    # Characters outside the Basic Multilingual Plane (emoji) must survive the
+    # snapshot manifest; a broken manifest blocks listing and restoring every snapshot.
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+
+    repo_root = tmp_path / "repo"
+    package_root = repo_root / "packages" / "app"
+    (package_root / "files").mkdir(parents=True)
+    (repo_root / "profiles").mkdir(parents=True)
+    (repo_root / "profiles" / "default.toml").write_text("", encoding="utf-8")
+    (package_root / "files" / "notes.txt").write_text("repo value\n", encoding="utf-8")
+    (package_root / "package.toml").write_text(
+        "\n".join(
+            [
+                'id = "app"',
+                "",
+                "[targets.notes]",
+                'source = "files/notes.txt"',
+                'path = "~/notes/\U0001F600.txt"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    config_path = _write_snapshot_config(tmp_path, repo_root)
+    _write_tracked_binding(tmp_path / "state")
+
+    live_path = home / "notes" / "\U0001F600.txt"
+    live_path.parent.mkdir(parents=True)
+    live_path.write_text("before push\n", encoding="utf-8")
+
+    assert main(["--no-confirm", "--config", str(config_path), "push"]) == 0
+    assert live_path.read_text(encoding="utf-8") == "repo value\n"
+    capsys.readouterr()
+
+    list_exit_code = main(["--no-confirm", "--config", str(config_path), "--json", "list", "snapshots"])
+
+    assert list_exit_code == 0
+    snapshots = json.loads(capsys.readouterr().out)["snapshots"]
+    assert [entry["live_path"] for snapshot in snapshots for entry in snapshot["entries"]] == [str(live_path)]
+    assert main(["--no-confirm", "--config", str(config_path), "restore"]) == 0
+    assert live_path.read_text(encoding="utf-8") == "before push\n"

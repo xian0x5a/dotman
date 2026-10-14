@@ -518,3 +518,31 @@ def test_add_cli_non_interactive_never_writes_into_a_partial_package_match(
     main(["--config", str(config_path), "--no-confirm", "add", str(live_path), package_query])
 
     assert (gitui_package / "package.toml").read_bytes() == manifest_before
+
+
+@pytest.mark.parametrize("relative_path", ["café/settings.ini", "\U0001F600/notes.txt"])
+def test_add_cli_adds_non_ascii_live_path_to_a_loadable_manifest(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+    relative_path: str,
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+
+    live_path = home / ".config" / relative_path
+    live_path.parent.mkdir(parents=True)
+    live_path.write_text("value\n", encoding="utf-8")
+
+    repo_root = tmp_path / "repo"
+    _write_repo(repo_root, {"app": 'id = "app"\n'})
+    config_path = write_named_manager_config(tmp_path, {"fixture": repo_root})
+
+    add_exit_code = main(["--config", str(config_path), "--no-confirm", "add", str(live_path), "fixture:app"])
+
+    assert add_exit_code == 0, capsys.readouterr().err
+    capsys.readouterr()
+    assert main(["--config", str(config_path), "--json", "info", "trackable", "fixture:app"]) == 0
+    targets = json.loads(capsys.readouterr().out)["trackable"]["targets"]
+    assert [target["path"] for target in targets] == [f"~/.config/{relative_path}"]
