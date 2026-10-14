@@ -633,6 +633,7 @@ Examples: `dotman pull main:git.config`,
 - Partial package text may help find an existing package, but dotman should not silently create a package from an unresolved partial query.
 - In non-interactive mode, only exact package matches resolve. A bare query with partial matches fails and names them, as other commands do; a repo-qualified query such as `main:git` creates package `git` even when `main:gitui` exists.
 - If the selected package does not exist yet, `add` should create `packages/<package-id>/package.toml`, including namespaced package paths such as `packages/work/git/package.toml`.
+- `add` refuses to create a package inside another package's folder, or in a namespace folder that already holds packages, because packages cannot nest.
 - If the selected package already exists, `add` should update only that package's `package.toml`.
 - `add` should not modify tracked package state.
 - `add` should not run `push`, `pull`, hooks, or any repo-to-live or live-to-repo execution.
