@@ -82,3 +82,26 @@ def test_folder_that_is_not_a_valid_package_id_is_rejected(
         match=rf"package manifest {re.escape(str(manifest_path))}: invalid package id '{re.escape(derived_id)}'",
     ):
         DotmanEngine.from_config_path(config_path)
+
+
+def test_dotfile_source_named_package_toml_inside_a_package_is_not_a_manifest(tmp_path: Path, capsys) -> None:
+    """A package's own files may include a `package.toml`; packages cannot nest (issue #208)."""
+    repo_root = tmp_path / "repo"
+    _write_manifest(
+        repo_root,
+        "app",
+        '[targets.settings]\nsource = "files/package.toml"\npath = "~/.config/my-tool/package.toml"\n',
+    )
+    dotfile_source = repo_root / "packages" / "app" / "files" / "package.toml"
+    dotfile_source.parent.mkdir(parents=True)
+    dotfile_source.write_text('name = "my-tool-settings"\n', encoding="utf-8")
+    config_path = write_named_manager_config(tmp_path, {"fixture": repo_root})
+
+    assert main(["--config", str(config_path), "--json", "list", "trackables"]) == 0, capsys.readouterr().err
+    payload = json.loads(capsys.readouterr().out)
+    selectors = {entry["qualified_selector"] for entry in payload["trackables"] if entry["kind"] == "package"}
+    assert selectors == {"fixture:app"}
+
+    assert main(["--config", str(config_path), "--json", "info", "trackable", "fixture:app"]) == 0
+    targets = json.loads(capsys.readouterr().out)["trackable"]["targets"]
+    assert [(target["target_name"], target["source"]) for target in targets] == [("settings", "files/package.toml")]
