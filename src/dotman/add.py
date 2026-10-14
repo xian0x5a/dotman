@@ -141,9 +141,10 @@ def package_manifest_path(*, repo_root: Path, package_id: str) -> Path:
     return repo_root / "packages" / Path(*package_id.split("/")) / PACKAGE_MANIFEST_FILE_NAME
 
 
-def ensure_new_package_does_not_nest(*, repo_root: Path, repo_name: str, package_id: str) -> None:
-    # Discovery stops at the first folder holding a manifest, so a nested package
-    # would silently vanish (or hide the packages already below it).
+def ensure_package_is_not_inside_another(*, repo_root: Path, repo_name: str, package_id: str) -> None:
+    # Discovery stops at the first folder holding a manifest, so a nested package would
+    # silently vanish. Checked even when `package.toml` exists at the target path: inside
+    # a package folder that file is package content (e.g. a dotfile source), not a manifest.
     packages_root = repo_root / "packages"
     package_parts = package_id.split("/")
     for depth in range(1, len(package_parts)):
@@ -153,6 +154,11 @@ def ensure_new_package_does_not_nest(*, repo_root: Path, repo_name: str, package
                 f"cannot create package '{repo_name}:{package_id}' inside package "
                 f"'{repo_name}:{enclosing_package_id}': packages cannot nest"
             )
+
+
+def ensure_new_package_holds_no_packages(*, repo_root: Path, repo_name: str, package_id: str) -> None:
+    # Giving a namespace folder its own manifest would hide the packages already below it.
+    packages_root = repo_root / "packages"
     nested_package_ids = [
         manifest_path.parent.relative_to(packages_root).as_posix()
         for manifest_path in discover_package_manifests(packages_root / package_id)
@@ -168,8 +174,9 @@ def ensure_new_package_does_not_nest(*, repo_root: Path, repo_name: str, package
 def prepare_add_to_package(*, repo_root: Path, repo_name: str, package_id: str, live_path_text: str) -> AddOperationResult:
     live_spec = resolve_live_path_spec(live_path_text)
     manifest_path = package_manifest_path(repo_root=repo_root, package_id=package_id)
+    ensure_package_is_not_inside_another(repo_root=repo_root, repo_name=repo_name, package_id=package_id)
     if not manifest_path.exists():
-        ensure_new_package_does_not_nest(repo_root=repo_root, repo_name=repo_name, package_id=package_id)
+        ensure_new_package_holds_no_packages(repo_root=repo_root, repo_name=repo_name, package_id=package_id)
     before_text = manifest_path.read_text(encoding="utf-8") if manifest_path.exists() else ""
     existing_target_names, existing_target_paths = read_existing_target_metadata(
         before_text,

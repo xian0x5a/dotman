@@ -631,12 +631,15 @@ def _repo_snapshot(repo_root: Path) -> dict[str, bytes | None]:
 
 
 @pytest.mark.parametrize(
-    ("existing_package_id", "new_package_query", "conflicting_selector"),
+    ("existing_package_id", "package_content_files", "new_package_query", "conflicting_selector"),
     [
         # The new package's folder would sit inside an existing package's folder.
-        ("app", "fixture:app/sub", "fixture:app"),
+        ("app", {}, "fixture:app/sub", "fixture:app"),
         # The new package's folder already holds a package below it.
-        ("work/git", "fixture:work", "fixture:work/git"),
+        ("work/git", {}, "fixture:work", "fixture:work/git"),
+        # A dotfile source named package.toml is package content, not a manifest (#208),
+        # so the new package would still nest inside `app` and must not edit that dotfile.
+        ("app", {"files/package.toml": 'name = "my-tool-settings"\n'}, "fixture:app/files", "fixture:app"),
     ],
 )
 def test_add_cli_refuses_to_create_a_package_that_would_nest(
@@ -644,6 +647,7 @@ def test_add_cli_refuses_to_create_a_package_that_would_nest(
     monkeypatch,
     capsys,
     existing_package_id: str,
+    package_content_files: dict[str, str],
     new_package_query: str,
     conflicting_selector: str,
 ) -> None:
@@ -655,6 +659,10 @@ def test_add_cli_refuses_to_create_a_package_that_would_nest(
 
     repo_root = tmp_path / "repo"
     _write_repo(repo_root, {existing_package_id: ""})
+    package_root = repo_root / "packages" / existing_package_id
+    for relative_path, content in package_content_files.items():
+        (package_root / relative_path).parent.mkdir(parents=True, exist_ok=True)
+        (package_root / relative_path).write_text(content, encoding="utf-8")
     snapshot_before = _repo_snapshot(repo_root)
     config_path = write_named_manager_config(tmp_path, {"fixture": repo_root})
 
