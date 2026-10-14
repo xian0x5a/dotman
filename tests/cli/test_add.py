@@ -621,3 +621,82 @@ def test_add_cli_writes_reviewed_new_manifest_without_requiring_id(
     manifest_text = (repo_root / "packages" / "work" / "newpkg" / "package.toml").read_text(encoding="utf-8")
     assert manifest_text == reviewed_manifest_text
     assert _package_selectors(config_path, capsys) == {"fixture:work/newpkg"}
+
+
+def _repo_snapshot(repo_root: Path) -> dict[str, bytes | None]:
+    return {
+        path.relative_to(repo_root).as_posix(): path.read_bytes() if path.is_file() else None
+        for path in sorted(repo_root.rglob("*"))
+    }
+
+
+@pytest.mark.parametrize(
+    ("existing_package_id", "package_content_files", "new_package_query", "conflicting_selector"),
+    [
+        # The new package's folder would sit inside an existing package's folder.
+        ("app", {}, "fixture:app/sub", "fixture:app"),
+        # The new package's folder already holds a package below it.
+        ("work/git", {}, "fixture:work", "fixture:work/git"),
+        # A dotfile source named package.toml is package content, not a manifest (#208),
+        # so the new package would still nest inside `app` and must not edit that dotfile.
+        ("app", {"files/package.toml": 'name = "my-tool-settings"\n'}, "fixture:app/files", "fixture:app"),
+    ],
+)
+def test_add_cli_refuses_to_create_a_package_that_would_nest(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+    existing_package_id: str,
+    package_content_files: dict[str, str],
+    new_package_query: str,
+    conflicting_selector: str,
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    live_path = home / ".gitconfig"
+    live_path.write_text("[user]\n", encoding="utf-8")
+
+    repo_root = tmp_path / "repo"
+    _write_repo(repo_root, {existing_package_id: ""})
+    package_root = repo_root / "packages" / existing_package_id
+    for relative_path, content in package_content_files.items():
+        (package_root / relative_path).parent.mkdir(parents=True, exist_ok=True)
+        (package_root / relative_path).write_text(content, encoding="utf-8")
+    snapshot_before = _repo_snapshot(repo_root)
+    config_path = write_named_manager_config(tmp_path, {"fixture": repo_root})
+
+    exit_code = main(["--config", str(config_path), "--no-confirm", "add", str(live_path), new_package_query])
+
+    captured = capsys.readouterr()
+    assert exit_code != 0
+    assert conflicting_selector in captured.out + captured.err
+    assert _repo_snapshot(repo_root) == snapshot_before
+    assert _package_selectors(config_path, capsys) == {f"fixture:{existing_package_id}"}
+
+
+def test_add_cli_creates_a_namespaced_sibling_next_to_an_existing_package(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    live_path = home / ".toolsrc"
+    live_path.write_text("value\n", encoding="utf-8")
+
+    repo_root = tmp_path / "repo"
+    _write_repo(repo_root, {"work/git": ""})
+    config_path = write_named_manager_config(tmp_path, {"fixture": repo_root})
+
+    exit_code = main([
+        "--config", str(config_path), "--json", "--no-confirm", "add", str(live_path), "fixture:work/tools",
+    ])
+
+    assert exit_code == 0, capsys.readouterr().err
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["created_package"] is True
+    assert payload["package_id"] == "work/tools"
+    assert (repo_root / "packages" / "work" / "tools" / "package.toml").is_file()
+    assert _package_selectors(config_path, capsys) == {"fixture:work/git", "fixture:work/tools"}

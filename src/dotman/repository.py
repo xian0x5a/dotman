@@ -10,6 +10,7 @@ from dotman.manifest import (
     build_hook_spec,
     build_target_spec,
     deep_merge,
+    discover_package_manifests,
     merge_package_specs,
     _validate_resolved_package,
     normalize_default_command_elevation,
@@ -162,7 +163,7 @@ class Repository:
     def _load_packages(self) -> dict[str, PackageSpec]:
         packages: dict[str, PackageSpec] = {}
         packages_root = self.root / "packages"
-        for manifest_path in sorted(packages_root.glob("**/package.toml")):
+        for manifest_path in discover_package_manifests(packages_root):
             package_id = manifest_path.relative_to(packages_root).parent.as_posix()
             payload = load_toml_file(
                 manifest_path,

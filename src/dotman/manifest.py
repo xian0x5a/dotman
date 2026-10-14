@@ -18,6 +18,7 @@ VALID_DEFAULT_COMMAND_ELEVATION_VALUES = ("none", "intercept")
 VALID_SYNC_POLICY_VALUES = ("push-only", "pull-only", "both", "push-only-delete")
 VALID_TARGET_TYPE_VALUES = ("file", "directory")
 FORCED_COMMAND_PREFIX = "__dotman_command__:"
+PACKAGE_MANIFEST_FILE_NAME = "package.toml"
 TARGET_MANIFEST_KEYS = frozenset(
     {"capture", "chmod", "compare", "disabled", "editor", "hooks", "ignore", "on_demand",
      "path", "path_rules", "preset", "probe", "render", "source", "sync_policy", "type"}
@@ -53,6 +54,22 @@ def validate_package_id(package_id: str) -> None:
     parts = package_id.split("/")
     if any(not part or part in {".", ".."} or any(character.isspace() for character in part) for part in parts):
         raise ValueError(f"invalid package id '{package_id}'")
+
+
+def discover_package_manifests(packages_root: Path) -> list[Path]:
+    """Find package manifests, treating everything inside a package folder as package content.
+
+    A folder holding `package.toml` is a package, so the walk stops descending there:
+    packages cannot nest, and a dotfile source that is itself named `package.toml`
+    (for example `packages/app/files/package.toml`) is not mistaken for a manifest.
+    Folders without a manifest are namespaces, e.g. `packages/work/git/package.toml`.
+    """
+    manifest_paths: list[Path] = []
+    for directory, child_directories, file_names in packages_root.walk():
+        if PACKAGE_MANIFEST_FILE_NAME in file_names:
+            manifest_paths.append(directory / PACKAGE_MANIFEST_FILE_NAME)
+            child_directories.clear()
+    return sorted(manifest_paths)
 
 
 def validate_target_name(target_name: str) -> None:
