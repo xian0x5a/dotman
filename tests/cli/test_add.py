@@ -542,3 +542,82 @@ def test_add_cli_adds_non_ascii_live_path_to_a_loadable_manifest(
     assert main(["--config", str(config_path), "--json", "info", "trackable", "fixture:app"]) == 0
     targets = json.loads(capsys.readouterr().out)["trackable"]["targets"]
     assert [target["path"] for target in targets] == [f"~/.config/{relative_path}"]
+
+
+def _package_selectors(config_path: Path, capsys) -> set[str]:
+    assert main(["--config", str(config_path), "--json", "list", "trackables"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    return {entry["qualified_selector"] for entry in payload["trackables"] if entry["kind"] == "package"}
+
+
+def test_add_cli_creates_namespaced_package_without_id_line_that_still_loads(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    live_path = home / ".gitconfig"
+    live_path.write_text("[user]\n", encoding="utf-8")
+
+    repo_root = tmp_path / "repo"
+    _write_repo(repo_root, {"git": ""})
+    config_path = write_named_manager_config(tmp_path, {"fixture": repo_root})
+
+    exit_code = main([
+        "--config", str(config_path), "--json", "--no-confirm", "add", str(live_path), "fixture:work/git",
+    ])
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["created_package"] is True
+    assert payload["package_id"] == "work/git"
+    manifest_text = (repo_root / "packages" / "work" / "git" / "package.toml").read_text(encoding="utf-8")
+    assert not any(line.strip().startswith("id") for line in manifest_text.splitlines())
+    assert _package_selectors(config_path, capsys) == {"fixture:git", "fixture:work/git"}
+
+
+def test_add_cli_writes_reviewed_new_manifest_without_requiring_id(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    live_path = home / ".config" / "foo.conf"
+    live_path.parent.mkdir(parents=True)
+    live_path.write_text("value\n", encoding="utf-8")
+
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    config_path = write_named_manager_config(tmp_path, {"fixture": repo_root})
+
+    monkeypatch.setattr(cli, "add_editor_available", lambda: True)
+    # The user rewrites the manifest by hand and, as the folder now names the package, writes no id line.
+    reviewed_manifest_text = "\n".join([
+        'description = "reviewed"',
+        "",
+        "[targets.foo]",
+        'source = "files/config/foo.conf"',
+        'path = "~/.config/foo.conf"',
+        "",
+    ])
+    monkeypatch.setattr(
+        cli,
+        "review_add_manifest",
+        lambda result: AddReviewResult(exit_code=0, manifest_text=reviewed_manifest_text),
+    )
+    interaction = ScriptedInteraction(choices=[None], confirmations=[True], text_inputs=[""])
+
+    exit_code = main(
+        ["--config", str(config_path), "add", str(live_path), "fixture:work/newpkg"],
+        interaction=interaction,
+    )
+
+    assert exit_code == 0
+    capsys.readouterr()
+    manifest_text = (repo_root / "packages" / "work" / "newpkg" / "package.toml").read_text(encoding="utf-8")
+    assert manifest_text == reviewed_manifest_text
+    assert _package_selectors(config_path, capsys) == {"fixture:work/newpkg"}
