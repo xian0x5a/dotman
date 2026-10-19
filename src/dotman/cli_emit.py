@@ -15,7 +15,7 @@ from dotman.operation_runner import (
     RestoreOperationFinished,
     RestoreOperationStarted,
 )
-from dotman.printable import printable_text
+from dotman.printable import terminal_safe_text
 from dotman.tracking import SkippedCatalogPackage
 
 
@@ -191,7 +191,7 @@ def emit_trackables(*, trackables: Sequence[Any], json_output: bool, use_color: 
             member_count=trackable.member_count,
             use_color=use_color,
         )
-        description = cli_style.render_annotation_parentheses(trackable.description or "", use_color=use_color)
+        description = cli_style.render_annotation_parentheses(terminal_safe_text(trackable.description or ""), use_color=use_color)
         print(f"{cli_style.join_menu_display_fields(selector_label, kind_badge, meta_badge)}{description}")
     return 0
 
@@ -303,7 +303,7 @@ def emit_doctor_summary(*, engine: Any, summary: Any, json_output: bool, use_col
             print(
                 "  - "
                 f"{_render_tracked_issue_label(engine, issue, use_color=use_color)} "
-                f"{cli_style.render_tracked_state(issue.state, use_color=use_color)} — {_escape_unprintable(issue.message)}"
+                f"{cli_style.render_tracked_state(issue.state, use_color=use_color)} — {terminal_safe_text(issue.message)}"
             )
     if summary.ok:
         print("  no issues found")
@@ -332,7 +332,7 @@ def emit_search_matches(*, matches: Sequence[Any], query: str, json_output: bool
             member_count=match.member_count,
             use_color=use_color,
         )
-        description = cli_style.render_annotation_parentheses(match.description or "", use_color=use_color)
+        description = cli_style.render_annotation_parentheses(terminal_safe_text(match.description or ""), use_color=use_color)
         package_label = cli_style.render_package_label(
             repo_name=match.repo,
             package_id=match.selector,
@@ -715,7 +715,7 @@ def emit_trackable_detail(*, trackable_detail: Any, json_output: bool, use_color
         )
     )
     if getattr(trackable_detail, "description", None):
-        print(f"  {trackable_detail.description}")
+        print(f"  {terminal_safe_text(trackable_detail.description)}")
 
     print()
     print(cli_style.render_info_section_header("status", use_color=use_color))
@@ -811,7 +811,7 @@ def emit_tracked_package_detail(*, package_detail: Any, json_output: bool, use_c
         )
     )
     if package_detail.description:
-        print(f"  {package_detail.description}")
+        print(f"  {terminal_safe_text(package_detail.description)}")
     if package_detail.package_entries:
         print()
         print(cli_style.render_info_section_header("provenance", use_color=use_color))
@@ -1054,19 +1054,13 @@ def _emit_error_block(*, header_text: str, fields: Sequence[tuple[str, str]], us
         print(f"  {cli_style.render_error_metadata_label(label, use_color=use_color)} {value}", file=sys.stderr)
 
 
-def _escape_unprintable(text: Any) -> str:
-    """Escape what a terminal could misread in error text, which can echo any user-written name or file path.
-
-    Names are validated at load, but the error that rejects one, and every path
-    that contains one, still carries the raw characters. Newlines stay: a
-    multi-line detail such as a profile conflict uses them for layout.
-    """
-    return "\n".join(printable_text(line) for line in str(text).split("\n"))
-
-
 def _error_attribute(error: Any, name: str) -> str | None:
+    """An error field, escaped for the terminal: errors echo user-written names and file paths.
+
+    Fields are escaped here, before any styling, so color codes survive.
+    """
     value = getattr(error, name, None)
-    return None if value is None else _escape_unprintable(value)
+    return None if value is None else terminal_safe_text(str(value))
 
 
 def _structured_error_fields(error: Any, *, use_color: bool) -> list[tuple[str, str]]:
@@ -1116,7 +1110,7 @@ def _structured_error_fields(error: Any, *, use_color: bool) -> list[tuple[str, 
             # Styled and built from loaded identities, whose names already passed validation.
             detail = cli_style.render_profile_conflict_detail(error, use_color=use_color)
         else:
-            detail = _escape_unprintable(str(error) or error.__class__.__name__)
+            detail = terminal_safe_text(str(error) or error.__class__.__name__)
     fields.append(("detail:", detail))
     hint = _error_attribute(error, "hint")
     if hint is not None:
@@ -1133,15 +1127,19 @@ def emit_skipped_entry_warnings(skipped_entries: Sequence[Any], *, use_color: bo
                 repo_name=skipped.repo, package_id=skipped.package_id, use_color=use_color
             )
             # Not tracked, so there is no row to untrack; the fix is in the repo.
-            print(f"{warning}: skipped package {package} ({_escape_unprintable(skipped.message)})", file=sys.stderr)
+            print(f"{warning}: skipped package {package} ({terminal_safe_text(skipped.message)})", file=sys.stderr)
             continue
         row = cli_style.render_full_spec_selector_reference(skipped.binding, use_color=use_color)
-        # Plain text for the untrack hint so it stays copy-pasteable.
-        untrack_hint = cli_style.full_spec_selector_label_text(
-            repo_name=skipped.binding.repo, selector=skipped.binding.selector, profile=skipped.binding.profile
+        # Plain text for the untrack hint so it stays copy-pasteable. The row may hold
+        # unprintable characters, so the hint carries the escaped text, which untrack
+        # accepts for exactly that row (tracking._is_named_by).
+        untrack_hint = terminal_safe_text(
+            cli_style.full_spec_selector_label_text(
+                repo_name=skipped.binding.repo, selector=skipped.binding.selector, profile=skipped.binding.profile
+            )
         )
         print(
-            f"{warning}: skipped stale tracked row {row} ({_escape_unprintable(skipped.message)}); "
+            f"{warning}: skipped stale tracked row {row} ({terminal_safe_text(skipped.message)}); "
             f"see 'dotman list tracked' or remove it with 'dotman untrack {untrack_hint}'",
             file=sys.stderr,
         )

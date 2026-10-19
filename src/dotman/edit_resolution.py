@@ -12,6 +12,7 @@ from dotman.errors import UsageError
 from dotman.interaction import ChoiceOption, ChoiceRequest, Interaction
 from dotman.interaction_policy import InteractionRequiredError
 from dotman.models import ManagerConfig, package_ref_text
+from dotman.printable import terminal_safe_text
 from dotman.package_resolution import (
     parse_full_spec_selector_text,
     parse_package_ref_text,
@@ -229,7 +230,11 @@ class EditResolver:
         stale = tracking.find_skipped_tracked_row(repo_name, package_id)
         if stale is None:
             return f"{subject} '{query_text}' did not match any tracked package or target"
-        return f"{subject} '{query_text}' matches stale tracked row {stale.binding.repo}:{stale.binding.selector}@{stale.binding.profile}: {stale.message}"
+        # The stale row was stored by an older dotman and may hold unprintable characters.
+        return terminal_safe_text(
+            f"{subject} '{query_text}' matches stale tracked row "
+            f"{stale.binding.repo}:{stale.binding.selector}@{stale.binding.profile}: {stale.message}"
+        )
 
     def _resolve_repo_config(
         self,

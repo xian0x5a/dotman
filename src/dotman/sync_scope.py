@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import unicodedata
 from dataclasses import dataclass, replace
 from pathlib import PurePosixPath
 from typing import Sequence
@@ -462,17 +461,12 @@ def sync_unit_identity_bytes(identity: ResolvedSyncTarget) -> bytes:
             identity.target_name,
             identity.child_path,
         )
-        # Human output prints identities verbatim, so a control character (NUL,
-        # ESC, CR, ...) anywhere would reach the terminal raw.
-        or any(unicodedata.category(character) == "Cc" for character in identity.canonical)
-        # Child names come from the live filesystem and fail alone under an
-        # escaped stand-in, so they are held to the stricter rule `printable_text`
-        # escapes by (str.isprintable): one predicate, so the check and the
-        # escaping cannot drift, and bidi/format characters cannot reorder
-        # displayed rows. Repo/package/profile/target names are authored, and
-        # manifest and config load already reject unprintable ones (#295), so
-        # only child names are checked here.
-        or (identity.child_path is not None and not identity.child_path.isprintable())
+        # Human output prints identities verbatim, so every component must be
+        # printable: authored names are checked at load (#295) and child names
+        # come from the live filesystem (#272). One predicate over the whole
+        # identity, the one `printable_text` escapes by, so the check and the
+        # escaping cannot drift. The equality above pins child_path inside it.
+        or not identity.canonical.isprintable()
     ):
         raise UsageError(
             "Sync Base requires a canonical file or directory-child identity"

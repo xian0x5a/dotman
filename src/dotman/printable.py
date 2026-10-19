@@ -25,3 +25,16 @@ def printable_text(text: str) -> str:
             return f"\\u{code:04x}" if code <= 0xFFFF else f"\\U{code:08x}"
         return character
     return "".join(escape(character) for character in text)
+
+
+def terminal_safe_text(text: str) -> str:
+    """Text for a person to read with only its unprintable characters escaped as `\\uNNNN`.
+
+    Unlike `printable_text` this is not injective: a backslash stays a backslash,
+    and tab and newline stay as layout. Use it for display; use `printable_text`
+    where the result stands in for an identity.
+    """
+    return "".join(
+        character if character in "\n\t" or character.isprintable() else printable_text(character)
+        for character in text
+    )

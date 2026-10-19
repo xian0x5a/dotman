@@ -213,13 +213,18 @@ ESCAPED_DESCRIPTION_PARTS = ("safe\\u00a0text", "\\u202e", "\\u001b[31m")
 
 
 @pytest.mark.parametrize(
-    "argv",
+    ("setup_argv", "argv"),
     [
-        pytest.param(["list", "trackables"], id="list-trackables"),
-        pytest.param(["search", "app"], id="search"),
+        pytest.param(None, ["list", "trackables"], id="list-trackables"),
+        pytest.param(None, ["search", "app"], id="search"),
+        pytest.param(None, ["info", "trackable", f"{REPO_NAME}:app"], id="info-trackable"),
+        # `info tracked` describes a package that is tracked, so track it first.
+        pytest.param(["track", f"{REPO_NAME}:app@default"], ["info", "tracked", f"{REPO_NAME}:app"], id="info-tracked"),
     ],
 )
-def test_package_description_is_shown_escaped(argv: list[str], tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_package_description_is_shown_escaped(
+    setup_argv: list[str] | None, argv: list[str], tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     repo_root = tmp_path / "repo"
     (repo_root / "profiles").mkdir(parents=True)
     (repo_root / "profiles" / "default.toml").write_text("", encoding="utf-8")
@@ -232,6 +237,9 @@ def test_package_description_is_shown_escaped(argv: list[str], tmp_path: Path, c
         encoding="utf-8",
     )
     config_path = write_named_manager_config(tmp_path, {REPO_NAME: repo_root})
+    if setup_argv is not None:
+        setup_code, setup_stdout, setup_stderr = run_cli(config_path, capsys, *setup_argv)
+        assert setup_code == 0, setup_stdout + setup_stderr
 
     code, stdout, stderr = run_cli(config_path, capsys, *argv)
 

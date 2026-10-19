@@ -24,6 +24,7 @@ See [Sync lifecycle](sync.md) for convergence semantics and
 - `<...>` is reserved for resolved tracked package instances, not selector+profile forms or manifest IDs.
 - `.` is reserved as the package/target separator in human-facing target labels.
 - Package, group, profile, target and repo names must be printable (`str.isprintable()`); `docs/repository.md` and `docs/config.md` list the full name rules.
+- Output never prints an unprintable character raw: names, paths, error text and package descriptions show each one as `\uNNNN`. Backslash, tab and newline stay as written. A tracked row an older dotman stored with such a character, for example the profile in `work\u00a0laptop`, is listed that way, and `untrack` accepts that escaped text for the row's profile or package.
 - When a menu, confirmation, diff banner, list output, or info view includes repo context, it should print the canonical colon-qualified form.
 - `repo:` is the only repo qualifier. `repo/selector` is not a repo alias: `work/git` always means the package or group `work/git`, and a repo-scoped lookup must be written `repo:work/git`.
 - `\` is not a valid selector separator or menu-display form.
