@@ -413,7 +413,7 @@ def test_probe_target_rejects_file_payload_fields(tmp_path: Path) -> None:
     [
         # Manifest parsing knows only the file, so it names the target by its location.
         ("", 'sync_policy = "push-only-delete"', r"package manifest .+package\.toml target 'version' uses probe and cannot use push-only-delete"),
-        # A package-level policy only reaches the probe once resolved, where the canonical identity is known.
+        # A package-level policy only reaches the probe once resolved, where the repo and package are known.
         ('sync_policy = "push-only-delete"', "", r"target 'fixture:app\.version' uses probe and cannot use push-only-delete"),
     ],
 )
