@@ -24,8 +24,8 @@ It is guidance, not a promise that every internal module name or boundary is per
 Focused CLI responsibilities live in dedicated modules:
 
 - `cli_parser.py` — argparse construction
-- `cli_emit.py` — text/JSON output formatting; error text goes through
-  `printable.py`, so a name or path in an error never reaches the terminal raw
+- `cli_emit.py` — text/JSON output formatting; text it prints goes through
+  `printable.py`, so a name or path never reaches the terminal raw
 - `standalone_commands.py` — configuration-independent rewrite, transform,
   elevation, capture, editor, and render workflows. Repo manifests call these
   once per render, capture, or probe, so `cli.py` dispatches them before
@@ -80,9 +80,10 @@ Current responsibility split:
 - `collisions.py` — tracked-target winner resolution and conflict checks
 - `printable.py` — the `str.isprintable()` rule in one place: `validate_printable_name` rejects a bad name at load, and
   three escapes show text safely. `printable_text` is injective (backslash doubled) for Sync identity stand-ins;
-  `terminal_safe_name` escapes every unprintable character, tab and newline included, for names and one-line
-  fields; `terminal_safe_text` keeps newline and tab for free text and paths. It also holds the selector reserved
-  characters that package, group and repo names share
+  `terminal_safe_line` escapes every unprintable character, tab and newline included, for anything inside a one-line
+  row or field (names, paths, variable names); `terminal_safe_text` keeps newline and tab for the few blocks of free
+  text that span lines (the `info` description, error details, Sync diagnostics, hook commands). It also holds the
+  reserved characters of selector and profile IDs, which package, group, profile and repo names share
 - `sync_directory.py` — symmetric control-aware census and identity-derived child metadata; no aggregate payload or publication
 - `projection.py` — shared Render, Capture and comparison providers over real endpoints or staged Proposals through `ProjectionContext`
 - `sync_scope.py` — static tracked scope resolution, ownership/collision/reserved-path validation, and canonical file/child identity keys
