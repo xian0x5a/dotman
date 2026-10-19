@@ -387,6 +387,7 @@ dotman --no-confirm sync main:app.settings
 - Human output should render the canonical `repo:selector` form, followed by badge-style labels like `[package]` or `[group]` and a dim description in parentheses.
 - JSON output should include the operation name, original query, and the ordered `matches` list.
 - An empty query should fail fast.
+- Search and `list trackables` skip a package whose `extends` parent the repo does not define, the same dangling reference that makes a tracked row stale. Each skip prints `warning: skipped package <repo>:<package> (package '<package>' extends '<parent>', which repo '<repo>' does not define)` to stderr, once per command (JSON stdout is unaffected). Selecting the skipped package by name (`info trackable`, `track`) fails with the same detail. An `extends` cycle or malformed manifest is a repo error and still fails the command.
 
 ## Diagnostics And Catalog Inspection
 

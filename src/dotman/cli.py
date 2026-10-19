@@ -42,12 +42,12 @@ def main(
         no_confirm = args.no_confirm
         if args.command in StandaloneCommandRunner.command_names:
             selected_runner = StandaloneCommandRunner()
-            skipped_rows_warning = nullcontext()
+            skipped_entries_warning = nullcontext()
         else:
             _refuse_root_under_sudo()
             selected_runner = _repo_command_runner(args, None if no_confirm else interaction)
-            skipped_rows_warning = _warn_about_skipped_tracked_rows()
-        with command_operation(), interaction_scope(no_confirm=args.no_confirm), skipped_rows_warning:
+            skipped_entries_warning = _warn_about_skipped_entries()
+        with command_operation(), interaction_scope(no_confirm=args.no_confirm), skipped_entries_warning:
             return selected_runner.run(args)
     except InteractionRequiredError as exc:
         _emit_error(exc, use_color=colors_enabled(sys.stderr))
@@ -80,21 +80,21 @@ def console_main() -> NoReturn:
 
 
 @contextmanager
-def _warn_about_skipped_tracked_rows() -> Iterator[None]:
-    """Warn once per command, after it finishes, about the stale rows it skipped.
+def _warn_about_skipped_entries() -> Iterator[None]:
+    """Warn once per command, after it finishes, about the stale tracked rows and catalog packages it skipped.
 
     Reporting at the end keeps the warning out of the Command Deck and one command
     to one report, however many times the command walked the tracked state.
     """
-    from dotman.cli_emit import emit_skipped_tracked_row_warnings
-    from dotman.tracking import collecting_skipped_tracked_rows
+    from dotman.cli_emit import emit_skipped_entry_warnings
+    from dotman.tracking import collecting_skipped_entries
 
-    with collecting_skipped_tracked_rows() as skipped_rows:
+    with collecting_skipped_entries() as skipped_entries:
         try:
             yield
         finally:
-            emit_skipped_tracked_row_warnings(
-                list(skipped_rows.values()), use_color=colors_enabled(sys.stderr)
+            emit_skipped_entry_warnings(
+                list(skipped_entries.values()), use_color=colors_enabled(sys.stderr)
             )
 
 

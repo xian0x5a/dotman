@@ -105,7 +105,16 @@ def iter_trackable_catalog_entries(context: TrackedStateContext):
     for repo in candidate_repositories(context):
         for package_id in sorted(repo.packages):
             # Inherited metadata such as binding_mode only exists on the resolved package.
-            package = repo.resolve_package(package_id)
+            try:
+                package = repo.resolve_package(package_id)
+            except MissingExtendsParentError as exc:
+                # A dangling parent makes the package stale, not the repo broken (#239), so
+                # browsing skips it; other manifest errors such as a cycle still propagate.
+                _record_skipped_entry(
+                    (repo.config.name, package_id, None),
+                    SkippedCatalogPackage(repo=repo.config.name, package_id=package_id, message=str(exc)),
+                )
+                continue
             yield repo, TrackableCatalogEntry(
                 kind="package",
                 repo=repo.config.name,
@@ -500,50 +509,67 @@ class SkippedTrackedRow:
     message: str
 
 
-# Rows skipped as stale during the running command, keyed by row identity so repeated
-# walks report each row once. Scoped to one command by `collecting_skipped_tracked_rows`.
-_SKIPPED_TRACKED_ROWS: ContextVar[dict[tuple[str, str, str], SkippedTrackedRow] | None] = ContextVar(
-    "dotman_skipped_tracked_rows", default=None,
+@dataclass(frozen=True)
+class SkippedCatalogPackage:
+    """A package a catalog walk could not resolve because its `extends` parent is missing."""
+
+    repo: str
+    package_id: str
+    message: str
+
+
+SkippedEntry = SkippedTrackedRow | SkippedCatalogPackage
+
+# Entries skipped as stale during the running command, keyed by identity so repeated
+# walks report each one once. Scoped to one command by `collecting_skipped_entries`.
+# Tracked rows are keyed (repo, package, profile); catalog packages (repo, package, None).
+_SKIPPED_ENTRIES: ContextVar[dict[tuple[str, str, str | None], SkippedEntry] | None] = ContextVar(
+    "dotman_skipped_entries", default=None,
 )
 
 
 @contextmanager
-def collecting_skipped_tracked_rows() -> Iterator[dict[tuple[str, str, str], SkippedTrackedRow]]:
-    """Collect the stale rows that effective-entry walks skip while a command runs."""
-    skipped_rows: dict[tuple[str, str, str], SkippedTrackedRow] = {}
-    token = _SKIPPED_TRACKED_ROWS.set(skipped_rows)
+def collecting_skipped_entries() -> Iterator[dict[tuple[str, str, str | None], SkippedEntry]]:
+    """Collect the stale entries that tracked-state and catalog walks skip while a command runs."""
+    skipped_entries: dict[tuple[str, str, str | None], SkippedEntry] = {}
+    token = _SKIPPED_ENTRIES.set(skipped_entries)
     try:
-        yield skipped_rows
+        yield skipped_entries
     finally:
-        _SKIPPED_TRACKED_ROWS.reset(token)
+        _SKIPPED_ENTRIES.reset(token)
 
 
 @contextmanager
-def silencing_skipped_tracked_rows() -> Iterator[None]:
-    """Stop collecting skipped rows, for commands that list every invalid row themselves."""
-    token = _SKIPPED_TRACKED_ROWS.set(None)
+def silencing_skipped_entries() -> Iterator[None]:
+    """Stop collecting skipped entries, for commands that list every invalid row themselves."""
+    token = _SKIPPED_ENTRIES.set(None)
     try:
         yield
     finally:
-        _SKIPPED_TRACKED_ROWS.reset(token)
+        _SKIPPED_ENTRIES.reset(token)
+
+
+def _record_skipped_entry(key: tuple[str, str, str | None], entry: SkippedEntry) -> None:
+    skipped_entries = _SKIPPED_ENTRIES.get()
+    if skipped_entries is not None:
+        skipped_entries.setdefault(key, entry)
 
 
 def _record_skipped_tracked_row(binding: FullSpecSelector, message: str) -> None:
-    skipped_rows = _SKIPPED_TRACKED_ROWS.get()
-    if skipped_rows is not None:
-        skipped_rows.setdefault(
-            (binding.repo, binding.selector, binding.profile),
-            SkippedTrackedRow(binding=binding, message=message),
-        )
+    _record_skipped_entry(
+        (binding.repo, binding.selector, binding.profile),
+        SkippedTrackedRow(binding=binding, message=message),
+    )
 
 
 def find_skipped_tracked_row(repo_name: str | None, package_id: str) -> SkippedTrackedRow | None:
     """Return the stale row this command skipped for a package, so a miss on it can say why."""
-    skipped_rows = _SKIPPED_TRACKED_ROWS.get() or {}
+    skipped_entries = _SKIPPED_ENTRIES.get() or {}
     return next(
         (
-            skipped for skipped in skipped_rows.values()
-            if skipped.binding.selector == package_id and repo_name in (None, skipped.binding.repo)
+            skipped for skipped in skipped_entries.values()
+            if isinstance(skipped, SkippedTrackedRow)
+            and skipped.binding.selector == package_id and repo_name in (None, skipped.binding.repo)
         ),
         None,
     )
