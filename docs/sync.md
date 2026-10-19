@@ -106,9 +106,11 @@ chmod belongs to the root.
 
 Repository symlinks and unsupported nodes yield typed path-specific Observation
 failures unless excluded. So does a child path that cannot form a canonical
-identity (trailing whitespace, a backslash, or bytes that are not UTF-8); its
-row shows an escaped stand-in (`Icon\u000d`, `caf\xe9.txt`) and it never has a
-Sync Base. Rename such a file or exclude it with an ignore pattern.
+identity (trailing whitespace, a backslash, a control character such as ESC
+or CR, or bytes that are not UTF-8); its row shows an escaped stand-in
+(`Icon\u000d`, `caf\xe9.txt`) and it never has a Sync Base. Rename such a file
+or exclude it with an ignore pattern. A Sync Base stored for such a name by an
+older dotman is ignored; `dotman doctor` counts it as corrupt.
 Repository directory links are never descended or used as ancestors for child
 endpoint reads. Live directory links fail locally in `fail` mode; `follow` mode retains lexical child identities and detects loops.
 Rejected traversal or unknown controls/discovery at an ancestor block every
