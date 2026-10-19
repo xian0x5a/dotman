@@ -265,39 +265,6 @@ def test_track_cli_interactively_selects_partial_selector_match(
         ]
     )
 
-def test_track_cli_accepts_slash_qualified_repo_selector_lookup(
-    tmp_path: Path,
-    monkeypatch,
-    capsys,
-) -> None:
-    home = tmp_path / "home"
-    home.mkdir()
-    monkeypatch.setenv("HOME", str(home))
-
-    config_path = write_named_manager_config(
-        tmp_path,
-        {
-            "alpha": REFERENCE_REPO,
-            "beta": REFERENCE_REPO,
-        },
-    )
-
-    exit_code = main(
-        [
-            "--config",
-            str(config_path),
-            "--json",
-            "track",
-            "beta/sunshine@host/linux",
-        ]
-    )
-
-    assert exit_code == 0
-    payload = json.loads(capsys.readouterr().out)
-    assert payload["package_entry"]["repo"] == "beta"
-    assert payload["package_entry"]["package_id"] == "sunshine"
-    assert payload["package_entry"]["profile"] == "host/linux"
-
 def test_track_cli_rejects_unique_partial_profile_in_non_interactive_mode(
     tmp_path: Path,
     monkeypatch,

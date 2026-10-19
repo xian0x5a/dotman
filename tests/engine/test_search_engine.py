@@ -64,14 +64,16 @@ def test_search_selectors_includes_group_descriptions(tmp_path: Path) -> None:
     assert matches[0].description == "Git configuration collection"
 
 
-def test_search_selectors_supports_repo_qualified_slash_aliases(tmp_path: Path) -> None:
+def test_search_selectors_does_not_treat_slash_as_repo_qualifier(tmp_path: Path) -> None:
     repo_root = tmp_path / "search-repo"
     write_search_repo(repo_root, package_description="Base Git configuration")
     config_path = write_named_manager_config(tmp_path, {"work": repo_root})
 
     engine = DotmanEngine.from_config_path(config_path)
-    matches = engine.search_selectors("work/git")
 
-    assert [match.qualified_selector for match in matches] == ["work:git"]
-    assert matches[0].match_reason == "exact_repo_qualified_selector"
-    assert matches[0].rank == 1
+    assert engine.search_selectors("work/git") == []
+    colon_matches = engine.search_selectors("work:git")
+    assert [match.qualified_selector for match in colon_matches] == ["work:git"]
+    assert colon_matches[0].match_reason == "exact_repo_qualified_selector"
+    assert colon_matches[0].rank == 1
+
