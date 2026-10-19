@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 
 from dotman.errors import UsageError
-from dotman.manifest import validate_printable_name
+from dotman.manifest import SELECTOR_ID_RESERVED_CHARACTERS, validate_printable_name
 from dotman.models import GitConfig, ManagerConfig, RepoConfig, SnapshotConfig, UiConfig, UiMenusConfig
 from dotman.sync_commit import validate_commit_message_template
 from dotman.toml_utils import load_toml_file
@@ -60,7 +60,18 @@ def default_local_override_path(repo_name: str) -> Path:
 
 
 def validate_repo_name(repo_name: str) -> None:
+    """A repo name is the `repo` in `repo:package` and a directory under `repos/`.
+
+    It follows the package ID rules without namespaces: no selector delimiters,
+    no `/` and no `.` (which also rules out `.` and `..` as directories).
+    """
     validate_printable_name(repo_name, kind="repo name")
+    if (
+        not repo_name.strip()
+        or "/" in repo_name
+        or any(character in repo_name for character in SELECTOR_ID_RESERVED_CHARACTERS)
+    ):
+        raise UsageError(f"invalid repo name '{repo_name}'")
 
 
 def validate_state_key(state_key: object, *, repo_name: str) -> str:
@@ -124,7 +135,7 @@ def load_manager_config(config_path: str | Path | None = None) -> ManagerConfig:
             raise ManagerConfigLoadError(
                 path=resolved_path,
                 detail=str(exc),
-                hint="Rename the [repos.<name>] table to printable characters.",
+                hint="Rename the [repos.<name>] table. A repo name cannot be blank or contain / . : @ < > or a backslash.",
             ) from None
         if not isinstance(repo_payload, dict):
             raise UsageError(f"repo entry '{repo_name}' must be a table")
