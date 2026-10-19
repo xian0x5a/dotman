@@ -8,8 +8,6 @@ import tempfile
 from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 
-import tomlkit
-
 from dotman.atomic_files import write_text_atomic
 from dotman.collisions import TargetClaim, validate_target_collisions
 from dotman.command_runtime import ArgvCommand, CommandRequest, current_command_runtime
@@ -27,7 +25,7 @@ from dotman.manifest import (
 )
 from dotman.models import PackageSpec, TargetSpec, repo_qualified_target_text
 from dotman.repository import Repository
-from dotman.toml_utils import load_toml_text
+from dotman.toml_utils import dump_toml_text, load_toml_text
 
 
 @dataclass(frozen=True)
@@ -414,7 +412,7 @@ def render_target_block(*, target_name: str, source_path: str, config_path: str,
     target = {"source": source_path, "path": config_path}
     if chmod is not None:
         target["chmod"] = chmod
-    return tomlkit.dumps({"targets": {target_name: target}})
+    return dump_toml_text({"targets": {target_name: target}})
 
 
 def append_target_block(*, before_text: str, target_block: str) -> str:

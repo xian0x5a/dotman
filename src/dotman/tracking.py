@@ -8,11 +8,9 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Mapping, TYPE_CHECKING
 
-import tomlkit
-
 from dotman.atomic_files import write_text_atomic
 from dotman.errors import UsageError
-from dotman.toml_utils import TomlLoadError, load_toml_file
+from dotman.toml_utils import TomlLoadError, dump_toml_text, load_toml_file
 from dotman.models import (
     FullSpecSelector,
     TrackableCatalogEntry,
@@ -736,7 +734,7 @@ def write_tracked_package_entries_file(state_dir: Path, bindings: list[FullSpecS
             {"repo": entry.repo, "package_id": entry.package_id, "profile": entry.profile}
             for entry in tracked_packages
         ]
-    write_text_atomic(state_path, tomlkit.dumps(state))
+    write_text_atomic(state_path, dump_toml_text(state))
 
 
 

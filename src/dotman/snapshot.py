@@ -9,11 +9,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Sequence
 
-import tomlkit
-
 from dotman import file_access
 from dotman.atomic_files import write_bytes_atomic, write_text_atomic
-from dotman.toml_utils import TomlLoadError, load_toml_file
+from dotman.toml_utils import TomlLoadError, dump_toml_text, load_toml_file
 from dotman.models import PackagePlan, SnapshotConfig
 
 
@@ -533,7 +531,7 @@ def _write_snapshot_manifest(snapshot: SnapshotRecord) -> None:
         "last_restored_at": snapshot.last_restored_at,
         "entries": [_snapshot_entry_manifest_table(entry) for entry in snapshot.entries],
     }
-    write_text_atomic(snapshot.root / "manifest.toml", tomlkit.dumps(_without_none_values(manifest)))
+    write_text_atomic(snapshot.root / "manifest.toml", dump_toml_text(_without_none_values(manifest)))
 
 
 def _snapshot_entry_manifest_table(entry: SnapshotEntry) -> dict[str, object]:
