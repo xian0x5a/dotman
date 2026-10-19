@@ -30,6 +30,7 @@ See [Sync lifecycle](sync.md) for convergence semantics and
 ## Confirmation and execution flags
 
 - `--json` switches command output to machine-readable JSON. It is a global option and must appear before the subcommand.
+- Global options must be spelled in full; dotman rejects abbreviations such as `--conf` for `--config`.
 - Global `--no-confirm` suppresses every menu, Editor, pager, and prompt throughout command behavior. It uses configured defaults and fails safely when a required decision cannot be resolved.
 - `--no-confirm` does not suppress sudo authentication: when elevation needs a password, sudo authenticates however it is configured: NOPASSWD, a terminal prompt, or the `SUDO_ASKPASS` helper when no terminal is present. Dotman's own sudo login passes `-A` then, so a helper that needs no display also works headless; `sudo` calls inside hooks choose their own flags. A terminal nobody watches waits at the prompt until sudo times out. Dotman never substitutes its own prompt.
 - Run dotman as yourself, not under `sudo`. Dotman asks for sudo itself only for protected paths and elevated hooks, so the repo, Sync Base and state stay owned by you. Repo commands exit 2 (1 under `--no-confirm`) when they run as root with `SUDO_USER` naming another user, including a `sudo -i` or `sudo -s` shell. A root login without sudo (or `su -`) and root calling sudo are unaffected. Standalone helpers (`transform`, `rewrite`, `render`, `capture`, `reconcile`) still run under sudo, so elevated hooks can call them.

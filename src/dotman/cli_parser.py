@@ -217,7 +217,10 @@ class _PrintVersionAction(argparse.Action):
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="dotman", description="dotman CLI")
+    # Global options must match exactly: normalize_edit_query_argv finds the
+    # command by skipping known option names, so an abbreviation like
+    # `--conf <path>` would shift the `edit <query>` shortcut's detection.
+    parser = argparse.ArgumentParser(prog="dotman", description="dotman CLI", allow_abbrev=False)
     # Keep optional command flags present on every parsed namespace so command
     # dispatch can read a consistent attribute shape.
     parser.set_defaults(full_path=None)
