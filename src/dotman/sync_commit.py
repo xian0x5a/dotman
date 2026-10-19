@@ -101,32 +101,34 @@ def probe_work_tree(path: Path, runtime: CommandRuntime) -> GitWorkTree | None:
     return GitWorkTree(root, branch.stdout_text.strip() or None if branch.exit_code == 0 else None)
 
 
+def committable_paths(root: Path, paths: Sequence[Path], runtime: CommandRuntime) -> tuple[Path, ...]:
+    """The `paths` with changes a commit would record, read without touching the index.
+
+    Like `git add -A`, git status leaves out untracked sources git ignores: they
+    are kept out of history on purpose. It also leaves out unchanged sources and
+    deleted sources git never tracked, so the message can describe exactly these.
+    """
+    status = _git(runtime, root, "status", "--porcelain", "-z", "--no-renames", "--untracked-files=all",
+                  "--", *map(str, paths))
+    # Each -z entry is "XY <path>", relative to the work tree root.
+    changed = {root / entry[3:] for entry in status.split("\0") if entry}
+    # A directory source covers the changed files below it.
+    return tuple(path for path in dict.fromkeys(paths)
+                 if path in changed or any(path in name.parents for name in changed))
+
+
 def commit_sources(root: Path, paths: Sequence[Path], message: str, runtime: CommandRuntime) -> str | None:
-    """Commit exactly `paths`; unrelated staged or unstaged work stays as it was.
+    """Commit exactly `paths` from `committable_paths`; unrelated staged or unstaged work stays as it was.
 
     Returns the short commit hash, or None when the paths match HEAD.
     """
-    paths = tuple(dict.fromkeys(paths))
-    tracked = _listed_paths(runtime, root, paths)
-    # Like `git add -A`, leave out untracked sources git ignores: they are kept
-    # out of history on purpose, and naming one would fail the whole add.
-    ignored = _listed_paths(runtime, root, paths, "--others", "--ignored", "--exclude-standard")
-    # A deleted source that git never tracked has nothing to stage; naming it would fail.
-    pathspec = tuple(str(path) for path in paths
-                     if path not in ignored and (path.exists() or path.is_symlink() or path in tracked))
-    if not pathspec:
-        return None
+    pathspec = tuple(map(str, paths))
     _git(runtime, root, "add", "-A", "--", *pathspec)
     if runtime.run(_git_request(root, "diff", "--cached", "--quiet", "--", *pathspec)).exit_code == 0:
         return None
     # Pathspec commit (`--only`) leaves other staged changes in the index.
     _git(runtime, root, "commit", "--quiet", "--file=-", "--", *pathspec, message=message)
     return _git(runtime, root, "rev-parse", "--short", "HEAD").strip()
-
-
-def _listed_paths(runtime: CommandRuntime, root: Path, paths: Sequence[Path], *options: str) -> set[Path]:
-    listing = _git(runtime, root, "ls-files", "-z", *options, "--", *map(str, paths))
-    return {root / name for name in listing.split("\0") if name}
 
 
 def _git_request(cwd: Path, *args: str, message: str | None = None) -> CommandRequest:

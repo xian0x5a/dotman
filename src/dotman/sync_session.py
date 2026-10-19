@@ -18,7 +18,7 @@ from dotman.capture import CaptureError
 from dotman.sync_capture import capture_observation
 from dotman.sync_observation import _identity
 from dotman.sync_auxiliary import AuxiliaryRow, guard_skip_rows, plan_auxiliary, retain_directional_hooks
-from dotman.sync_commit import CommitFailed, GitWorkTree, RepositoryCommit, commit_sources, probe_work_tree, render_commit_message
+from dotman.sync_commit import CommitFailed, GitWorkTree, RepositoryCommit, commit_sources, committable_paths, probe_work_tree, render_commit_message
 from dotman.sync_reconciliation import reconcile, unresolved_conflict_blocks, ReconciliationConflict, ReconciliationFailed
 from dotman.projection import PlanningCommandError, project_file_view
 from dotman.models import GuardSkip, ResolvedPackageIdentity, ResolvedSyncScope, package_ref_text, repo_qualified_target_text
@@ -1406,27 +1406,31 @@ class ProposalSession:
             status = "failed"
         return SyncResult(status, tuple(units), operation_diagnostics, steps + commit_steps, additional, commits)
 
-    def commit_paths(self, repo: str) -> tuple[tuple[Path, ...], tuple]:
-        """Repository paths the current selection writes in `repo`, and the targets they belong to."""
+    def commit_sources(self, repo: str) -> dict[Path, tuple]:
+        """Repository paths the current selection writes in `repo`, each with the targets it belongs to."""
         identities = {observation.identity.canonical: observation.identity for observation in self.view.observations}
-        paths, targets = [], []
+        sources: dict[Path, list] = {}
         for row in self.view.rows:
             if (isinstance(row, SessionRow) and row.observation.identity.repo == repo and row.included
                     and row.approved and row.proposal is not None
                     and row.proposal.primary_source_change is not None
                     and row.observation.repository_path is not None):
-                paths.append(row.observation.repository_path)
-                targets.append(row.observation.identity)
+                sources.setdefault(row.observation.repository_path, []).append(row.observation.identity)
             elif isinstance(row, AdditionalRow) and row.repo == repo and row.approved:
-                paths.append(row.change.path)
-                targets += [identities[reference] for reference in row.references if reference in identities]
-        return tuple(paths), tuple(targets)
+                sources.setdefault(row.change.path, []).extend(
+                    identities[reference] for reference in row.references if reference in identities)
+        return {path: tuple(targets) for path, targets in sources.items()}
 
     def commit_message(self, repo: str) -> str | None:
-        """The message Commit Work would use for the current selection, or None when it writes nothing."""
-        paths, targets = self.commit_paths(repo)
-        if not paths:
-            return None
+        """The message Commit Work would use for the current selection, or None when it writes nothing.
+
+        A prediction: the commit itself names only the sources git records.
+        """
+        sources = self.commit_sources(repo)
+        return self._render_commit_message(repo, sources, tuple(sources)) if sources else None
+
+    def _render_commit_message(self, repo: str, sources: dict[Path, tuple], paths: tuple[Path, ...]) -> str:
+        targets = tuple(target for path in paths for target in sources[path])
         return render_commit_message(self._context.config.git.commit_message,
                                      operation=self.operation, repo=repo, targets=targets)
 
@@ -1436,37 +1440,49 @@ class ProposalSession:
             if not option.selected:
                 continue
             repo = option.repo
-            paths, _ = self.commit_paths(repo)
+            sources = self.commit_sources(repo)
             if not run_completed:
                 # A partial run leaves its writes for the user to inspect before committing.
                 commits.append(RepositoryCommit(repo, "skipped"))
                 steps.append(_commit_step_outcome(repo, "unattempted", skip_reason="earlier-failure"))
                 continue
-            if not paths:
+            if not sources:
                 commits.append(RepositoryCommit(repo, "no-changes"))
                 steps.append(_commit_step_outcome(repo, "skipped", skip_reason="no-changes"))
                 continue
-            message = self.commit_message(repo)
+            commit, step = self._commit_repository(repo, sources)
+            commits.append(commit)
+            steps.append(step)
+        return tuple(commits), tuple(steps)
+
+    def _commit_repository(self, repo: str, sources: dict[Path, tuple]) -> tuple[RepositoryCommit, SyncStepOutcome]:
+        root, runtime = self._commit_trees[repo].root, self._context.projection.command_runtime
+        step = message = None
+        try:
+            self.check_cancelled()
+            # Decide what the commit records first, so its message names only those targets.
+            committed = committable_paths(root, tuple(sources), runtime)
+            if not committed:
+                return RepositoryCommit(repo, "no-changes"), _commit_step_outcome(repo, "skipped", skip_reason="no-changes")
+            message = self._render_commit_message(repo, sources, committed)
             step = ExecutionStep(repo_name=repo, kind="commit", action="commit", scope_kind="repo",
                                  description=message.splitlines()[0])
             self._emit(StepStarted("repository-commit", step, 1, 1))
-            try:
-                self.check_cancelled()
-                commit = commit_sources(self._commit_trees[repo].root, paths, message,
-                                        self._context.projection.command_runtime)
-                outcome = RepositoryCommit(repo, "committed" if commit else "no-changes", commit, message)
-                result = ExecutionStepResult(step, "ok" if commit else "skipped",
-                                             skip_reason=None if commit else "no-changes")
-            except (KeyboardInterrupt, InterruptedError):
-                outcome = RepositoryCommit(repo, "interrupted", message=message, error="Commit interrupted")
-                result = ExecutionStepResult(step, "interrupted", error=outcome.error)
-            except (CommitFailed, OSError) as exc:
-                outcome = RepositoryCommit(repo, "failed", message=message, error=str(exc))
-                result = ExecutionStepResult(step, "failed", error=outcome.error)
-            self._emit(StepFinished("repository-commit", result, 1, 1))
-            commits.append(outcome)
-            steps.append(_commit_step_outcome(repo, result.status, skip_reason=result.skip_reason, error=result.error))
-        return tuple(commits), tuple(steps)
+            commit = commit_sources(root, committed, message, runtime)
+            outcome = RepositoryCommit(repo, "committed" if commit else "no-changes", commit, message)
+            status, skip_reason = ("ok", None) if commit else ("skipped", "no-changes")
+        except (KeyboardInterrupt, InterruptedError):
+            outcome = RepositoryCommit(repo, "interrupted", message=message, error="Commit interrupted")
+            status, skip_reason = "interrupted", None
+        except (CommitFailed, OSError) as exc:
+            outcome = RepositoryCommit(repo, "failed", message=message, error=str(exc))
+            status, skip_reason = "failed", None
+        # A failure while reading git status ends before the timeline shows a commit step;
+        # the summary still names it.
+        if step is not None:
+            self._emit(StepFinished("repository-commit", ExecutionStepResult(
+                step, status, skip_reason=skip_reason, error=outcome.error), 1, 1))
+        return outcome, _commit_step_outcome(repo, status, skip_reason=skip_reason, error=outcome.error)
 
     def _capture(self, observation: Observation) -> SyncBasePayload:
         self.check_cancelled()
