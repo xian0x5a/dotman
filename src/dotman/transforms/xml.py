@@ -458,7 +458,7 @@ def render_xml_output(
 
     if base_root is None:
         if overlay_root is None:
-            raise ValueError(f"base XML file not found: {base_path}")
+            raise UsageError(f"base XML file not found: {base_path}")
         root = etree.Element(overlay_root.tag)
     else:
         root = build_tree_with_selector_action(

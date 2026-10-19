@@ -15,10 +15,6 @@ class HomeRewriteError(ValueError):
         self.path = path
 
 
-class HomeRewriteUsageError(HomeRewriteError, UsageError):
-    """The caller named an input that cannot be used, as opposed to a failure while reading it."""
-
-
 def _read_input(input_path: str | None) -> tuple[bytes, Path | None]:
     if input_path is None or input_path == "-":
         try:
@@ -30,7 +26,7 @@ def _read_input(input_path: str | None) -> tuple[bytes, Path | None]:
     try:
         return path.read_bytes(), path
     except FileNotFoundError as error:
-        raise HomeRewriteUsageError("input file does not exist", path=path) from error
+        raise UsageError(f"input file does not exist: {path}") from error
     except PermissionError as error:
         raise HomeRewriteError("input file is not readable", path=path) from error
     except OSError as error:

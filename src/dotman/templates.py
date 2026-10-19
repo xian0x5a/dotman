@@ -34,7 +34,11 @@ class JinjaRenderError(ValueError):
 
 
 class JinjaVarsError(JinjaRenderError, UsageError):
-    """A `[vars]` template is invalid (syntax error or reference cycle): a manifest or config mistake."""
+    """A `[vars]` template is invalid (syntax error or reference cycle): a manifest or config mistake.
+
+    A subclass rather than a UsageError raised at the CLI boundary because the error
+    surfaces deep in planning, and callers and tests handle it as a JinjaRenderError.
+    """
 
 
 def _shell_args(value: Any) -> str:

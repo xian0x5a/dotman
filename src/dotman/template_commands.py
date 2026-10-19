@@ -190,6 +190,13 @@ def run_patch_capture(
     from dotman.capture import capture_patch
     from dotman.command_runtime import current_command_runtime
 
+    for label, path_text in (
+        ("repo path", repo_path),
+        ("review repo path", review_repo_path),
+        ("review live path", review_live_path),
+    ):
+        if path_text is not None and not Path(path_text).expanduser().exists():
+            raise UsageError(f"{label} does not exist: {path_text}")
     resolved_repo_path = Path(repo_path).expanduser().resolve()
     variables = _template_vars_from_dotman_env(dict(os.environ))
     _apply_template_var_assignments(variables, var_assignments)

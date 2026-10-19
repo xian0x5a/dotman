@@ -7,7 +7,7 @@ import tomllib
 from dotman.errors import UsageError
 
 
-class TomlLoadError(ValueError):
+class TomlLoadError(UsageError):
     def __init__(
         self,
         *,
@@ -28,22 +28,17 @@ class TomlLoadError(ValueError):
         return format_toml_load_error(self)
 
 
-class UserTomlLoadError(TomlLoadError, UsageError):
-    """Malformed TOML the user wrote (manifest, profile, config): exit 2, unlike dotman-written state."""
-
-
 def load_toml_file(
     path: Path,
     *,
     context: str,
     package_repo: str | None = None,
     package_id: str | None = None,
-    dotman_written: bool = False,
 ) -> Any:
     try:
         return tomllib.loads(path.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError as exc:
-        raise (TomlLoadError if dotman_written else UserTomlLoadError)(
+        raise TomlLoadError(
             context=context,
             path=path,
             detail=str(exc),
@@ -59,12 +54,11 @@ def load_toml_text(
     path: Path | None = None,
     package_repo: str | None = None,
     package_id: str | None = None,
-    dotman_written: bool = False,
 ) -> Any:
     try:
         return tomllib.loads(text)
     except tomllib.TOMLDecodeError as exc:
-        raise (TomlLoadError if dotman_written else UserTomlLoadError)(
+        raise TomlLoadError(
             context=context,
             path=path,
             detail=str(exc),

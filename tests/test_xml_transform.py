@@ -678,7 +678,7 @@ def test_missing_base_file_fails_cleanly(tmp_path, capsys) -> None:
 
     missing_path = tmp_path / "missing.xml"
 
-    assert cli.main(["transform", "xml", str(missing_path), "-", "--mode", "cleanup", "--selectors", "config/a"]) == 1
+    assert cli.main(["transform", "xml", str(missing_path), "-", "--mode", "cleanup", "--selectors", "config/a"]) == 2
     assert f"base XML file not found: {missing_path}" in capsys.readouterr().err
 
 

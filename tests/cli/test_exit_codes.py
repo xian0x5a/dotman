@@ -4,7 +4,8 @@
 1   runtime failure: any error that is not a usage error, unattended decisions
     (InteractionRequiredError), Sync Base store errors, `doctor` unhealthy,
     malformed input documents and dotman-written state
-2   usage/config error: argparse syntax, selector/scope/manifest/config validation
+2   usage/config error: argparse syntax, selector/scope/manifest/config validation,
+    a path named on the command line that does not exist
 130 interrupt (covered by the interrupt tests)
 """
 
@@ -138,6 +139,10 @@ CASES = [
     ),
     Case("malformed-transform-input", _malformed_transform_stdin, ("transform", "json", "-", "-", "--mode", "cleanup"), 1),
     Case("unreadable-rewrite-stdin", _unreadable_rewrite_stdin, ("rewrite", "home", "expand"), 1),
+    Case(
+        "missing-path-named-on-command-line", _no_default_config,
+        ("capture", "patch", "--repo-path", "/nonexistent/dotman-source", "--render", "jinja"), 2,
+    ),
     Case("corrupt-dotman-written-state", _corrupt_tracked_state, ("list", "tracked"), 1),
     Case("doctor-unhealthy", _missing_repo_path, ("doctor",), 1),
     Case("failing-ignore-command", _failing_ignore_command, ("push", "--dry-run"), 1, (True,)),

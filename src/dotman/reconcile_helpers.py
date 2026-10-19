@@ -23,7 +23,7 @@ def run_jinja_reconcile(
     if not resolved_repo_path.exists():
         raise UsageError(f"repo path does not exist: {resolved_repo_path}")
     if not resolved_repo_path.is_file():
-        raise UsageError(f"jinja reconcile requires a file repo path: {resolved_repo_path}")
+        raise ValueError(f"jinja reconcile requires a file repo path: {resolved_repo_path}")
 
     additional_sources = [str(path) for path in discover_template_file_dependencies(resolved_repo_path)]
     return run_basic_reconcile(

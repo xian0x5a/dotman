@@ -13,7 +13,7 @@ import tomlkit
 
 from dotman import file_access
 from dotman.atomic_files import write_bytes_atomic, write_text_atomic
-from dotman.toml_utils import load_toml_file
+from dotman.toml_utils import TomlLoadError, load_toml_file
 from dotman.models import PackagePlan, SnapshotConfig
 
 
@@ -270,7 +270,11 @@ def find_snapshot_matches(snapshot_root: Path, reference: str | None) -> list[Sn
 
 def load_snapshot(snapshot_root: Path) -> SnapshotRecord:
     manifest_path = snapshot_root / "manifest.toml"
-    payload = load_toml_file(manifest_path, context="snapshot manifest", dotman_written=True)
+    try:
+        payload = load_toml_file(manifest_path, context="snapshot manifest")
+    except TomlLoadError as exc:
+        # dotman wrote this manifest: corruption is a runtime failure, not a usage error.
+        raise ValueError(str(exc)) from exc
     snapshot_id = payload.get("snapshot_id")
     created_at = payload.get("created_at")
     status = payload.get("status")

@@ -12,7 +12,7 @@ import tomlkit
 
 from dotman.atomic_files import write_text_atomic
 from dotman.errors import UsageError
-from dotman.toml_utils import load_toml_file
+from dotman.toml_utils import TomlLoadError, load_toml_file
 from dotman.models import (
     FullSpecSelector,
     TrackableCatalogEntry,
@@ -324,7 +324,12 @@ def tracked_packages_file_path(state_dir: Path) -> Path:
 def read_tracked_packages_file(state_path: Path) -> list[TrackedPackageEntry]:
     if not state_path.exists():
         return []
-    payload = load_toml_file(state_path, context="tracked packages file", dotman_written=True)
+    try:
+        payload = load_toml_file(state_path, context="tracked packages file")
+    except TomlLoadError as exc:
+        # dotman wrote this file, so corruption is a runtime failure (exit 1), not
+        # the user's TOML to fix like a manifest or config (TomlLoadError, exit 2).
+        raise TrackedPackagesFileError(state_path, f"must be valid TOML: {exc.detail}") from exc
     schema_version = payload.get("schema_version")
     if schema_version != TRACKED_PACKAGES_SCHEMA_VERSION:
         raise TrackedPackagesFileError(state_path, f"must declare schema_version = {TRACKED_PACKAGES_SCHEMA_VERSION}")
