@@ -185,12 +185,15 @@ class ReviewDocument:
         grid.add_column(width=1, no_wrap=True)
         grid.add_column(ratio=1, overflow="fold")
         previous_changed = False
-        for line in render_diff_lines(lines, use_color=self.use_color):
+        for raw, line in zip(lines, render_diff_lines(lines, use_color=self.use_color), strict=True):
             marker_text = Text.from_ansi(line.marker)
             # Tag only a block's first line, so change navigation stops once per block.
             if line.changed and not previous_changed:
                 marker_text.apply_meta(REVIEW_CHANGE_META)
-            previous_changed = line.changed
+            # "\ No newline at end of file" annotates the line above it, so it
+            # neither starts nor ends a block (it sits between -old and +new).
+            if not raw.startswith("\\"):
+                previous_changed = line.changed
             grid.add_row(marker_text, mark(Text.from_ansi(line.content)))
         return grid
 

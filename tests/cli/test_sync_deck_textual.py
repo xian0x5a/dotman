@@ -1143,6 +1143,23 @@ def test_full_view_lands_on_off_screen_change_and_steps_between_change_blocks(tm
         run(interact())
 
 
+def test_full_view_no_newline_marker_keeps_replaced_last_line_one_change_stop(tmp_path, monkeypatch):
+    # "\\ No newline at end of file" sits between the removed and added line.
+    repo = b"".join(b"row-%02d\n" % index for index in range(10)) + b"old"
+    engine = make_engine(tmp_path, monkeypatch, [("one", "push-only", repo, repo.replace(b"old", b"new"), "")])
+    with engine.open_sync_session(engine.resolve_sync_scope([]), preview=True) as session:
+        app = SyncDeckApp(CommandDeck(session, use_color=False))
+
+        async def interact():
+            async with app.run_test(size=(80, 40)) as pilot:
+                await pilot.press("enter", "v")
+                await pilot.pause()
+                assert title_text(app) == ":: Full View"
+                assert review_text(app).count("No newline at end of file") == 2
+                assert len(app.query_one(sync_deck.ReviewBody).change_rows) == 1
+        run(interact())
+
+
 def test_full_view_menu_offers_each_diff_and_shows_whole_merge_output(tmp_path, monkeypatch):
     from textual.widgets import OptionList
     from tests.engine.test_sync_both_convergence import established
