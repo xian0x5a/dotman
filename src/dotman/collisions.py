@@ -100,7 +100,7 @@ def resolve_tracked_target_winners(
 class TargetClaim:
     """One path-claiming target, as ownership checks see it."""
 
-    # Package instance (`package` or `package<profile>`) that owns the claim.
+    # Repo-qualified package instance (`repo:package` or `repo:package<profile>`) that owns the claim.
     # Only claims from the same instance skip each other's reserved paths.
     owner: str
     # Canonical `repo:package.target` identity, for messages.
@@ -164,7 +164,6 @@ def operation_write_path(*, repo_path: Path, live_path: Path, operation: str) ->
 
 
 def validate_reserved_path_conflicts(
-    repo_name: str,
     packages: list[PackageSpec],
     claims: list[TargetClaim],
     context: dict[str, Any],
@@ -177,23 +176,22 @@ def validate_reserved_path_conflicts(
             rendered_path = render_template_string(reserved_path, context, base_dir=package.package_root, source_path=package.package_root)
             reserved_claims.append((owner_for_package(package.id), expand_path(rendered_path, dereference=False)))
 
-    validate_reserved_path_claims(repo_name=repo_name, target_claims=claims, reserved_claims=reserved_claims)
+    validate_reserved_path_claims(target_claims=claims, reserved_claims=reserved_claims)
 
 
 def validate_reserved_path_claims(
     *,
-    repo_name: str,
     target_claims: list[TargetClaim],
     reserved_claims: list[tuple[str, Path]],
 ) -> None:
-    """Reject claims inside another package instance's reserved paths, within one repo."""
+    """Reject claims inside another package instance's reserved paths, across all repos."""
     for owner, reserved_path in reserved_claims:
         for claim in target_claims:
             if owner == claim.owner:
                 continue
             if paths_conflict(reserved_path, claim.live_path):
                 raise ValueError(
-                    f"reserved path conflict: {repo_name}:{owner} reserves {reserved_path} "
+                    f"reserved path conflict: {owner} reserves {reserved_path} "
                     f"and {claim.label} maps to {claim.live_path}"
                 )
 
@@ -203,8 +201,8 @@ def validate_reserved_path_claims(
                 continue
             if paths_conflict(reserved_path, other_reserved_path):
                 raise ValueError(
-                    f"reserved path conflict: {repo_name}:{owner} reserves {reserved_path} "
-                    f"and {repo_name}:{other_owner} reserves {other_reserved_path}"
+                    f"reserved path conflict: {owner} reserves {reserved_path} "
+                    f"and {other_owner} reserves {other_reserved_path}"
                 )
 
 

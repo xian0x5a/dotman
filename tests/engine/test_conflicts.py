@@ -8,6 +8,7 @@ from dotman.engine import DotmanEngine
 from tests.helpers import open_tracked_pull_session
 from tests.helpers import (
     write_manager_config,
+    write_named_manager_config,
     write_profile_ambiguous_dependency_repo,
     write_single_repo_config,
     write_tracked_packages_state,
@@ -430,6 +431,54 @@ def test_package_reserved_paths_conflict_with_other_package_reserved_paths(
         ValueError,
         match=r"reserved path conflict: fixture:alpha reserves .+shared and fixture:beta reserves .+shared/session",
     ):
+        engine.resolve_sync_scope()
+
+
+@pytest.mark.parametrize(
+    ("second_repo_package_id", "second_repo_reserved_path", "match"),
+    [
+        # Same package ID in both repos: claims must be told apart by repo.
+        ("app", None, r"reserved path conflict: first:app reserves .+shared and second:app\.conf maps to .+shared/conf\.txt"),
+        ("other", "~/.local/share/shared", r"reserved path conflict: first:app reserves .+shared and second:other reserves .+shared"),
+    ],
+    ids=["target-inside-other-repo-reservation", "same-reserved-path"],
+)
+def test_package_reserved_paths_conflict_across_repos(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    second_repo_package_id: str,
+    second_repo_reserved_path: str | None,
+    match: str,
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+
+    def write_repo(repo_root: Path, package_id: str, *, reserved_path: str | None, target_path: str | None) -> None:
+        (repo_root / "profiles").mkdir(parents=True)
+        (repo_root / "profiles" / "default.toml").write_text("", encoding="utf-8")
+        package_root = repo_root / "packages" / package_id
+        (package_root / "files").mkdir(parents=True)
+        (package_root / "files" / "conf.txt").write_text("value\n", encoding="utf-8")
+        lines = [f'reserved_paths = ["{reserved_path}"]'] if reserved_path else []
+        if target_path:
+            lines += ["[targets.conf]", 'source = "files/conf.txt"', f'path = "{target_path}"']
+        (package_root / "package.toml").write_text("\n".join([*lines, ""]), encoding="utf-8")
+
+    first_repo, second_repo = tmp_path / "first", tmp_path / "second"
+    write_repo(first_repo, "app", reserved_path="~/.local/share/shared", target_path="~/.config/first.txt")
+    write_repo(
+        second_repo,
+        second_repo_package_id,
+        reserved_path=second_repo_reserved_path,
+        target_path=None if second_repo_reserved_path else "~/.local/share/shared/conf.txt",
+    )
+    config_path = write_named_manager_config(tmp_path, {"first": first_repo, "second": second_repo})
+    write_tracked_packages_state(tmp_path / "state", repo_name="first", entries=[("app", "default")])
+    write_tracked_packages_state(tmp_path / "state", repo_name="second", entries=[(second_repo_package_id, "default")])
+    engine = DotmanEngine.from_config_path(config_path)
+
+    with pytest.raises(ValueError, match=match):
         engine.resolve_sync_scope()
 
 

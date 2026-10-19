@@ -78,7 +78,7 @@ under `examples/repo/`.
 - Target-level `sync_policy` overrides the package default for that target.
 - `push-only-delete` participates in Push and Sync, deleting eligible live files while retaining repository sources. Unified exclusions protect directory children.
 - Package inheritance should merge `sync_policy` with last-wins behavior, just like other scalar fields.
-- Target and reserved-path collision rules apply across all resolved package instances, including instances that come from the same `multi_instance` package definition.
+- Target and reserved-path collision rules apply across all resolved package instances, including instances in different repos and instances that come from the same `multi_instance` package definition.
 - Keep target reuse explicit by splitting shared logic into smaller packages or using normal `depends`; package dependencies stay package/group-only.
 
 ## Package Identity Modes (`binding_mode`)
