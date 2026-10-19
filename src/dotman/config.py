@@ -84,6 +84,8 @@ def validate_state_key(state_key: object, *, repo_name: str) -> str:
         raise UsageError(f"repo '{repo_name}' state_key must not be '.' or '..'")
     if "/" in normalized or "\\" in normalized:
         raise UsageError(f"repo '{repo_name}' state_key must not contain path separators")
+    # Checked on the stripped key, which is the one that names the state directory.
+    validate_printable_name(normalized, kind="state_key")
     return normalized
 
 
@@ -135,7 +137,7 @@ def load_manager_config(config_path: str | Path | None = None) -> ManagerConfig:
             raise ManagerConfigLoadError(
                 path=resolved_path,
                 detail=str(exc),
-                hint="Rename the [repos.<name>] table. A repo name cannot be blank or contain / . : @ < > or a backslash.",
+                hint="Rename the [repos.<name>] table. A repo name must be printable and cannot be blank or contain / . : @ < > or a backslash.",
             ) from None
         if not isinstance(repo_payload, dict):
             raise UsageError(f"repo entry '{repo_name}' must be a table")
@@ -155,7 +157,10 @@ def load_manager_config(config_path: str | Path | None = None) -> ManagerConfig:
             )
         seen_orders[order_value] = repo_name
         state_key_value = repo_payload.get("state_key", repo_name)
-        state_key = validate_state_key(state_key_value, repo_name=repo_name)
+        try:
+            state_key = validate_state_key(state_key_value, repo_name=repo_name)
+        except UsageError as exc:
+            raise ManagerConfigLoadError(path=resolved_path, detail=str(exc)) from None
         if state_key in seen_state_keys:
             raise UsageError(
                 f"repo state_key values must be unique: {repo_name} and {seen_state_keys[state_key]} both use '{state_key}'"

@@ -20,9 +20,9 @@ This reference owns user-level manager configuration. See
 - Repo `state_key` values should be unique.
 - If `state_key` is omitted, dotman should default it to the repo name.
 - Dotman should derive the repo state dir as `$XDG_STATE_HOME/dotman/repos/<state_key>/`.
-- `state_key` must be a non-empty simple key and must not contain path separators or use `.` / `..`.
+- `state_key` must be a non-empty simple key and must not contain path separators, use `.` / `..`, or contain a character that fails `str.isprintable()`. A bad key is a usage error that names the config file.
 - Repo names should be treated as stable identifiers, because dotman also uses the repo name to locate per-repo local overrides under XDG config.
-- A repo name is the `repo` in `repo:package` and a directory under `repos/`, so it follows the package ID rules without namespaces: it must not be blank, contain `\ : @ < > .` or `/`, or contain a character that fails `str.isprintable()`. A bad name is a usage error that names the config file and shows the name escaped, and it is checked before `state_key`.
+- A repo name is the `repo` in `repo:package` and a directory under `repos/`, so it follows the package ID rules without namespaces: it must not be blank, contain `\ : @ < > .` or `/`, or contain a character that fails `str.isprintable()`. A bad name is a usage error that names the config file and shows the name with each unprintable character as `\uNNNN`, and it is checked before `state_key`.
 
 ## Local Overrides
 
