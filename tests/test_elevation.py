@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 import os
 import pty
+import select
 import signal
 import socket
-import select
 import subprocess
 import sys
 import termios
