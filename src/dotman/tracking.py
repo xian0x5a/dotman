@@ -25,6 +25,7 @@ from dotman.models import (
 )
 from dotman.package_resolution import (
     bound_profile_for_package,
+    UnresolvedSelectorError,
     parse_full_spec_selector_text,
     resolve_package_ids,
 )
@@ -358,6 +359,11 @@ def read_effective_tracked_package_entries(repo: Repository) -> list[FullSpecSel
 
 
 
+def read_persisted_tracked_package_entries(repo: Repository) -> list[FullSpecSelector]:
+    return persisted_tracked_package_entries_for_repo(repo, read_tracked_package_entries(repo))
+
+
+
 def expand_tracked_package_entry(
     context: TrackedStateContext,
     binding: FullSpecSelector,
@@ -482,16 +488,9 @@ def effective_tracked_package_entries_for_repo(
 ) -> list[FullSpecSelector]:
     effective_bindings: list[FullSpecSelector] = []
     for binding in raw_bindings:
-        try:
-            expanded_bindings = expand_tracked_package_entry_in_repo(repo, binding)
-        except PersistedTrackedPackageEntryResolutionError:
+        if not is_resolvable_persisted_tracked_package_entry(repo, binding):
             continue
-        for expanded_binding in expanded_bindings:
-            effective_bindings = _normalize_tracked_package_entries_in_repo(
-                repo,
-                effective_bindings,
-                expanded_binding,
-            )
+        effective_bindings = _normalize_tracked_package_entries_in_repo(repo, effective_bindings, binding)
     return effective_bindings
 
 
@@ -502,12 +501,9 @@ def persisted_tracked_package_entries_for_repo(
 ) -> list[FullSpecSelector]:
     # Rows that do not resolve right now (package on another branch, profile removed)
     # are kept verbatim so they stay listed and removable after unrelated writes.
-    unresolved_bindings: list[FullSpecSelector] = []
-    for binding in raw_bindings:
-        try:
-            expand_tracked_package_entry_in_repo(repo, binding)
-        except PersistedTrackedPackageEntryResolutionError:
-            unresolved_bindings.append(binding)
+    unresolved_bindings = [
+        binding for binding in raw_bindings if not is_resolvable_persisted_tracked_package_entry(repo, binding)
+    ]
     return [*effective_tracked_package_entries_for_repo(repo, raw_bindings), *unresolved_bindings]
 
 
@@ -542,23 +538,6 @@ def validate_tracked_package_entries(
 
 
 
-def _skips_conflict_validation(
-    context: TrackedStateContext,
-    raw_entries_by_repo: dict[str, list[FullSpecSelector]],
-    rewritten_repo_names: set[str],
-) -> bool:
-    # Validation is still skipped while rows are invalid (#183), but the guard sees
-    # rewritten repos without the unresolved rows they keep, as when those rows were
-    # dropped; keeping them must not switch validation off.
-    guard_bindings = {
-        repo_name: effective_tracked_package_entries_for_repo(get_repository(context, repo_name), rows)
-        if repo_name in rewritten_repo_names else rows
-        for repo_name, rows in raw_entries_by_repo.items()
-    }
-    return bool(list_invalid_explicit_package_entries(context, bindings_by_repo=guard_bindings))
-
-
-
 def record_tracked_package_entry(
     context: "PlanningContext",
     binding: FullSpecSelector,
@@ -574,7 +553,7 @@ def record_tracked_package_entry(
         expand_tracked_package_entry_in_repo(repo, binding),
     )
     raw_entries_by_repo[repo.config.name] = normalized
-    if validate and not _skips_conflict_validation(state, raw_entries_by_repo, {repo.config.name}):
+    if validate:
         validate_tracked_package_entries(
             context,
             effective_tracked_package_entries_by_repo(state, raw_entries_by_repo),
@@ -595,11 +574,10 @@ def validate_tracked_package_entry(
         persisted_tracked_package_entries_for_repo(repo, raw_entries_by_repo.get(repo.config.name, [])),
         expand_tracked_package_entry_in_repo(repo, binding),
     )
-    if not _skips_conflict_validation(state, raw_entries_by_repo, {repo.config.name}):
-        validate_tracked_package_entries(
-            context,
-            effective_tracked_package_entries_by_repo(state, raw_entries_by_repo),
-        )
+    validate_tracked_package_entries(
+        context,
+        effective_tracked_package_entries_by_repo(state, raw_entries_by_repo),
+    )
 
 
 
@@ -676,18 +654,16 @@ def remove_persisted_tracked_package_entry(
     if record.repo is not None:
         raw_entries_by_repo = raw_tracked_package_entries_by_repo(state)
         raw_entries_by_repo[record.repo.config.name] = remaining
-        rewritten_repo_names = {record.repo.config.name} if record.issue is None else set()
-        if not _skips_conflict_validation(state, raw_entries_by_repo, rewritten_repo_names):
-            try:
-                validate_tracked_package_entries(
-                    context,
-                    effective_tracked_package_entries_by_repo(state, raw_entries_by_repo),
-                )
-            except TrackedTargetConflictError as exc:
-                binding_label = f"{record.package_entry.repo}:{record.package_entry.selector}@{record.package_entry.profile}"
-                raise ValueError(
-                    f"cannot {operation} '{binding_label}': removing this binding would expose {exc}"
-                ) from None
+        try:
+            validate_tracked_package_entries(
+                context,
+                effective_tracked_package_entries_by_repo(state, raw_entries_by_repo),
+            )
+        except TrackedTargetConflictError as exc:
+            binding_label = f"{record.package_entry.repo}:{record.package_entry.selector}@{record.package_entry.profile}"
+            raise ValueError(
+                f"cannot {operation} '{binding_label}': removing this binding would expose {exc}"
+            ) from None
     write_tracked_package_entries_file(record.state_dir, remaining)
     return record.package_entry
 
@@ -725,17 +701,16 @@ def remove_tracked_package_entries(
     if not removed:
         return []
 
-    if not _skips_conflict_validation(state, raw_entries_by_repo, set(remaining_by_repo)):
-        try:
-            validate_tracked_package_entries(
-                context,
-                effective_tracked_package_entries_by_repo(state, raw_entries_by_repo),
-            )
-        except TrackedTargetConflictError as exc:
-            label = operation_label or ", ".join(f"{binding.repo}:{binding.selector}@{binding.profile}" for binding in removed)
-            raise ValueError(
-                f"cannot {operation} '{label}': removing these bindings would expose {exc}"
-            ) from None
+    try:
+        validate_tracked_package_entries(
+            context,
+            effective_tracked_package_entries_by_repo(state, raw_entries_by_repo),
+        )
+    except TrackedTargetConflictError as exc:
+        label = operation_label or ", ".join(f"{binding.repo}:{binding.selector}@{binding.profile}" for binding in removed)
+        raise ValueError(
+            f"cannot {operation} '{label}': removing these bindings would expose {exc}"
+        ) from None
 
     for repo_name, remaining in remaining_by_repo.items():
         repo = get_repository(state, repo_name)
@@ -779,39 +754,50 @@ def configured_persisted_tracked_package_entry_records(
         repo = get_repository(context, repo_config.name)
         for binding in current_bindings.get(repo_config.name, []):
             try:
-                resolved_bindings = resolve_persisted_tracked_package_entry(repo, binding)
+                package_ids = resolve_persisted_tracked_package_entry(repo, binding)
             except PersistedTrackedPackageEntryResolutionError as exc:
-                invalid_records.append(
-                    PersistedTrackedPackageEntryRecord(
-                        state_key=repo.config.state_key,
-                        state_dir=repo.config.state_path,
-                        package_entry=binding,
-                        repo=repo,
-                        issue=TrackedPackageEntryIssue(
-                            state_key=repo.config.state_key,
-                            repo=binding.repo,
-                            selector=binding.selector,
-                            profile=binding.profile,
-                            state="invalid",
-                            reason=exc.reason,
-                            message=exc.message,
-                        ),
-                    )
-                )
+                invalid_records.append(_invalid_persisted_record(repo, binding, reason=exc.reason, message=exc.message))
                 continue
-            for resolved_binding in resolved_bindings:
-                valid_records.append(
-                    PersistedTrackedPackageEntryRecord(
-                        state_key=repo.config.state_key,
-                        state_dir=repo.config.state_path,
-                        package_entry=resolved_binding,
-                        repo=repo,
-                        selector_kind="package",
-                        package_ids=tuple(resolve_package_ids(repo, resolved_binding.selector, "package")),
-                    )
+            except ValueError as exc:
+                # Planning fails on a broken manifest; list and doctor still report the row with the cause.
+                invalid_records.append(_invalid_persisted_record(repo, binding, reason="package_invalid", message=str(exc)))
+                continue
+            valid_records.append(
+                PersistedTrackedPackageEntryRecord(
+                    state_key=repo.config.state_key,
+                    state_dir=repo.config.state_path,
+                    package_entry=binding,
+                    repo=repo,
+                    selector_kind="package",
+                    package_ids=package_ids,
                 )
+            )
     return valid_records, invalid_records
 
+
+
+def _invalid_persisted_record(
+    repo: Repository,
+    binding: FullSpecSelector,
+    *,
+    reason: str,
+    message: str,
+) -> PersistedTrackedPackageEntryRecord:
+    return PersistedTrackedPackageEntryRecord(
+        state_key=repo.config.state_key,
+        state_dir=repo.config.state_path,
+        package_entry=binding,
+        repo=repo,
+        issue=TrackedPackageEntryIssue(
+            state_key=repo.config.state_key,
+            repo=binding.repo,
+            selector=binding.selector,
+            profile=binding.profile,
+            state="invalid",
+            reason=reason,
+            message=message,
+        ),
+    )
 
 
 def orphan_persisted_tracked_package_entry_records(
@@ -864,7 +850,16 @@ def all_persisted_tracked_package_entry_records(
 def resolve_persisted_tracked_package_entry(
     repo: Repository,
     binding: FullSpecSelector,
-) -> list[FullSpecSelector]:
+) -> tuple[str, ...]:
+    """Return the package IDs a persisted row tracks, or raise why it does not resolve.
+
+    The one validity rule for persisted rows: list, doctor, untrack, planning and
+    writes all use it, so they agree on which rows are invalid. Only stale state
+    (a profile, package, or dependency that no longer exists) makes a row invalid;
+    a broken package manifest is a repo error and propagates as a plain ValueError.
+    """
+    if binding.profile not in repo.profiles:
+        raise PersistedTrackedPackageEntryResolutionError(reason="unknown_profile", message="unknown profile")
     if binding.selector not in repo.packages:
         if binding.selector in repo.groups:
             raise PersistedTrackedPackageEntryResolutionError(
@@ -872,16 +867,21 @@ def resolve_persisted_tracked_package_entry(
                 message="tracked packages file rows must reference packages, not groups",
             )
         raise PersistedTrackedPackageEntryResolutionError(reason="unknown_selector", message="unknown selector")
-    resolved_bindings = [binding]
     try:
-        for resolved_binding in resolved_bindings:
-            resolve_package_ids(repo, resolved_binding.selector, "package")
-    except ValueError as exc:
+        return tuple(resolve_package_ids(repo, binding.selector, "package"))
+    except UnresolvedSelectorError as exc:
         raise PersistedTrackedPackageEntryResolutionError(
             reason="dependency_resolution_failed",
             message="dependency resolution failed",
         ) from exc
-    return resolved_bindings
+
+
+def is_resolvable_persisted_tracked_package_entry(repo: Repository, binding: FullSpecSelector) -> bool:
+    try:
+        resolve_persisted_tracked_package_entry(repo, binding)
+    except PersistedTrackedPackageEntryResolutionError:
+        return False
+    return True
 
 
 

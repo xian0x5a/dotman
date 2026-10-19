@@ -124,7 +124,7 @@ def test_track_resolver_skips_declined_different_profile_implicit_override(tmp_p
     write_tracked_packages_state(
         tmp_path / "state",
         repo_name="example",
-        entries=[("os/arch", "basic")],
+        entries=[("core-cli-meta", "basic")],
     )
     interaction = ScriptedInteraction(confirmations=[False])
 

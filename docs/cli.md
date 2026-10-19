@@ -736,6 +736,8 @@ Examples: `dotman pull main:git.config`,
 - `list tracked` should not run push/pull planning or execute render/capture commands.
 - `list tracked` should include package-level `state` as `explicit` or `implicit`.
 - `list tracked` should include invalid explicit package entries for configured repos when persisted state no longer resolves cleanly.
+- A persisted explicit package entry is invalid when its profile no longer exists, its selector is not a package (missing, or a group), or its package dependencies do not resolve. `list tracked`, `doctor`, `untrack`, `track`, and push/pull/sync planning all use this one rule: an invalid entry is reported by `list tracked` and `doctor`, kept in state until untracked, and skipped by planning and tracked-target conflict checks instead of failing them.
+- A tracked package whose manifest is broken (for example an `extends` cycle) is a repo error, not a stale entry: `list tracked` and `doctor` report it as invalid with the error, while planning and `track`/`untrack` fail with that error.
 - `list tracked` should include orphan explicit package entries discovered under the manager state root when a persisted `state_key` no longer maps to configured repos.
 - Human `list tracked` output should print one flat `repo:package-or-selector state` list.
 - Human `list tracked` output should list explicit and implicit packages first, then orphan entries, then invalid entries.

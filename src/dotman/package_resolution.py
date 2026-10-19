@@ -9,6 +9,10 @@ from dotman.models import (
 from dotman.repository import Repository
 
 
+class UnresolvedSelectorError(ValueError):
+    """A selector, dependency, or group member names nothing in the repo."""
+
+
 def parse_full_spec_selector_text(selector_text: str) -> tuple[str | None, str, str | None]:
     repo_name: str | None = None
     selector_and_profile = selector_text
@@ -66,11 +70,11 @@ def resolve_package_ids(
         package_exists = current_selector in repo.packages
         group_exists = current_selector in repo.groups
         if package_exists and group_exists:
-            raise ValueError(
+            raise UnresolvedSelectorError(
                 f"selector '{current_selector}' is ambiguous between package and group in repo '{repo.config.name}'"
             )
         if not package_exists and not group_exists:
-            raise ValueError(
+            raise UnresolvedSelectorError(
                 f"{source} '{current_selector}' does not resolve in repo '{repo.config.name}'"
             )
 
