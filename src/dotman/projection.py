@@ -506,7 +506,8 @@ def directory_child_policy(
             compare_repo = rule.compare_repo
         if rule.compare_live_explicit:
             compare_live = rule.compare_live
-        if rule.editor_explicit:
+        # A rule that declares only Additional Sources keeps the target's editor selection.
+        if rule.editor_explicit or rule.editor.additional_sources_explicit:
             editor = rule.editor
         if rule.sync_policy_explicit:
             sync_policy = rule.sync_policy

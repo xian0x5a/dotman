@@ -372,6 +372,8 @@ class Repository:
             merged = parent_spec if merged is None else merge_package_specs(merged, parent_spec)
         current = strip_package_extensions(loaded)
         merged = current if merged is None else merge_package_specs(merged, current)
+        # Patches address a path rule's effective values, which follow the merged target.
+        merged = path_rules_following_targets(merged)
         merged = patch_remove_and_append(
             merged,
             loaded.remove or (),

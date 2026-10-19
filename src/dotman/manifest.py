@@ -589,7 +589,8 @@ def normalize_target_path_rules(
                 default_elevation=default_command_elevation,
             )
             if preset_editor_payload is not None
-            else (inherited_editor or EditorSpec())
+            # The target's sources are inherited, not declared by this rule.
+            else replace(inherited_editor or EditorSpec(), additional_sources_explicit=False)
         )
         if rule_editor_payload is None:
             editor = base_editor
@@ -896,28 +897,17 @@ def strip_package_extensions(package: PackageSpec) -> PackageSpec:
 
 
 def _merge_editor_specs(base: EditorSpec, override: EditorSpec, *, override_explicit: bool) -> EditorSpec:
-    if not override_explicit:
-        return base
     # Provider, I/O, and elevation are one atomic Editor selection. Source
-    # declarations are independent list configuration and inherit unless the
-    # overriding editor explicitly supplies them.
+    # declarations are independent list configuration: each side is taken from
+    # the override only if the override declared it, so a sources-only
+    # declaration survives an override that selects no editor.
+    selection = override if override_explicit else base
+    sources = override if override.additional_sources_explicit else base
     return replace(
-        override,
-        additional_sources=(
-            override.additional_sources
-            if override.additional_sources_explicit
-            else base.additional_sources
-        ),
-        additional_source_entries=(
-            override.source_entries()
-            if override.additional_sources_explicit
-            else base.source_entries()
-        ),
-        additional_sources_root=(
-            override.additional_sources_root
-            if override.additional_sources_explicit
-            else base.additional_sources_root
-        ),
+        selection,
+        additional_sources=sources.additional_sources,
+        additional_source_entries=sources.source_entries(),
+        additional_sources_root=sources.additional_sources_root,
         additional_sources_explicit=(
             override.additional_sources_explicit or base.additional_sources_explicit
         ),
@@ -989,7 +979,13 @@ def merge_target_specs(base: TargetSpec, override: TargetSpec) -> TargetSpec:
 
 
 def _path_rule_following_target(rule: TargetPathRule, target: TargetSpec) -> TargetPathRule:
-    editor = rule.editor if rule.editor_explicit else target.editor
+    # The rule's editor selection and its source list each follow the target
+    # unless the rule declared them. The merge ORs in the target's declaration
+    # flag; the rule keeps only its own so a later resolution can tell them apart.
+    editor = replace(
+        _merge_editor_specs(target.editor, rule.editor, override_explicit=rule.editor_explicit),
+        additional_sources_explicit=rule.editor.additional_sources_explicit,
+    )
     return replace(
         rule,
         render=rule.render if rule.render_explicit else target.render,
