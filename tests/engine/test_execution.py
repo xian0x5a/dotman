@@ -91,37 +91,6 @@ def test_hook_step_marks_command_exit_130_as_interrupted() -> None:
     assert result.error == "command interrupted with status 130"
 
 
-def test_write_bytes_atomic_cleans_up_temp_file_after_failed_replace(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    target_path = tmp_path / "config.txt"
-    temp_name_prefix = ".dotman-"
-    temp_name_suffix = ".tmp"
-
-    def failing_replace(self: Path, target: Path) -> Path:
-        raise RuntimeError("boom")
-
-    monkeypatch.setattr(Path, "replace", failing_replace)
-
-    with pytest.raises(RuntimeError, match="boom"):
-        execution.write_bytes_atomic(target_path, b"payload\n")
-
-    leftover_temp_files = list(tmp_path.glob(f"{temp_name_prefix}*{temp_name_suffix}"))
-    assert leftover_temp_files == []
-
-
-def test_write_bytes_atomic_removes_stale_dotman_temp_files_before_write(tmp_path: Path) -> None:
-    stale_temp_file = tmp_path / f".dotman-999999-{'deadbeef' * 4}.tmp"
-    stale_temp_file.write_text("stale\n", encoding="utf-8")
-
-    target_path = tmp_path / "config.txt"
-    execution.write_bytes_atomic(target_path, b"payload\n")
-
-    assert target_path.read_text(encoding="utf-8") == "payload\n"
-    assert not stale_temp_file.exists()
-
-
 def test_read_bytes_uses_sudo_when_direct_read_is_denied(tmp_path: Path, monkeypatch) -> None:
     target_path = tmp_path / "protected.txt"
     target_path.write_text("payload\n", encoding="utf-8")

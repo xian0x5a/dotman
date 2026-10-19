@@ -176,9 +176,18 @@ def test_write_symlink_atomic_preserves_the_destination_file_mode(tmp_path: Path
     assert stat.S_IMODE(destination_path.stat().st_mode) == 0o640
 
 
-def test_write_symlink_atomic_cleans_its_temporary_path_in_finally(
+@pytest.mark.parametrize(
+    "write_atomic",
+    [
+        lambda path: write_bytes_atomic(path, b"payload\n"),
+        lambda path: write_symlink_atomic(path, "destination"),
+    ],
+    ids=["bytes", "symlink"],
+)
+def test_atomic_writers_clean_their_temporary_path_in_finally(
     tmp_path: Path,
     monkeypatch,
+    write_atomic,
 ) -> None:
     def interrupt_replace(temp_path: Path, target_path: Path) -> Path:
         raise KeyboardInterrupt
@@ -186,7 +195,7 @@ def test_write_symlink_atomic_cleans_its_temporary_path_in_finally(
     monkeypatch.setattr(Path, "replace", interrupt_replace)
 
     with pytest.raises(KeyboardInterrupt):
-        write_symlink_atomic(tmp_path / "link", "destination")
+        write_atomic(tmp_path / "target")
 
     assert list(tmp_path.glob(".dotman-*.tmp")) == []
 
