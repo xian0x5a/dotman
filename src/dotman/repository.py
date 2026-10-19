@@ -17,11 +17,11 @@ from dotman.manifest import (
     normalize_gitignore_enabled,
     normalize_string_list,
     normalize_sync_policy,
-    patch_remove_and_append,
     strip_package_extensions,
     validate_supported_keys,
     validate_package_id,
 )
+from dotman.package_inheritance import patch_remove_and_append
 from dotman.models import (
     DefaultCommandElevationMode,
     GroupSpec,
