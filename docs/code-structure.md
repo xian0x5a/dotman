@@ -86,7 +86,7 @@ Current responsibility split:
   identity stand-ins; `terminal_safe_line` escapes every unprintable character, tab and newline included, for outside
   text inside a one-line row or field (live paths, OS messages, legacy tracked rows); `terminal_safe_text` keeps
   newline and tab for outside messages that span lines (error details, Sync diagnostics). `terminal_safe_content`
-  escapes only control characters other than tab and bidi controls, for file content lines in Sync Deck review diffs
+  escapes control characters except tab, plus U+2028/U+2029 and bidi controls, for file content lines in Sync Deck review diffs
   and conflict blocks, where icons and emoji must stay readable. It also holds the
   reserved characters of selector and profile IDs, which package, group, profile and repo names share
 - `sync_directory.py` — symmetric control-aware census and identity-derived child metadata; no aggregate payload or publication

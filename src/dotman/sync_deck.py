@@ -208,10 +208,18 @@ REVIEW_CONTEXT_LINES = 3
 CONFLICT_ELISION = "⋯"
 
 
+def git_lines(text: str) -> list[str]:
+    """Lines as Git splits them, each keeping its newline: unlike `str.splitlines`,
+    a form feed, U+2028 or lone carriage return stays inside its line."""
+    return [line for line in re.split("(?<=\n)", text) if line]
+
+
 def conflict_excerpt(content: bytes, *, description: str, full_context: bool = False) -> ReviewConflict | ReviewNote:
     """zdiff3 conflict blocks with surrounding context, like unified-diff hunks."""
     try:
-        lines = content.decode("utf-8").splitlines()
+        # Drop CRLF with the newline, as conflict detection does: Git writes a CRLF
+        # file's markers with CRLF, and an escaped \r would hide a bare "=======".
+        lines = [line.removesuffix("\n").removesuffix("\r") for line in git_lines(content.decode("utf-8"))]
     except UnicodeDecodeError:
         return ReviewNote(f"Binary {description}: {len(content)} bytes")
     in_block, block_lines = False, []
@@ -277,8 +285,8 @@ def _review_difference(
         ])
     if before_bytes != after_bytes:
         try:
-            before_lines = before_bytes.decode("utf-8").splitlines(keepends=True)
-            after_lines = after_bytes.decode("utf-8").splitlines(keepends=True)
+            before_lines = git_lines(before_bytes.decode("utf-8"))
+            after_lines = git_lines(after_bytes.decode("utf-8"))
             diff = unified_diff(
                 before_lines, after_lines,
                 fromfile="/dev/null" if isinstance(before, Missing) else before_label,
