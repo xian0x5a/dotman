@@ -61,7 +61,8 @@ class HumanExecutionRenderer:
 
     def render_restore_event(self, event: RestoreExecutionEvent) -> None:
         if isinstance(event, RestoreOperationStarted):
-            _print_restore_execution_header(
+            _print_restore_header(
+                "executing restore",
                 snapshot=event.snapshot,
                 action_count=event.action_count,
                 use_color=self.use_color,
@@ -856,15 +857,18 @@ def visible_restore_actions(actions: Sequence[Any]) -> list[Any]:
 
 
 def build_restore_review_items(snapshot: Any, actions: Sequence[Any]) -> list[ReviewItem]:
+    # Snapshot live paths are unique, and each restore action comes from one entry.
+    entries_by_live_path = {entry.live_path: entry for entry in snapshot.entries}
     review_items: list[ReviewItem] = []
     for action in actions:
         if action.action == "noop":
             continue
+        entry = entries_by_live_path[action.live_path]
         review_items.append(
             ReviewItem(
-                selection_label=f"snapshot:{snapshot.snapshot_id}",
-                package_id="snapshot",
-                target_name=str(action.live_path),
+                selection_label=entry.selection_label,
+                package_id=entry.package_id,
+                target_name=entry.target_name,
                 action=action.action,
                 operation="restore",
                 repo_path=action.snapshot_path,
@@ -1001,14 +1005,8 @@ def emit_restore_payload(
         print(json.dumps(payload, indent=2, sort_keys=True))
         return 0
 
-    _print_payload_header(f"{mode} restore", use_color=use_color)
-    print(f"  snapshot: {snapshot.snapshot_id}")
-    print(f"  created:  {snapshot.created_at}")
-    print(f"  status:   {snapshot.status}")
-    print(f"  {cli_style.render_summary_stat(label='paths', value=len(visible_actions), use_color=use_color)}")
+    _print_restore_header(f"{mode} restore", snapshot=snapshot, action_count=len(visible_actions), use_color=use_color)
     if not visible_actions:
-        print()
-        print(f"  {cli_style.render_payload_section_label('no pending target actions', use_color=use_color)}")
         return 0
     for action in visible_actions:
         print(
@@ -1019,11 +1017,14 @@ def emit_restore_payload(
     return 0
 
 
-def _print_restore_execution_header(*, snapshot: Any, action_count: int, use_color: bool) -> None:
-    _print_payload_header("executing restore", use_color=use_color)
-    print(f"  snapshot: {snapshot.snapshot_id}")
-    print(f"  created:  {snapshot.created_at}")
-    print(f"  status:   {snapshot.status}")
+def _print_restore_header(title: str, *, snapshot: Any, action_count: int, use_color: bool) -> None:
+    def label(text: str) -> str:
+        return cli_style.render_snapshot_metadata_label(text, use_color=use_color)
+
+    _print_payload_header(title, use_color=use_color)
+    print(f"  {label('snapshot:')} {cli_style.render_snapshot_ref(snapshot.snapshot_id, use_color=use_color)}")
+    print(f"  {label('created:')}  {cli_style.format_snapshot_timestamp(snapshot.created_at)}")
+    print(f"  {label('status:')}   {cli_style.render_snapshot_status(snapshot.status, use_color=use_color)}")
     print(f"  {cli_style.render_summary_stat(label='paths', value=action_count, use_color=use_color)}")
     if action_count == 0:
         print()

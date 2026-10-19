@@ -29,9 +29,10 @@ ReviewBytesLoader = Callable[[], bytes]
 
 @dataclass(frozen=True)
 class ReviewItem:
-    selection_label: str
-    package_id: str
-    target_name: str
+    # Restore items take identity from snapshot provenance, which may be missing.
+    selection_label: str | None
+    package_id: str | None
+    target_name: str | None
     action: str
     operation: str
     repo_path: Path

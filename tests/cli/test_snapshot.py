@@ -1,15 +1,21 @@
 from __future__ import annotations
 
 import json
+import re
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
+from dotman import cli_interaction
 from dotman.cli import main
+from dotman.cli_style import format_snapshot_timestamp
 from dotman.models import SnapshotConfig, TargetPlan
-from dotman.snapshot import create_push_snapshot, list_snapshots
+from dotman.snapshot import build_restore_actions, create_push_snapshot, list_snapshots
 from dotman.sync_session import AuthorizeSymlinkReplacement, SetApproval
 from tests.helpers import capture_parser_help, make_package_plan, write_named_manager_config
+
+ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
 
 
 def test_create_push_snapshot_skips_probe_targets(tmp_path: Path) -> None:
@@ -729,3 +735,61 @@ def test_push_snapshot_of_non_bmp_live_path_stays_listable_and_restorable(
     assert [entry["live_path"] for snapshot in snapshots for entry in snapshot["entries"]] == [str(live_path)]
     assert main(["--no-confirm", "--config", str(config_path), "restore"]) == 0
     assert live_path.read_text(encoding="utf-8") == "before push\n"
+
+
+def _push_snapshot_then_mutate_live(tmp_path: Path, monkeypatch) -> tuple[Path, Path]:
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    repo_root = tmp_path / "repo"
+    _write_snapshot_execution_repo(repo_root)
+    config_path = _write_snapshot_config(tmp_path, repo_root)
+    _write_tracked_binding(tmp_path / "state")
+    live_path = home / ".config" / "app" / "config.txt"
+    live_path.parent.mkdir(parents=True, exist_ok=True)
+    live_path.write_text("before push\n", encoding="utf-8")
+    assert main(["--no-confirm", "--config", str(config_path), "push"]) == 0
+    live_path.write_text("mutated after push\n", encoding="utf-8")
+    return config_path, live_path
+
+
+@pytest.mark.parametrize("use_color", [False, True])
+@pytest.mark.parametrize(
+    ("strip_provenance", "label"),
+    [(False, "fixture:app.config"), (True, "~/.../app/config.txt")],
+)
+def test_restore_review_labels_items_by_recorded_target_or_live_path(
+    tmp_path: Path, monkeypatch, capsys, strip_provenance: bool, label: str, use_color: bool,
+) -> None:
+    monkeypatch.setattr(cli_interaction, "colors_enabled", lambda: use_color)
+    _push_snapshot_then_mutate_live(tmp_path, monkeypatch)
+    snapshot = list_snapshots(tmp_path / "snapshots")[0]
+    if strip_provenance:
+        # Snapshot manifests may omit provenance; the live path still identifies the entry.
+        entries = tuple(replace(entry, repo_name=None, selection_label=None, package_id=None, target_name=None)
+                        for entry in snapshot.entries)
+        snapshot = replace(snapshot, entries=entries)
+    capsys.readouterr()
+
+    review_items = cli_interaction.build_restore_review_items(snapshot, build_restore_actions(snapshot))
+    cli_interaction.print_review_menu_items(review_items, operation="restore")
+    cli_interaction.print_review_diff_header(review_items[0], index=1, total=1)
+
+    output = ANSI_ESCAPE.sub("", capsys.readouterr().out)
+    assert f"[update] {label}:" in output
+    assert f"Diff 1/1: {label} [update]" in output
+    assert "snapshot:" not in output
+
+
+def test_restore_preview_and_execution_headers_render_snapshot_metadata_like_info_snapshot(
+    tmp_path: Path, monkeypatch, capsys,
+) -> None:
+    config_path, _live_path = _push_snapshot_then_mutate_live(tmp_path, monkeypatch)
+    snapshot = list_snapshots(tmp_path / "snapshots")[0]
+
+    for command in (["restore", "--dry-run"], ["restore"]):
+        capsys.readouterr()
+        assert main(["--no-confirm", "--config", str(config_path), *command]) == 0
+        output = capsys.readouterr().out
+        assert f"created:  {format_snapshot_timestamp(snapshot.created_at)}" in output
+        assert snapshot.created_at not in output

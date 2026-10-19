@@ -93,25 +93,6 @@ def repo_qualified_selector_text(*, repo_name: str, selector: str) -> str:
     return cli_style.repo_qualified_selector_text(repo_name=repo_name, selector=selector)
 
 
-def package_label_text(
-    *,
-    repo_name: str,
-    package_id: str,
-    bound_profile: str | None = None,
-    target_name: str | None = None,
-    package_first: bool = False,
-    include_repo_context: bool = False,
-) -> str:
-    return cli_style.package_label_text(
-        repo_name=repo_name,
-        package_id=package_id,
-        bound_profile=bound_profile,
-        target_name=target_name,
-        package_first=package_first,
-        include_repo_context=include_repo_context,
-    )
-
-
 def render_package_label(
     *,
     repo_name: str,
@@ -713,39 +694,40 @@ def resolve_trackable_selector_text(
     )
 
 
+def render_review_item_label(item: ReviewItem, *, full_paths: bool, use_color: bool) -> str:
+    # Snapshot manifests may omit an entry's provenance; its live path still identifies it.
+    if item.selection_label is None or item.package_id is None or item.target_name is None:
+        return display_cli_path(item.live_path, full_paths=full_paths)
+    return cli_style.render_package_target_label(
+        repo_name=repo_name_from_selection_label(item.selection_label),
+        package_id=item.package_id,
+        target_name=item.target_name,
+        bound_profile=item.bound_profile,
+        use_color=use_color,
+    )
+
+
 def print_review_item(index: int, item: ReviewItem, *, full_paths: bool | None = None) -> None:
     full_paths = _effective_full_paths(full_paths)
-    repo_name = repo_name_from_selection_label(item.selection_label)
-    bound_profile = getattr(item, "bound_profile", None)
-    package_target = package_label_text(
-        repo_name=repo_name,
-        package_id=item.package_id,
-        bound_profile=bound_profile,
-        target_name=item.target_name,
-    )
+    use_color = colors_enabled()
+    item_label = render_review_item_label(item, full_paths=full_paths, use_color=use_color)
     if item.is_probe:
-        if not colors_enabled():
-            print(f"  {index:>2}) [{item.action}] {package_target} [probe]")
+        if not use_color:
+            print(f"  {index:>2}) [{item.action}] {item_label} [probe]")
             return
         action_text = style_text(f"[{item.action}]", *MENU_ACTION_STYLE_BY_NAME.get(item.action, ("1",)))
-        package_label = render_package_target_label(
-            repo_name=repo_name,
-            package_id=item.package_id,
-            target_name=item.target_name,
-            bound_profile=bound_profile,
-        )
         probe_badge = cli_style.render_menu_badge("[probe]", use_color=True)
         print(
             f"  {style_text(f'{index:>2})', *MENU_INDEX_STYLE)} "
-            f"{action_text} {package_label} {probe_badge}"
+            f"{action_text} {item_label} {probe_badge}"
         )
         return
 
     diff_badge = "[diff unavailable]" if item.diff_unavailable_reason is not None else None
     source_path = display_cli_path(item.source_path, full_paths=full_paths)
     destination_path = display_cli_path(item.destination_path, full_paths=full_paths)
-    if not colors_enabled():
-        item_text = f"[{item.action}] {package_target}"
+    if not use_color:
+        item_text = f"[{item.action}] {item_label}"
         if diff_badge is not None:
             item_text += f" {diff_badge}"
         item_text += f": {source_path} -> {destination_path}"
@@ -754,32 +736,18 @@ def print_review_item(index: int, item: ReviewItem, *, full_paths: bool | None =
 
     action_style = MENU_ACTION_STYLE_BY_NAME.get(item.action, ("1",))
     action_text = style_text(f"[{item.action}]", *action_style)
-    package_label = render_package_target_label(
-        repo_name=repo_name,
-        package_id=item.package_id,
-        target_name=item.target_name,
-        bound_profile=bound_profile,
-    )
     badge_text = f" {style_text(diff_badge, *MENU_HINT_STYLE)}" if diff_badge is not None else ""
     arrow_text = style_text("->", *MENU_HINT_STYLE)
     print(
         f"  {style_text(f'{index:>2})', *MENU_INDEX_STYLE)} "
-        f"{action_text} {package_label}{badge_text}: "
+        f"{action_text} {item_label}{badge_text}: "
         f"{source_path} {arrow_text} {destination_path}"
     )
 
 
-def review_diff_header(review_item: ReviewItem, *, index: int, total: int) -> str:
-    return (
-        f"Diff {index}/{total}: "
-        f"{package_label_text(
-            repo_name=repo_name_from_selection_label(review_item.selection_label),
-            package_id=review_item.package_id,
-            bound_profile=review_item.bound_profile,
-            target_name=review_item.target_name,
-        )} "
-        f"[{review_item.action}]"
-    )
+def review_diff_header(review_item: ReviewItem, *, index: int, total: int, full_paths: bool | None = None) -> str:
+    item_label = render_review_item_label(review_item, full_paths=_effective_full_paths(full_paths), use_color=False)
+    return f"Diff {index}/{total}: {item_label} [{review_item.action}]"
 
 
 def print_review_diff_header(
@@ -790,27 +758,21 @@ def print_review_diff_header(
     full_paths: bool | None = None,
 ) -> None:
     full_paths = _effective_full_paths(full_paths)
-    header_text = review_diff_header(review_item, index=index, total=total)
     path_text = review_diff_path_line(review_item, full_paths=full_paths)
     separator = "-" * 5
     if not colors_enabled():
+        header_text = review_diff_header(review_item, index=index, total=total, full_paths=full_paths)
         print()
         print(f"{separator} {header_text} {separator}")
         print(path_text)
         return
-    repo_name = repo_name_from_selection_label(review_item.selection_label)
     prefix_text = style_text(f"Diff {index}/{total}:", *MENU_HINT_STYLE)
-    package_label = render_package_target_label(
-        repo_name=repo_name,
-        package_id=review_item.package_id,
-        target_name=review_item.target_name,
-        bound_profile=review_item.bound_profile,
-    )
+    item_label = render_review_item_label(review_item, full_paths=full_paths, use_color=True)
     action_text = style_text(f"[{review_item.action}]", *MENU_ACTION_STYLE_BY_NAME.get(review_item.action, ("1",)))
     print()
     print(
         f"{style_text(separator, *MENU_HINT_STYLE)} "
-        f"{prefix_text} {package_label} {action_text} "
+        f"{prefix_text} {item_label} {action_text} "
         f"{style_text(separator, *MENU_HINT_STYLE)}"
     )
     print(style_text(path_text, *MENU_HINT_STYLE))
