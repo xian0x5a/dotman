@@ -94,8 +94,6 @@ class MissingExtendsParentError(ValueError):
     """
 
     def __init__(self, *, repo_name: str, package_id: str, parent_id: str) -> None:
-        self.repo_name = repo_name
-        self.package_id = package_id
         super().__init__(f"package '{package_id}' extends '{parent_id}', which repo '{repo_name}' does not define")
 
 

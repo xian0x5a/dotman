@@ -87,16 +87,11 @@ def _warn_about_skipped_tracked_rows() -> Iterator[None]:
     to one report, however many times the command walked the tracked state.
     """
     from dotman.cli_emit import emit_skipped_tracked_row_warnings
-    from dotman.repository import MissingExtendsParentError
-    from dotman.tracking import collecting_skipped_tracked_rows, consume_skipped_tracked_row
+    from dotman.tracking import collecting_skipped_tracked_rows
 
     with collecting_skipped_tracked_rows() as skipped_rows:
         try:
             yield
-        except MissingExtendsParentError as error:
-            # The error already names the package and its missing parent.
-            consume_skipped_tracked_row(error.repo_name, error.package_id)
-            raise
         finally:
             emit_skipped_tracked_row_warnings(
                 list(skipped_rows.values()), use_color=colors_enabled(sys.stderr)

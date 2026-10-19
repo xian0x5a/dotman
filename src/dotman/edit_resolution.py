@@ -224,7 +224,7 @@ class EditResolver:
     def _not_found_error(subject: str, query_text: str) -> str:
         """Explain a miss; a query naming a stale tracked row says why that row cannot match."""
         repo_name, package_id, _bound_profile = parse_package_ref_text(query_text.partition(".")[0])
-        stale = tracking.consume_skipped_tracked_row(repo_name, package_id)
+        stale = tracking.find_skipped_tracked_row(repo_name, package_id)
         if stale is None:
             return f"{subject} '{query_text}' did not match any tracked package or target"
         return f"{subject} '{query_text}' matches stale tracked row {stale.binding.repo}:{stale.binding.selector}@{stale.binding.profile}: {stale.message}"

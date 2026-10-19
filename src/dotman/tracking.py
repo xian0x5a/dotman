@@ -537,16 +537,16 @@ def _record_skipped_tracked_row(binding: FullSpecSelector, message: str) -> None
         )
 
 
-def consume_skipped_tracked_row(repo_name: str | None, package_id: str) -> SkippedTrackedRow | None:
-    """Take the skipped row for a package the command is rejecting itself.
-
-    The caller reports the row in its own error, so the end-of-command warning would repeat it.
-    """
+def find_skipped_tracked_row(repo_name: str | None, package_id: str) -> SkippedTrackedRow | None:
+    """Return the stale row this command skipped for a package, so a miss on it can say why."""
     skipped_rows = _SKIPPED_TRACKED_ROWS.get() or {}
-    for key, skipped in skipped_rows.items():
-        if skipped.binding.selector == package_id and repo_name in (None, skipped.binding.repo):
-            return skipped_rows.pop(key)
-    return None
+    return next(
+        (
+            skipped for skipped in skipped_rows.values()
+            if skipped.binding.selector == package_id and repo_name in (None, skipped.binding.repo)
+        ),
+        None,
+    )
 
 
 def effective_tracked_package_entries_for_repo(

@@ -84,10 +84,10 @@ def test_explicitly_selecting_the_stale_package_fails_naming_the_cause(
     code, output = _run(two_repo_config, capsys, *argv)
 
     assert code != 0
-    # The error itself names the cause; the command does not also warn about the row it rejected.
-    assert "warning:" not in output
+    # The error itself names the cause, not just the trailing skip warning.
+    error_output = "\n".join(line for line in output.splitlines() if not line.startswith("warning:"))
     for name in (STALE_REPO, STALE_PACKAGE, MISSING_PARENT):
-        assert name in output
+        assert name in error_output
 
 
 def test_tracking_a_healthy_package_beside_a_stale_row_keeps_the_row(
