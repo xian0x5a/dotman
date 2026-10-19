@@ -7,11 +7,16 @@ from pathlib import Path
 
 import pytest
 
-from dotman.command_runtime import ArgvCommand, CommandRequest, CommandResult, MemoryCommandRuntime, command_runtime_session
+from dotman.command_runtime import (
+    ArgvCommand, CommandRequest, CommandResult, MemoryCommandRuntime, command_runtime_session, current_command_runtime,
+)
 from dotman.file_access import sudo_session
 from dotman.models import SnapshotConfig, TargetPlan
 from dotman.operation_runner import run_restore_operation
 from dotman.snapshot import RestoreAction, SnapshotRecord, build_restore_actions, create_push_snapshot
+from dotman.sync_session import SetApproval
+from tests.engine.test_sync_convergence import command
+from tests.engine.test_sync_directory_observation import directory_engine, open_directory, put
 from tests.helpers import make_package_plan
 
 pytestmark = pytest.mark.skipif(os.geteuid() == 0, reason="root bypasses the permission bits these tests rely on")
@@ -162,3 +167,87 @@ def test_restore_planning_reads_unreadable_live_file_through_sudo(tmp_path: Path
 
     assert action.before_bytes == PROTECTED_BYTES
     assert ("sudo", "-n", "/bin/cat", str(unreadable_live_file)) in _sudo_argvs(runtime)
+
+
+def _helper_calls_naming(runtime: MemoryCommandRuntime | _SudoLiftsProtection, path: Path) -> list[CommandRequest]:
+    """Sudo calls to the privileged helper whose arguments include `path` (operation name left open)."""
+    return [
+        request for request in runtime.requests
+        if isinstance(request.command, ArgvCommand)
+        and "dotman.privileged_ops" in request.command.arguments
+        and str(path) in request.command.arguments
+    ]
+
+
+def test_restore_creates_missing_directory_under_protected_parent_through_sudo(
+    tmp_path: Path, read_only_directory: Path,
+) -> None:
+    missing_directory = read_only_directory / "conf.d"
+    read_only_directory.chmod(0o555)
+    snapshot = _restore_snapshot(tmp_path)
+    action = RestoreAction(
+        live_path=missing_directory,
+        snapshot_path=snapshot.root / "restore" / "conf.d",
+        action="create",
+        before_bytes=b"",
+        after_bytes=b"",
+        desired_mode=None,
+        path_kind="directory",
+    )
+    runtime = _granting_sudo_runtime()
+
+    with command_runtime_session(runtime):
+        result = run_restore_operation(snapshot=snapshot, actions=[action])
+
+    assert [(action_result.status, action_result.error) for action_result in result.actions] == [("ok", None)]
+    assert _helper_calls_naming(runtime, missing_directory)
+
+
+class _SudoLiftsProtection:
+    """Runs every command for real; sudo helper calls see `protected` writable, as root would."""
+
+    def __init__(self, protected: Path) -> None:
+        self._delegate = current_command_runtime()
+        self._protected = protected
+        self.requests: list[CommandRequest] = []
+
+    def request_cancel(self) -> None:
+        self._delegate.request_cancel()
+
+    def check_cancelled(self) -> None:
+        self._delegate.check_cancelled()
+
+    def run(self, request: CommandRequest) -> CommandResult:
+        self.requests.append(request)
+        if not (isinstance(request.command, ArgvCommand) and "dotman.privileged_ops" in request.command.arguments):
+            return self._delegate.run(request)
+        self._protected.chmod(0o755)
+        try:
+            return self._delegate.run(request)
+        finally:
+            self._protected.chmod(0o555)
+
+
+def test_push_creates_missing_directory_target_under_protected_parent_through_sudo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    live_parent = tmp_path / "live"
+    live_parent.mkdir()
+    runtime = _SudoLiftsProtection(live_parent)
+    # Publication runs commands through the runtime current when the engine is built.
+    with command_runtime_session(runtime):
+        engine = directory_engine(tmp_path, monkeypatch, policy="push-only")
+    put(tmp_path / "repo/packages/app/tree", "child", b"repo")
+    live_parent.chmod(0o555)
+
+    try:
+        with open_directory(engine, preview=False) as session:
+            command(session, SetApproval, "main:app.tree/child", True)
+            result = session.execute().result
+    finally:
+        live_parent.chmod(0o755)
+
+    assert result.status == "completed", [(step.action, step.status, step.error) for step in result.steps]
+    assert [unit.status for unit in result.units] == ["converged"]
+    assert (live_parent / "tree" / "child").read_bytes() == b"repo"
+    assert _helper_calls_naming(runtime, live_parent / "tree")

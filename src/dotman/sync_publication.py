@@ -456,7 +456,7 @@ def execute_publication(
                     if effect.kind == "write":
                         root = directory_root(effect.path, step.target_plan.child_path)
                         if step.target_plan.child_path is not None and not root.exists():
-                            root.mkdir(parents=True)
+                            file_access.make_directories(root)
                             if step.target_plan.chmod is not None:
                                 file_access.chmod(root, int(step.target_plan.chmod, 8))
                         if step.target_plan.child_path is not None and path.is_dir():

@@ -4,7 +4,7 @@ import os
 import sys
 from pathlib import Path
 
-from dotman.atomic_files import write_bytes_atomic, write_symlink_atomic
+from dotman.atomic_files import create_directories_durably, write_bytes_atomic, write_symlink_atomic
 
 
 class PrivilegedOperationError(RuntimeError):
@@ -67,6 +67,11 @@ def main(argv: list[str] | None = None) -> int:
             if len(args) != 2:
                 raise PrivilegedOperationError("delete-path-and-prune-empty-parents requires: PATH ROOT")
             _delete_path_and_prune_empty_parents(Path(args[0]), root=Path(args[1]))
+            return 0
+        if command == "make-directories":
+            if len(args) != 1:
+                raise PrivilegedOperationError("make-directories requires: PATH")
+            create_directories_durably(Path(args[0]))
             return 0
         if command == "chmod":
             if len(args) != 2:
