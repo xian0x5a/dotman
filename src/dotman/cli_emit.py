@@ -873,6 +873,7 @@ def build_restore_review_items(snapshot: Any, actions: Sequence[Any]) -> list[Re
             ReviewItem(
                 selection_label=entry.selection_label,
                 package_id=entry.package_id,
+                bound_profile=entry.bound_profile,
                 target_name=entry.target_name,
                 action=action.action,
                 operation="restore",
@@ -980,6 +981,7 @@ def emit_snapshot_detail(*, snapshot: Any, json_output: bool, full_paths: bool =
             package_id=entry.package_id,
             target_name=entry.target_name,
             selection_label=entry.selection_label,
+            bound_profile=entry.bound_profile,
             use_color=use_color,
         )
         if provenance is not None:

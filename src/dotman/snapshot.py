@@ -39,6 +39,8 @@ class SnapshotEntry:
     repo_name: str | None = None
     selection_label: str | None = None
     package_id: str | None = None
+    # Instance of a `multi_instance` package; None for singletons and older snapshots.
+    bound_profile: str | None = None
     target_name: str | None = None
 
     def to_dict(self) -> dict[str, object]:
@@ -54,6 +56,7 @@ class SnapshotEntry:
             "repo_name": self.repo_name,
             "selection_label": self.selection_label,
             "package_id": self.package_id,
+            "bound_profile": self.bound_profile,
             "target_name": self.target_name,
         }
         if self.restore_path is not None:
@@ -203,6 +206,7 @@ def create_push_snapshot(plans: Sequence[PackagePlan], snapshot_config: Snapshot
                     repo_name=entry["repo_name"],
                     selection_label=entry["selection_label"],
                     package_id=entry["package_id"],
+                    bound_profile=entry["bound_profile"],
                     target_name=entry["target_name"],
                 )
             )
@@ -329,6 +333,9 @@ def load_snapshot(snapshot_root: Path) -> SnapshotRecord:
                     else None
                 ),
                 package_id=entry_payload.get("package_id") if isinstance(entry_payload.get("package_id"), str) else None,
+                bound_profile=(
+                    entry_payload.get("bound_profile") if isinstance(entry_payload.get("bound_profile"), str) else None
+                ),
                 target_name=entry_payload.get("target_name") if isinstance(entry_payload.get("target_name"), str) else None,
             )
         )
@@ -504,6 +511,7 @@ def _iter_push_snapshot_entries(plans: Sequence[PackagePlan]):
                 "repo_name": plan.repo_name,
                 "selection_label": selection_label,
                 "package_id": target.package_id,
+                "bound_profile": plan.bound_profile,
                 "target_name": target.target_name,
                 "file_symlink_mode": target.file_symlink_mode,
                 "structural": target.child_path is not None or target.target_kind == "directory",
@@ -539,6 +547,7 @@ def _snapshot_entry_manifest_table(entry: SnapshotEntry) -> dict[str, object]:
             "repo_name": entry.repo_name,
             "selection_label": entry.selection_label,
             "package_id": entry.package_id,
+            "bound_profile": entry.bound_profile,
             "target_name": entry.target_name,
         }
     )

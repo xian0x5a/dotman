@@ -242,12 +242,20 @@ def render_snapshot_metadata_label(label: str) -> str:
     return cli_style.render_snapshot_metadata_label(label, use_color=colors_enabled())
 
 
-def render_snapshot_provenance(*, repo_name: str | None, package_id: str | None, target_name: str | None, selection_label: str | None) -> str | None:
+def render_snapshot_provenance(
+    *,
+    repo_name: str | None,
+    package_id: str | None,
+    target_name: str | None,
+    selection_label: str | None,
+    bound_profile: str | None,
+) -> str | None:
     return cli_style.render_snapshot_provenance(
         repo_name=repo_name,
         package_id=package_id,
         target_name=target_name,
         selection_label=selection_label,
+        bound_profile=bound_profile,
         use_color=colors_enabled(),
     )
 

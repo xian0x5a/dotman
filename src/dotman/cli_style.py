@@ -320,6 +320,7 @@ def render_snapshot_provenance(
     package_id: str | None,
     target_name: str | None,
     selection_label: str | None,
+    bound_profile: str | None,
     use_color: bool,
 ) -> str | None:
     if repo_name is None or package_id is None or target_name is None:
@@ -332,6 +333,7 @@ def render_snapshot_provenance(
         repo_name=repo_name,
         package_id=package_id,
         target_name=target_name,
+        bound_profile=bound_profile,
         use_color=use_color,
     )
 
