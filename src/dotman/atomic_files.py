@@ -28,9 +28,10 @@ def _new_atomic_temp_path(directory: Path) -> Path:
 
 
 def write_bytes_atomic(path: Path, content: bytes, *, mode: int | None = None) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
+    _create_parent_directories_durably(path)
     cleanup_stale_atomic_temp_files(path.parent)
     replacement_mode = mode if mode is not None else target_replacement_mode(path)
+    replaced_owner = _replaced_regular_file_owner(path)
     candidate_temp_path = _new_atomic_temp_path(path.parent)
     temp_path: Path | None = None
     # With a known replacement mode the temp file starts owner-only, so its
@@ -44,10 +45,15 @@ def write_bytes_atomic(path: Path, content: bytes, *, mode: int | None = None) -
         temp_path = candidate_temp_path
         with os.fdopen(file_descriptor, "wb") as temp_file:
             temp_file.write(content)
+            temp_file.flush()
+            if replaced_owner is not None:
+                # Before fchmod: a chown clears setuid/setgid bits.
+                _keep_owner_and_group(temp_file.fileno(), replaced_owner)
             if replacement_mode is not None:
-                temp_file.flush()
                 os.fchmod(temp_file.fileno(), replacement_mode)
+            os.fsync(temp_file.fileno())
         temp_path.replace(path)
+        _fsync_directory(path.parent)
     finally:
         cleanup_atomic_temp_file(temp_path)
 
@@ -65,7 +71,7 @@ def write_text_atomic(
 
 
 def write_symlink_atomic(path: Path, target: str | Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
+    _create_parent_directories_durably(path)
     cleanup_stale_atomic_temp_files(path.parent)
     candidate_temp_path = _new_atomic_temp_path(path.parent)
     temp_path: Path | None = None
@@ -73,6 +79,7 @@ def write_symlink_atomic(path: Path, target: str | Path) -> None:
         candidate_temp_path.symlink_to(target)
         temp_path = candidate_temp_path
         temp_path.replace(path)
+        _fsync_directory(path.parent)
     finally:
         cleanup_atomic_temp_file(temp_path)
 
@@ -85,6 +92,54 @@ def target_replacement_mode(path: Path) -> int | None:
         # Exclusive creation already applies the process umask. Leaving that
         # mode intact avoids mutating the process-global umask during writes.
         return None
+
+
+
+def _replaced_regular_file_owner(path: Path) -> os.stat_result | None:
+    # lstat: the rename replaces a symlink itself, so the owner of its
+    # destination (a root-owned file in /nix/store or /etc) must not carry over.
+    try:
+        replaced_entry = path.lstat()
+    except FileNotFoundError:
+        return None
+    return replaced_entry if stat.S_ISREG(replaced_entry.st_mode) else None
+
+
+
+def _keep_owner_and_group(file_descriptor: int, replaced_status: os.stat_result) -> None:
+    # The rename installs a new inode owned by the writer. A service that reads
+    # its config through the old owner or group (root:grafana 0640) would lose
+    # access. An unprivileged writer gets PermissionError here, which callers
+    # in file_access answer by retrying through sudo.
+    created_status = os.fstat(file_descriptor)
+    uid = replaced_status.st_uid if replaced_status.st_uid != created_status.st_uid else -1
+    gid = replaced_status.st_gid if replaced_status.st_gid != created_status.st_gid else -1
+    if uid != -1 or gid != -1:
+        os.fchown(file_descriptor, uid, gid)
+
+
+
+def _create_parent_directories_durably(path: Path) -> None:
+    missing_directories: list[Path] = []
+    directory = path.parent
+    while not directory.exists():
+        missing_directories.append(directory)
+        directory = directory.parent
+    for directory in reversed(missing_directories):
+        directory.mkdir(exist_ok=True)
+        # The new file is durable only if the entries leading to it are.
+        _fsync_directory(directory.parent)
+
+
+
+def _fsync_directory(directory: Path) -> None:
+    # The rename is durable only once its directory entry is on disk; Sync Base
+    # records and snapshot manifests acknowledge content written here.
+    directory_descriptor = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(directory_descriptor)
+    finally:
+        os.close(directory_descriptor)
 
 
 
