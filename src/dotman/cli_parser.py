@@ -448,7 +448,7 @@ def build_parser() -> argparse.ArgumentParser:
         "sync_unit", metavar="<sync-unit>", nargs="?", help="Exact repo-qualified file target or directory child",
     )
     reset_base_target.add_argument(
-        "--unusable", dest="unusable_repo", metavar="[repo]", nargs="?", const="",
+        "--unusable", dest="unusable_repo", metavar="repo", nargs="?", const="",
         help="Discard every Sync Base that doctor flags as corrupt or orphaned, in one repo or all",
     )
     info_parser = subparsers.add_parser(

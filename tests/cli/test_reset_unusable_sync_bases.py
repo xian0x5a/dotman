@@ -1,6 +1,6 @@
 """`dotman reset sync-base --unusable [repo]` drops what `dotman doctor` counts as corrupt or orphaned.
 
-Assumed JSON output of the flag: {"status": "reset", "dropped": <int total records removed>}.
+JSON output of the flag: {"status": "reset", "dropped": <int total records removed>}.
 """
 import json
 
