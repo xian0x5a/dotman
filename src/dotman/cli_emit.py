@@ -1130,20 +1130,25 @@ def emit_skipped_entry_warnings(skipped_entries: Sequence[Any], *, use_color: bo
             print(f"{warning}: skipped package {package} ({terminal_safe_line(skipped.message)})", file=sys.stderr)
             continue
         row = cli_style.render_full_spec_selector_reference(skipped.binding, use_color=use_color)
-        # The hint stays plain text a shell can run. The row may hold unprintable
-        # characters, so the selector is the escaped name, which untrack accepts for
-        # exactly that row (tracking._is_named_by); shlex.quote keeps a space, a quote
-        # or a backslash in it from splitting or changing the argument.
-        untrack_selector = terminal_safe_line(
-            cli_style.full_spec_selector_label_text(
-                repo_name=skipped.binding.repo, selector=skipped.binding.selector, profile=skipped.binding.profile
-            )
-        )
         print(
             f"{warning}: skipped stale tracked row {row} ({terminal_safe_line(skipped.message)}); "
-            f"see 'dotman list tracked', or remove it with: dotman untrack {shlex.quote(untrack_selector)}",
+            f"see 'dotman list tracked', or remove it with: {stale_row_untrack_command(skipped.binding)}",
             file=sys.stderr,
         )
+
+
+def stale_row_untrack_command(binding: Any) -> str:
+    """The `dotman untrack` command that removes a stale tracked row, pasteable into a shell."""
+    # The command stays plain text a shell can run. The row may hold unprintable
+    # characters, so the selector is the escaped name, which untrack accepts for
+    # exactly that row (tracking._is_named_by); shlex.quote keeps a space, a quote
+    # or a backslash in it from splitting or changing the argument.
+    untrack_selector = terminal_safe_line(
+        cli_style.full_spec_selector_label_text(
+            repo_name=binding.repo, selector=binding.selector, profile=binding.profile
+        )
+    )
+    return f"dotman untrack {shlex.quote(untrack_selector)}"
 
 
 def emit_error(error: Exception, *, use_color: bool) -> None:
