@@ -35,7 +35,7 @@ See [Sync lifecycle](sync.md) for convergence semantics and
 - `--no-confirm` does not suppress sudo authentication: when elevation needs a password, sudo authenticates however it is configured: NOPASSWD, a terminal prompt, or the `SUDO_ASKPASS` helper when no terminal is present. Dotman's own sudo login passes `-A` then, so a helper that needs no display also works headless; `sudo` calls inside hooks choose their own flags. A terminal nobody watches waits at the prompt until sudo times out. Dotman never substitutes its own prompt.
 - Run dotman as yourself, not under `sudo`. Dotman asks for sudo itself only for protected paths and elevated hooks, so the repo, Sync Base and state stay owned by you. Repo commands exit 2 (1 under `--no-confirm`) when they run as root with `SUDO_USER` naming another user, including a `sudo -i` or `sudo -s` shell. A root login without sudo (or `su -`) and root calling sudo are unaffected. Standalone helpers (`transform`, `rewrite`, `render`, `capture`, `reconcile`) still run under sudo, so elevated hooks can call them.
 - A missing terminal never implies consent. Without `--no-confirm`, an unavailable required interactive decision fails; `--json` selects output only and never authorizes execution.
-- Interruption (`Ctrl+C`, SIGINT, or an explicit abort) ends dotman by SIGINT rather than a plain exit, so a shell script that runs dotman stops too. Shells report it as status 130; other parents see death by SIGINT.
+- Interruption exits 130. When the interruption was a real SIGINT (Ctrl-C at a terminal that no menu or Deck holds in raw mode, or `kill -INT`), dotman instead ends by SIGINT after cleanup, so the shell script or command line that ran it stops too; shells still report status 130. Key-driven aborts (Esc, `q`, or `Ctrl+C` pressed inside the Deck or an fzf menu) stay a plain exit 130, as with fzf itself.
 - Execution hooks receive `DOTMAN_NO_CONFIRM=1` under `--no-confirm`, otherwise `0`; planning Guards do not receive it.
 - `--run-noop` is meaningful for `push`, `pull`, and `sync`; Sync retains both surviving directional hook families.
 - `--run-noop` now feeds normal planning and selection instead of reviving hooks late in execution.
@@ -338,7 +338,7 @@ otherwise **Use repository** is the visible fallback and Merge is unavailable.
   decision-required, execution, or incomplete-convergence failure, and a
   Command Deck that stops on an unexpected error (status `failed`, code `deck-failed`). Partial
   convergence with any failure exits `1`. Exit `2` means invalid syntax;
-  status `130` means interruption or explicit abort, which ends dotman by SIGINT.
+  exit `130` means interruption or explicit abort.
 
 Examples:
 

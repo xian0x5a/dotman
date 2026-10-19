@@ -6,7 +6,13 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, NoReturn
 
 from dotman.cli_parser import build_parser, normalize_edit_query_argv
-from dotman.command_runtime import INTERRUPTED_EXIT_CODE, command_operation, exit_from_interrupt
+from dotman.command_runtime import (
+    INTERRUPTED_EXIT_CODE,
+    command_operation,
+    exit_from_interrupt,
+    install_sigint_recorder,
+    sigint_received,
+)
 from dotman.interaction_policy import InteractionRequiredError, interaction_scope
 from dotman.standalone_commands import StandaloneCommandRunner
 from dotman.terminal import colors_enabled, emit_interrupt_notice
@@ -61,9 +67,11 @@ def main(
 
 def console_main() -> NoReturn:
     """Process entry point. `main` returns exit codes so tests can call it in-process."""
+    install_sigint_recorder()
     exit_code = main()
-    # Every 130 is a Ctrl-C or an explicit abort, whichever layer reported it.
-    if exit_code == INTERRUPTED_EXIT_CODE:
+    # 130 also covers key-driven aborts (Esc, Deck Ctrl+C in raw mode), which
+    # must stay a plain exit; only a real SIGINT is passed on as one.
+    if exit_code == INTERRUPTED_EXIT_CODE and sigint_received():
         exit_from_interrupt()
     raise SystemExit(exit_code)
 

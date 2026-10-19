@@ -68,7 +68,8 @@ def test_ctrl_c_with_sync_base_exits_cleanly(tmp_path, monkeypatch, keys, title)
             read_output()
         assert b"Traceback" not in output, output[-2000:].decode(errors="replace")
         assert b"Task exception" not in output
-        assert process.returncode == -signal.SIGINT
+        # A key in Textual's raw terminal is an abort, not a SIGINT to pass on.
+        assert process.returncode == 130
         assert termios.tcgetattr(slave) == terminal_before
         assert b"\x1b[?1049l" in output  # Leave the alternate screen.
         assert b"\x1b[?25h" in output  # Restore cursor visibility.
@@ -251,7 +252,8 @@ def _assert_materialization_interrupt(
         wait_until(lambda: process.poll() is not None, process, read_output)
         while select.select([master], [], [], 0.05)[0]:
             read_output()
-        assert process.returncode == -signal.SIGINT, output[-3000:].decode(errors="replace")
+        expected_returncode = -signal.SIGINT if interruption == "signal" else 130
+        assert process.returncode == expected_returncode, output[-3000:].decode(errors="replace")
         assert b"Traceback" not in output
         assert b"Task exception" not in output
         assert b"never awaited" not in output

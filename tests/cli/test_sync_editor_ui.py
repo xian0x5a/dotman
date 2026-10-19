@@ -219,7 +219,6 @@ def test_long_tty_editor_session_returns_to_deck(tmp_path, monkeypatch):
     import os
     import pty
     import select
-    import signal
     import subprocess
     import sys
     import termios
@@ -267,7 +266,7 @@ def test_long_tty_editor_session_returns_to_deck(tmp_path, monkeypatch):
         wait_until(lambda: b"Edited" in output[resumed_from:], process, read_output)
         os.write(master, b"\x03")
         wait_until(lambda: process.poll() is not None, process, read_output)
-        assert process.returncode == -signal.SIGINT
+        assert process.returncode == 130
         assert termios.tcgetattr(slave) == terminal_before
         assert b"Traceback" not in output
     except AssertionError as exc:

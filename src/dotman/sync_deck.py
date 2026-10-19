@@ -31,6 +31,7 @@ from textual.widget import Widget
 from textual.widgets import DataTable, Input, OptionList, Static
 from textual.widgets.option_list import Option
 
+from dotman.command_runtime import record_sigint
 from dotman.diff_review import display_review_path
 from dotman.models import projection_display_text
 from dotman.cli_style import MENU_HEADER_MARKER, MENU_HEADER_MARKER_STYLE, MENU_HINT_STYLE, MENU_PROMPT_STYLE, render_annotation_parentheses, render_conflict_lines, render_diff_lines, render_info_section_header, render_key_hint, render_key_hint_chip, render_key_hint_separator, render_payload_action, render_payload_section_label, render_sync_term, render_package_label, style_text, SYNC_TERM_STYLE_BY_NAME
@@ -1882,7 +1883,12 @@ class SyncDeckApp(App[bool]):
 def run_command_deck(session: SyncSession, *, use_color: bool) -> bool:
     app = SyncDeckApp(CommandDeck(session, use_color=use_color))
     previous = signal.getsignal(signal.SIGINT)
-    signal.signal(signal.SIGINT, lambda signum, frame: app.action_abort())
+
+    def abort_on_sigint(signum: int, frame: object) -> None:
+        record_sigint()
+        app.action_abort()
+
+    signal.signal(signal.SIGINT, abort_on_sigint)
     try:
         confirmed = app.run()
         # An unhandled error exits the app with None, which would read as a dismissal.
