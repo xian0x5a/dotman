@@ -29,6 +29,9 @@ KEPT_LAYOUT_CHARACTERS = "\n\t"
 BIDI_CONTROL_CHARACTERS = frozenset("\u061c\u200e\u200f" + "".join(map(chr, range(0x202A, 0x202F)))
                                     + "".join(map(chr, range(0x2066, 0x206A))))
 
+# Control characters, and U+2028/U+2029 (Zl, Zp), which rich treats as line breaks.
+REVIEW_ESCAPED_CATEGORIES = frozenset({"Cc", "Zl", "Zp"})
+
 
 def _shown(character: str) -> str:
     """One character as itself when printable, else its escape: `\\xNN` for an undecodable byte, `\\uNNNN` otherwise."""
@@ -76,15 +79,17 @@ def terminal_safe_text(text: str) -> str:
 
 
 def terminal_safe_content(line: str) -> str:
-    """One line of file content for review: control characters (but tab) and bidi controls are escaped.
+    """One line of file content for review: control characters (but tab), line and paragraph separators and bidi controls are escaped.
 
     Narrower than `str.isprintable`: dotfiles routinely hold Nerd Font glyphs, ZWJ emoji
     and NBSP, which cannot disturb the terminal and read as intended, so they show as
-    written. Only what could act on the terminal or reorder the review is escaped.
+    written. Only what could act on the terminal, break the line (rich wraps at U+2028 and
+    U+2029) or reorder the review is escaped.
     """
     return "".join(
         _shown(character)
-        if character != "\t" and (unicodedata.category(character) == "Cc" or character in BIDI_CONTROL_CHARACTERS)
+        if character != "\t" and (unicodedata.category(character) in REVIEW_ESCAPED_CATEGORIES
+                                   or character in BIDI_CONTROL_CHARACTERS)
         else character
         for character in line
     )

@@ -1690,6 +1690,8 @@ def assert_shown_escaped(text, expected):
     pytest.param(b"x\x1b[31my\n", "x\\u001b[31my", id="csi-shown-not-swallowed"),
     # rich's ANSI decoder keeps only the text after the last carriage return, blanking the line.
     pytest.param(b"crlf-line\r\n", "crlf-line\\u000d", id="crlf"),
+    # rich breaks a line at U+2028 and U+2029, so they are layout to escape like controls.
+    pytest.param("pre\u2028post\n".encode(), "pre\\u2028post", id="line-separator"),
     # Trojan Source: a right-to-left override would reorder how the rest of the line reads.
     pytest.param("pre\u202epost\n".encode(), "pre\\u202epost", id="bidi-override"),
     # Other text shows as written next to an escaped control, even where str.isprintable() is False:
@@ -1724,9 +1726,37 @@ def test_review_keeps_tab_in_file_content_as_layout(tmp_path, monkeypatch):
                 await pilot.pause()
                 assert_shown_escaped(app.deck.review_text(), "+tab\there\\u0001")
                 pane = review_text(app)
-                # Only that the tab is not escaped: rich wraps a grid cell holding a tab early (#307).
-                assert "\\u0009" not in pane and "+tab" in pane
-                assert_shown_escaped(pane, "here\\u0001")
+                assert "\\u0009" not in pane
+                # The tab expands within its row; the line fits, so it must not wrap (#307).
+                assert any("+tab" in row and "here\\u0001" in row for row in pane.split("\n")), pane
+        run(interact())
+
+
+# Characters str.splitlines treats as line boundaries but Git does not (#308). How each
+# shows (escaped or as written) is left to the escaping tests; only the line it stays in matters.
+@pytest.mark.parametrize("separator", [
+    pytest.param("\x0b", id="vertical-tab"),
+    pytest.param("\x0c", id="form-feed"),
+    pytest.param("\x1c", id="file-separator"),
+    pytest.param("\x85", id="next-line"),
+    pytest.param("\r", id="lone-carriage-return"),
+    pytest.param("\u2028", id="line-separator"),
+    pytest.param("\u2029", id="paragraph-separator"),
+])
+def test_review_diff_splits_file_content_only_on_newline(tmp_path, monkeypatch, separator):
+    content = f"pre{separator}post\n".encode()
+    engine = make_engine(tmp_path, monkeypatch, [("one", "push-only", content, b"live\n", "")])
+    with engine.open_sync_session(engine.resolve_sync_scope([]), preview=True) as session:
+        app = SyncDeckApp(CommandDeck(session, use_color=False))
+
+        async def interact():
+            async with app.run_test(size=(120, 40)) as pilot:
+                await pilot.press("enter")
+                await pilot.pause()
+                for text in (review_text(app), app.deck.review_text()):
+                    rows = [row.strip() for row in text.split("\n")]
+                    assert any(row.startswith("+pre") and row.endswith("post") for row in rows), text
+                    assert "No newline at end of file" not in text
         run(interact())
 
 
@@ -1754,4 +1784,48 @@ def test_merge_conflict_excerpt_shows_control_characters_escaped(tmp_path, monke
                 for block in (conflict_block(review_text(app)), conflict_block(app.deck.review_text())):
                     assert_shown_escaped(block, "repo\\u0001\\u001b[31mside")
                     assert_shown_escaped(block, "live\\u007f\\u009bside")
+        run(interact())
+
+
+def test_merge_conflict_excerpt_splits_only_on_newline(tmp_path, monkeypatch):
+    from tests.engine.test_sync_both_convergence import established
+
+    engine = established(tmp_path, monkeypatch)
+    (tmp_path / "repo/packages/app/unit").write_bytes(b"repo\x0cside\n")
+    (tmp_path / "live/unit").write_bytes(b"live\x0cside\n")
+    with engine.open_sync_session(engine.resolve_sync_scope([]), preview=True) as session:
+        app = SyncDeckApp(CommandDeck(session, use_color=False))
+
+        async def interact():
+            async with app.run_test(size=(120, 40)) as pilot:
+                await pilot.press("enter")
+                await pilot.pause()
+                # A form feed stays inside its conflict line, as in Git.
+                for block in (conflict_block(review_text(app)), conflict_block(app.deck.review_text())):
+                    assert "repo\\u000cside" in block, block
+                    assert "live\\u000cside" in block, block
+        run(interact())
+
+
+def test_merge_conflict_excerpt_styles_crlf_sides_like_lf(tmp_path, monkeypatch):
+    from tests.engine.test_sync_session import open_session
+
+    # Git writes CRLF conflict markers when all three sides use CRLF; they must still delimit the sides.
+    engine = make_engine(tmp_path, monkeypatch, [("unit", "both", b"base-side\r\n", b"base-side\r\n", "")])
+    with open_session(engine, preview=False):
+        pass
+    (tmp_path / "repo/packages/app/unit").write_bytes(b"repo-side\r\n")
+    (tmp_path / "live/unit").write_bytes(b"live-side\r\n")
+    with engine.open_sync_session(engine.resolve_sync_scope([]), preview=True) as session:
+        app = SyncDeckApp(CommandDeck(session, use_color=True))
+
+        async def interact():
+            async with app.run_test(size=(120, 40)) as pilot:
+                await pilot.press("enter")
+                await pilot.pause()
+                block = [line.strip() for line in conflict_block(review_text(app)).splitlines()]
+                separator, capture_side = block[-3:-1]
+                styles = {segment.text.strip(): segment.style for strip in review_strips(app) for segment in strip}
+                assert styles[separator].bold and styles[separator].color.number == 4, block  # ANSI blue
+                assert styles[capture_side].color.number == 4, block
         run(interact())
