@@ -156,7 +156,7 @@ def test_select_menu_option_with_prompt_renders_bottom_up_by_default(monkeypatch
 def test_select_menu_option_with_fzf_uses_structured_display_fields(monkeypatch) -> None:
     captured: dict[str, object] = {}
 
-    runtime = MemoryCommandRuntime([CommandResult(exit_code=0, stdout=b"2\n")])
+    runtime = MemoryCommandRuntime([CommandResult(exit_code=0, stdout=b"2 sandbox/host/linux-meta [group]\n")])
     monkeypatch.setattr(cli, "current_command_runtime", lambda: runtime)
     monkeypatch.setattr(cli, "ui_menus_bottom_up_enabled", lambda: True)
 
@@ -176,7 +176,7 @@ def test_select_menu_option_with_fzf_uses_structured_display_fields(monkeypatch)
     assert selected_index == 1
     assert "--wrap" in captured["command"]
     assert "--with-nth=2.." in captured["command"]
-    assert "--accept-nth=1" in captured["command"]
+    assert not any(argument.startswith("--accept-nth") for argument in captured["command"])
     assert "--layout=reverse-list" not in captured["command"]
     assert "--layout=reverse" not in captured["command"]
     assert captured["input"] == (
