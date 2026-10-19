@@ -1,10 +1,12 @@
-"""Names the user writes must be printable (issue #295, same rule as #272 for live file names).
+"""Identity fields the user writes must be printable (issue #295, same rule as #272 for live file names).
 
-Package, group, profile and target names, and repo names in the manager config, are
-rejected at load when `str.isprintable()` fails. The rejection is a usage error
-(exit 2), names the file and field, and shows the name escaped: the raw character
-never reaches the terminal. Every unprintable character is escaped, tab and newline
-included, so a name never carries layout; a backslash is shown as written.
+Package, group, profile and target names, repo names in the manager config, target
+`source` and `path` in package.toml, and repo `path` in config.toml are rejected at
+load when `str.isprintable()` fails. The rejection is a usage error (exit 2), names
+the file and field, and shows the value escaped: the raw character never reaches the
+terminal. Every unprintable character is escaped, tab and newline included, so the
+error never carries layout; a backslash is shown as written. A field that passes
+the check is printed as written elsewhere, so no other test pins its escaping.
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ NBSP = "\xa0"
 ZERO_WIDTH_JOINER = "\u200d"
 BIDI_OVERRIDE = "\u202e"
 ESCAPE_CONTROL = "\x1b"
+NEWLINE = "\n"
 
 # Which unprintable characters each kind of name is probed with. NBSP is
 # already rejected for package, group and target names (they reject any
@@ -55,15 +58,21 @@ def write_repo(
     target: str = "conf",
     repo_name: str = "fixture",
     state_key: str | None = None,
+    target_source: str = "files/a",
+    target_path: str = "~/a",
+    repo_dirname: str = "repo",
 ) -> Path:
-    """Write a one-repo fixture whose authored names are chosen by the caller; return the config path."""
-    repo_root = tmp_path / "repo"
-    # `json.dumps` writes a TOML-compatible quoted key, escaping control characters
-    # that TOML forbids raw.
+    """Write a one-repo fixture whose authored names and paths are chosen by the caller; return the config path.
+
+    `repo_dirname` is the last component of the repo `path` in config.toml; the repo is created there.
+    """
+    repo_root = tmp_path / repo_dirname
+    # `json.dumps` writes a TOML-compatible quoted key or string, escaping control
+    # characters that TOML forbids raw.
     package_manifest = (
         f"[targets.{json.dumps(target)}]\n"
-        'source = "files/a"\n'
-        'path = "~/a"\n'
+        f"source = {json.dumps(target_source)}\n"
+        f"path = {json.dumps(target_path)}\n"
     )
     files = {
         "profiles/default.toml": "",
@@ -119,7 +128,36 @@ def test_unprintable_authored_name_is_rejected_and_shown_escaped(
     assert character not in output
 
 
-def test_printable_non_ascii_names_and_profile_spaces_load(
+# Each authored path field: the file and field an error must name, and how `write_repo` receives a value for it.
+AUTHORED_PATH_FIELDS = {
+    "target-source": ("package.toml", "source", lambda value: {"target_source": f"files/{value}"}),
+    "target-path": ("package.toml", "path", lambda value: {"target_path": f"~/{value}"}),
+    "repo-path": ("config.toml", "path", lambda value: {"repo_dirname": value}),
+}
+
+
+@pytest.mark.parametrize("field", AUTHORED_PATH_FIELDS)
+@pytest.mark.parametrize(
+    "character", [NBSP, ESCAPE_CONTROL, NEWLINE, BIDI_OVERRIDE], ids=lambda c: f"U+{ord(c):04X}"
+)
+def test_unprintable_authored_path_is_rejected_at_load_and_shown_escaped(
+    field: str, character: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The file named by the field exists (the repo is really at the hostile path), so only the characters can fail it."""
+    raw_value, shown_value = f"caf{character}x", f"caf\\u{ord(character):04x}x"
+    file_text, field_text, as_write_repo_arguments = AUTHORED_PATH_FIELDS[field]
+    config_path = write_repo(tmp_path, **as_write_repo_arguments(raw_value))
+
+    exit_code, output = run_list_tracked(config_path, capsys)
+
+    assert exit_code == 2, output
+    assert file_text in output
+    assert raw_value not in output
+    # The error names the field and the offending value together, so the user can find it.
+    assert [line for line in output.splitlines() if field_text in line and shown_value in line], output
+
+
+def test_printable_non_ascii_names_paths_and_profile_spaces_load(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     config_path = write_repo(
@@ -129,6 +167,9 @@ def test_printable_non_ascii_names_and_profile_spaces_load(
         profile="work laptop",
         target="日本",
         repo_name="café",
+        target_source="files/café",
+        target_path="~/café",
+        repo_dirname="répo café",
     )
 
     exit_code, output = run_list_tracked(config_path, capsys)

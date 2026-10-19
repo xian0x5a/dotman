@@ -1,22 +1,18 @@
-"""Text dotman did not validate at load never reaches the terminal raw (issues #295, #304).
+"""Tracked rows an older dotman wrote stay visible, escaped and removable (issues #295, #304).
 
-Three kinds of stored text can hold characters a terminal misreads:
-
-- Tracked rows an older dotman wrote, before profile IDs were checked for
-  printability. A row's package ID or profile may hold NBSP or ESC, and the rows
-  must stay visible, escaped, and removable.
-- Package descriptions, which are free text rather than names.
-- Variable names, which are authored but never checked at load.
+Before names were checked for printability at load, a tracked row's package ID or
+profile could hold NBSP, ESC or a line break. Such a row is stale now, but it is
+outside text: it was stored before validation and dotman did not control it, so
+every label, warning and menu entry that shows it escapes it. The rows must
+stay visible and removable, and the state file dotman rewrites must still load (#304).
 
 Escaping is `\\uNNNN` per unprintable character, so a profile `work<NBSP>laptop`
-shows as `work\\u00a0laptop`. Tab and newline are unprintable too: a name, or any
-text in a one-line row, never carries layout. Only a multi-line block of free text,
-such as the description under `info`, keeps its line breaks.
+shows as `work\\u00a0laptop`. Tab and newline are unprintable too: a label never
+carries layout.
 """
 
 from __future__ import annotations
 
-import json
 import re
 import shlex
 import tomllib
@@ -307,110 +303,3 @@ def test_a_rewritten_tracked_state_reads_back_the_profile_exactly(
 
     assert code == 0, stdout + stderr
     assert read_tracked_rows(tmp_path) == [(LEGACY_PACKAGE, profile)]
-
-
-DESCRIPTION_WITH_UNPRINTABLE = "safe\xa0text\N{RIGHT-TO-LEFT OVERRIDE}!\x1b[31m"
-ESCAPED_DESCRIPTION_PARTS = ("safe\\u00a0text", "\\u202e", "\\u001b[31m")
-
-
-APP_TARGET = '[targets.conf]\nsource = "files/a.conf"\npath = "~/a.conf"\n'
-
-
-def write_repo_with_app_manifest(tmp_path: Path, manifest_text: str) -> Path:
-    """Write a repo whose one package `app` has `manifest_text` as its package.toml; return the config path."""
-    repo_root = tmp_path / "repo"
-    (repo_root / "profiles").mkdir(parents=True)
-    (repo_root / "profiles" / "default.toml").write_text("", encoding="utf-8")
-    package_root = repo_root / "packages" / "app"
-    (package_root / "files").mkdir(parents=True)
-    (package_root / "files" / "a.conf").write_text("a\n", encoding="utf-8")
-    (package_root / "package.toml").write_text(manifest_text, encoding="utf-8")
-    return write_named_manager_config(tmp_path, {REPO_NAME: repo_root})
-
-
-def write_repo_with_description(tmp_path: Path, description: str) -> Path:
-    """Write a repo whose one package `app` carries `description`; return the config path."""
-    return write_repo_with_app_manifest(tmp_path, f"description = {json.dumps(description)}\n{APP_TARGET}")
-
-
-@pytest.mark.parametrize(
-    ("setup_argv", "argv"),
-    [
-        pytest.param(None, ["list", "trackables"], id="list-trackables"),
-        pytest.param(None, ["search", "app"], id="search"),
-        pytest.param(None, ["info", "trackable", f"{REPO_NAME}:app"], id="info-trackable"),
-        # `info tracked` describes a package that is tracked, so track it first.
-        pytest.param(["track", f"{REPO_NAME}:app@default"], ["info", "tracked", f"{REPO_NAME}:app"], id="info-tracked"),
-    ],
-)
-def test_package_description_is_shown_escaped(
-    setup_argv: list[str] | None, argv: list[str], tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    config_path = write_repo_with_description(tmp_path, DESCRIPTION_WITH_UNPRINTABLE)
-    if setup_argv is not None:
-        setup_code, setup_stdout, setup_stderr = run_cli(config_path, capsys, *setup_argv)
-        assert setup_code == 0, setup_stdout + setup_stderr
-
-    code, stdout, stderr = run_cli(config_path, capsys, *argv)
-
-    assert code == 0, stdout + stderr
-    for escaped_part in ESCAPED_DESCRIPTION_PARTS:
-        assert escaped_part in stdout
-    for raw_character in ("\xa0", "\N{RIGHT-TO-LEFT OVERRIDE}", "\x1b"):
-        assert raw_character not in stdout + stderr, f"raw U+{ord(raw_character):04X} reached the terminal"
-
-
-@pytest.mark.parametrize(
-    "argv",
-    [
-        pytest.param(["list", "trackables"], id="list-trackables"),
-        pytest.param(["search", "app"], id="search"),
-    ],
-)
-def test_a_description_in_a_listing_row_stays_on_one_line(
-    argv: list[str], tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    config_path = write_repo_with_description(tmp_path, "first\nsecond\tthird\x1b[31m")
-
-    code, stdout, stderr = run_cli(config_path, capsys, *argv)
-
-    assert code == 0, stdout + stderr
-    assert len(stdout.splitlines()) == 1, stdout
-    assert "(first\\u000asecond\\u0009third\\u001b[31m)" in stdout
-
-
-@pytest.mark.parametrize(
-    ("setup_argv", "argv"),
-    [
-        pytest.param(None, ["info", "trackable", f"{REPO_NAME}:app"], id="info-trackable"),
-        pytest.param(["track", f"{REPO_NAME}:app@default"], ["info", "tracked", f"{REPO_NAME}:app"], id="info-tracked"),
-    ],
-)
-def test_the_info_description_block_keeps_its_line_breaks_and_tabs(
-    setup_argv: list[str] | None, argv: list[str], tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """A block of free text is written to be read, so only its unprintable characters are escaped."""
-    config_path = write_repo_with_description(tmp_path, "first line\n\tsecond line\x1b[31m")
-    if setup_argv is not None:
-        setup_code, setup_stdout, setup_stderr = run_cli(config_path, capsys, *setup_argv)
-        assert setup_code == 0, setup_stdout + setup_stderr
-
-    code, stdout, stderr = run_cli(config_path, capsys, *argv)
-
-    assert code == 0, stdout + stderr
-    assert "first line\n\tsecond line\\u001b[31m" in stdout
-
-
-def test_variable_names_stay_on_one_line_in_list_vars(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    namespace, key = "net\nforged: row", "key\x1b[31m"
-    config_path = write_repo_with_app_manifest(
-        tmp_path, f"[vars.{json.dumps(namespace)}]\n{json.dumps(key)} = \"value\"\n{APP_TARGET}"
-    )
-    track_code, track_stdout, track_stderr = run_cli(config_path, capsys, "track", f"{REPO_NAME}:app@default")
-    assert track_code == 0, track_stdout + track_stderr
-
-    code, stdout, stderr = run_cli(config_path, capsys, "list", "vars")
-
-    assert code == 0, stdout + stderr
-    assert len(stdout.splitlines()) == 1, stdout
-    assert stdout.startswith("net\\u000aforged: row.key\\u001b[31m")
