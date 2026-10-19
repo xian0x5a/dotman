@@ -87,11 +87,12 @@ PACKAGE_MANIFEST_TOP_LEVEL_KEYS = {
 }
 
 
-class MissingExtendsParentError(ValueError):
+class MissingExtendsParentError(UsageError):
     """A package extends a parent the repo does not define.
 
     Distinct from other manifest errors (extends cycle, bad TOML): a dangling
     reference makes a tracked row stale, while malformed content is a repo error.
+    Selecting such a package explicitly is still a manifest error (exit 2).
     """
 
     def __init__(self, *, repo_name: str, package_id: str, parent_id: str) -> None:

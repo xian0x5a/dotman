@@ -118,6 +118,13 @@ def _corrupt_tracked_state(tmp_path, monkeypatch):
     return config_path
 
 
+def _dangling_extends(tmp_path, monkeypatch):
+    config_path = _sync_repo()(tmp_path, monkeypatch)
+    (tmp_path / "repo/packages/child").mkdir(parents=True)
+    (tmp_path / "repo/packages/child/package.toml").write_text('extends = ["gone"]\n')
+    return config_path
+
+
 def _missing_repo_path(tmp_path, monkeypatch):
     return write_single_repo_config(tmp_path, repo_name="fixture", repo_path=tmp_path / "missing-repo")
 
@@ -139,6 +146,8 @@ CASES = [
     Case("unknown-selector", _example_repo, ("info", "trackable", "doesnotexist"), 2),
     Case("invalid-manifest", _invalid_manifest, ("list", "tracked"), 2),
     Case("invalid-sync-scope", _sync_repo(), ("push", "--dry-run", "main:nothere"), 2, (True,)),
+    Case("unknown-repo-argument", _sync_repo(), ("reset", "sync-base", "--unusable", "nosuchrepo"), 2),
+    Case("dangling-extends-selected", _dangling_extends, ("info", "trackable", "main:child"), 2),
     Case("config-path-is-directory", _config_path_is_directory, ("doctor",), 2),
     Case("missing-default-config", _no_default_config, ("list", "tracked"), 2),
     Case(

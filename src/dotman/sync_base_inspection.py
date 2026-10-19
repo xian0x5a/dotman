@@ -241,7 +241,7 @@ def reset_unusable_sync_bases(context, repo_name: str | None):
         if repo_name in (None, repo_config.name)
     ]
     if repo_name is not None and not repos:
-        raise ValueError(f"unknown repo '{repo_name}'")
+        raise UsageError(f"unknown repo '{repo_name}'")
     with OperationLock.acquire(context.tracked_state.state_root):
         inputs = _static_inputs(context)
         censuses = {}
