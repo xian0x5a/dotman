@@ -506,9 +506,11 @@ def directory_child_policy(
             compare_repo = rule.compare_repo
         if rule.compare_live_explicit:
             compare_live = rule.compare_live
-        # A rule that declares only Additional Sources keeps the target's editor selection.
-        if rule.editor_explicit or rule.editor.additional_sources_explicit:
+        if rule.editor_explicit:
             editor = rule.editor
+        elif rule.editor.additional_sources_explicit:
+            # Sources are independent of the editor selection an earlier layer chose.
+            editor = editor.with_sources_of(rule.editor)
         if rule.sync_policy_explicit:
             sync_policy = rule.sync_policy
         if compare_live == "capture" and capture_command is None:

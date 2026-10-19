@@ -65,3 +65,23 @@ def child_sources(tmp_path: Path, child_manifest: str, child_file: str) -> tuple
 )
 def test_path_rule_additional_sources(tmp_path: Path, child_manifest: str, child_file: str, expected: tuple[str, ...]) -> None:
     assert child_sources(tmp_path, child_manifest, child_file) == expected
+
+
+def test_sources_only_rule_keeps_the_editor_selected_by_a_lower_priority_rule(tmp_path: Path) -> None:
+    # `own_editor` (priority 0) selects `myed` for *.own; a sources-only rule on top must not undo that.
+    repo_root = tmp_path / "repo"
+    (repo_root / "profiles").mkdir(parents=True)
+    (repo_root / "profiles" / "default.toml").write_text("", encoding="utf-8")
+    manifests = {
+        "base": BASE_MANIFEST + '\n[targets.t.path_rules.top]\npattern = "*.own"\npriority = 5\n',
+        "child": 'extends = ["base"]\n[append.targets.t.path_rules.top.editor]\nadditional_sources = ["y"]\n',
+    }
+    for package_id, manifest in manifests.items():
+        (repo_root / "packages" / package_id).mkdir(parents=True)
+        (repo_root / "packages" / package_id / "package.toml").write_text(manifest, encoding="utf-8")
+    engine = DotmanEngine.from_config_path(write_single_repo_config(tmp_path, repo_name="fixture", repo_path=repo_root))
+    target = engine.get_repo("fixture").resolve_package("child").targets["t"]
+    *_, editor, sources, _ = directory_child_policy(
+        "f.own", target.path_rules, default_render=None, default_capture=None, default_editor=target.editor
+    )
+    assert (editor.run, sources) == ("myed", ("x", "y"))

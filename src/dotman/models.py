@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -143,6 +143,15 @@ class EditorSpec:
     # always carry their own root.
     additional_sources_root: Path | None = field(default=None, repr=False, compare=False)
     additional_sources_explicit: bool = field(default=False, repr=False, compare=False)
+
+    def with_sources_of(self, other: "EditorSpec") -> "EditorSpec":
+        """This editor selection with `other`'s source list."""
+        return replace(
+            self,
+            additional_sources=other.additional_sources,
+            additional_source_entries=other.source_entries(),
+            additional_sources_root=other.additional_sources_root,
+        )
 
     def source_entries(self) -> tuple[AdditionalSource, ...]:
         if self.additional_source_entries:

@@ -904,10 +904,7 @@ def _merge_editor_specs(base: EditorSpec, override: EditorSpec, *, override_expl
     selection = override if override_explicit else base
     sources = override if override.additional_sources_explicit else base
     return replace(
-        selection,
-        additional_sources=sources.additional_sources,
-        additional_source_entries=sources.source_entries(),
-        additional_sources_root=sources.additional_sources_root,
+        selection.with_sources_of(sources),
         additional_sources_explicit=(
             override.additional_sources_explicit or base.additional_sources_explicit
         ),
