@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import os
 import sys
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager, nullcontext
 from typing import TYPE_CHECKING, Any, NoReturn
 
 from dotman.cli_parser import build_parser, normalize_edit_query_argv
@@ -20,6 +21,10 @@ from dotman.terminal import colors_enabled, emit_interrupt_notice
 if TYPE_CHECKING:
     from dotman.interaction import Interaction
 
+
+
+# `doctor` lists every stale row itself, so a skip warning on top would only repeat it.
+COMMANDS_REPORTING_STALE_ROWS = frozenset({"doctor"})
 
 
 class RootUnderSudoError(ValueError):
@@ -41,10 +46,14 @@ def main(
         no_confirm = args.no_confirm
         if args.command in StandaloneCommandRunner.command_names:
             selected_runner = StandaloneCommandRunner()
+            skipped_rows_warning = nullcontext()
         else:
             _refuse_root_under_sudo()
             selected_runner = _repo_command_runner(args, None if no_confirm else interaction)
-        with command_operation(), interaction_scope(no_confirm=args.no_confirm):
+            skipped_rows_warning = (
+                nullcontext() if args.command in COMMANDS_REPORTING_STALE_ROWS else _warn_about_skipped_tracked_rows()
+            )
+        with command_operation(), interaction_scope(no_confirm=args.no_confirm), skipped_rows_warning:
             return selected_runner.run(args)
     except InteractionRequiredError as exc:
         _emit_error(exc, use_color=colors_enabled(sys.stderr))
@@ -74,6 +83,25 @@ def console_main() -> NoReturn:
     if exit_code == INTERRUPTED_EXIT_CODE and sigint_received():
         exit_from_interrupt()
     raise SystemExit(exit_code)
+
+
+@contextmanager
+def _warn_about_skipped_tracked_rows() -> Iterator[None]:
+    """Warn once per command, after it finishes, about the stale rows it skipped.
+
+    Reporting at the end keeps the warning out of the Command Deck and one command
+    to one report, however many times the command walked the tracked state.
+    """
+    from dotman.cli_emit import emit_skipped_tracked_row_warnings
+    from dotman.tracking import collecting_skipped_tracked_rows
+
+    with collecting_skipped_tracked_rows() as skipped_rows:
+        try:
+            yield
+        finally:
+            emit_skipped_tracked_row_warnings(
+                list(skipped_rows.values()), use_color=colors_enabled(sys.stderr)
+            )
 
 
 def _emit_error(exc: Exception, *, use_color: bool) -> None:

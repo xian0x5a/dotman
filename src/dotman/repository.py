@@ -86,6 +86,20 @@ PACKAGE_MANIFEST_TOP_LEVEL_KEYS = {
 }
 
 
+class MissingExtendsParentError(ValueError):
+    """A package extends a parent the repo does not define.
+
+    Distinct from other manifest errors (extends cycle, bad TOML): a dangling
+    reference makes a tracked row stale, while malformed content is a repo error.
+    """
+
+    def __init__(self, *, repo_name: str, package_id: str, parent_id: str) -> None:
+        self.repo_name = repo_name
+        self.package_id = package_id
+        self.parent_id = parent_id
+        super().__init__(f"package '{package_id}' extends '{parent_id}', which repo '{repo_name}' does not define")
+
+
 class Repository:
     def __init__(self, config: RepoConfig) -> None:
         self.config = config
@@ -366,6 +380,10 @@ class Repository:
         loaded = self.packages[package_id]
         merged: PackageSpec | None = None
         for parent_id in loaded.extends or ():
+            if parent_id not in self.packages:
+                raise MissingExtendsParentError(
+                    repo_name=self.config.name, package_id=package_id, parent_id=parent_id
+                )
             # A parent may contribute only part of a keyed path rule. Defer
             # completeness checks until all parents and the child are merged.
             parent_spec = self._resolve_package(parent_id, validate=False, extending=(*extending, package_id))
