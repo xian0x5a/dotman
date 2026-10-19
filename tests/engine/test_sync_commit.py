@@ -241,6 +241,10 @@ def test_commit_leaves_out_ignored_untracked_sources(tmp_path, monkeypatch):
     assert result.status == "completed", result
     assert [(commit.repo, commit.status) for commit in result.commits] == [("main", "committed")]
     assert git(repo, "show", "--name-only", "--format=", "HEAD").split() == ["packages/app/first"]
+    # The message names only the target the commit records.
+    subject = git(repo, "log", "-1", "--format=%s").strip()
+    assert subject == "chore(dotman): pull app.first"
+    assert result.commits[0].message.splitlines()[0] == subject
     assert (repo / "packages/app/second").read_bytes() == b"live second"
     # Nothing stays staged, and the ignored source stays untracked.
     assert git(repo, "status", "--porcelain").splitlines() == []

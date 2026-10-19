@@ -407,7 +407,9 @@ repository sources only through deliberate Editor changes.
   staged or unstaged work stays out. Files a pull hook writes are not included,
   and, as with `git add -A`, neither is an untracked source git ignores.
   A repo with nothing left to commit reports `no-changes`.
-- The message comes from `[git] commit_message` ([config](config.md#git)).
+- The message comes from `[git] commit_message` ([config](config.md#git)). It
+  names only the targets whose sources the commit records; the Deck's message
+  is a prediction before the run, so it may count a source git later leaves out.
 - A failed commit fails the run; an interrupted one aborts it. Earlier commits
   stay. Git hooks and signing run as configured in the repository.
 - The timeline shows each commit as a `commit` step under its repo, described
