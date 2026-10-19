@@ -1,17 +1,6 @@
 from __future__ import annotations
 
-import sys
-import types
 from pathlib import Path
-
-pathspec = types.ModuleType("pathspec")
-pathspec.__path__ = []
-pathspec.PathSpec = type("PathSpec", (), {})
-sys.modules.setdefault("pathspec", pathspec)
-
-pathspec_gitignore = types.ModuleType("pathspec.gitignore")
-pathspec_gitignore.GitIgnoreSpec = type("GitIgnoreSpec", (), {})
-sys.modules.setdefault("pathspec.gitignore", pathspec_gitignore)
 
 from dotman.capture import CaptureError
 from dotman.cli_emit import emit_error
