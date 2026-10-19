@@ -33,10 +33,6 @@ class UntrackEntryRequest:
     # share one repo:package@profile identity and differ only by state directory.
     record: PersistedTrackedPackageEntryRecord
 
-    @property
-    def binding(self) -> FullSpecSelector:
-        return self.record.package_entry
-
 
 @dataclass(frozen=True)
 class UntrackGroupRequest:

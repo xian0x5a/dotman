@@ -34,9 +34,9 @@ def test_untrack_resolver_returns_persisted_orphan_entry(tmp_path: Path) -> None
     )
 
     assert isinstance(result, UntrackEntryRequest)
-    assert result.binding.repo == "removed"
-    assert result.binding.selector == "linux"
-    assert result.binding.profile == "orphan"
+    assert result.record.package_entry.repo == "removed"
+    assert result.record.package_entry.selector == "linux"
+    assert result.record.package_entry.profile == "orphan"
 
 
 def test_untrack_resolver_reports_implicit_package_owner(tmp_path: Path) -> None:
@@ -125,7 +125,7 @@ def test_untrack_resolver_prefers_interactive_persisted_partial_over_exact_group
     ).resolve("fixture:bundle")
 
     assert isinstance(result, UntrackEntryRequest)
-    assert result.binding.selector == "bundle-tools"
+    assert result.record.package_entry.selector == "bundle-tools"
     request = interaction.requests[0]
     assert isinstance(request, ChoiceRequest)
     assert request.header_text == "Select a tracked package entry for 'bundle':"
@@ -172,7 +172,7 @@ def test_untrack_resolver_describes_remaining_tracking_after_removal(tmp_path: P
     assert isinstance(request, UntrackEntryRequest)
     untrack_entry(engine, "example:git@basic")
 
-    remaining = resolver.remaining_tracked_package(request.binding)
+    remaining = resolver.remaining_tracked_package(request.record.package_entry)
 
     assert remaining is not None
     assert remaining.package_id == "git"
