@@ -145,21 +145,14 @@ def test_target_input_runs_no_dependency_hooks(tmp_path, monkeypatch):
 
 
 def test_push_authenticates_sudo_once_for_all_protected_writes(tmp_path, monkeypatch, capsys):
-    # A fake `sudo` that accepts ticket probes and runs the privileged helper
-    # as the current user, so protected writes go through the real sudo path.
+    # The conftest sudo mock grants the ticket and runs the privileged helper
+    # unelevated, so protected writes still go through the sudo path.
     import os
-    import stat
 
     from dotman import file_access
 
     if os.geteuid() == 0:
         pytest.skip("root never requests sudo")
-    fake_bin = tmp_path / "bin"
-    fake_bin.mkdir()
-    fake_sudo = fake_bin / "sudo"
-    fake_sudo.write_text('#!/bin/sh\nwhile [ "${1#-}" != "$1" ]; do shift; done\n[ "$#" -eq 0 ] || exec "$@"\n')
-    fake_sudo.chmod(fake_sudo.stat().st_mode | stat.S_IXUSR)
-    monkeypatch.setenv("PATH", f"{fake_bin}{os.pathsep}{os.environ['PATH']}")
     live_root = tmp_path / "live"
     monkeypatch.setattr(file_access, "needs_sudo_for_write", lambda path: live_root in path.parents)
     engine = make_engine(tmp_path, monkeypatch, [

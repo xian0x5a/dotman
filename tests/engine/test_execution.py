@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from threading import Thread
+from threading import Event, Thread
 from types import SimpleNamespace
 
 import pytest
@@ -209,8 +209,9 @@ def test_sudo_lease_keepalive_uses_runtime_captured_on_creation(monkeypatch) -> 
         lease = file_access._SudoLease()
 
     wait_results = iter((False, True))
-    lease._stop_event = SimpleNamespace(wait=lambda timeout: next(wait_results))
-    keepalive_thread = Thread(target=lease._keepalive_loop)
+    keepalive_thread = Thread(
+        target=lease._keepalive_loop, args=(SimpleNamespace(wait=lambda timeout: next(wait_results)),),
+    )
     keepalive_thread.start()
     keepalive_thread.join()
 
@@ -218,3 +219,29 @@ def test_sudo_lease_keepalive_uses_runtime_captured_on_creation(monkeypatch) -> 
         ("sudo", "-n", "true")
     ]
     assert default_runtime_requests == []
+
+
+def test_sudo_lease_keepalive_stops_when_a_slow_tick_outlasts_close(monkeypatch) -> None:
+    # close() waits only briefly for the keepalive; a tick still running then
+    # (slow PAM or hostname lookup) must not keep the thread alive afterwards.
+    monkeypatch.setattr(file_access, "_SUDO_KEEPALIVE_INTERVAL_SECONDS", 0.01)
+    monkeypatch.setattr(file_access.os, "geteuid", lambda: 1000)
+    tick_started, release_tick = Event(), Event()
+
+    def respond(request):
+        if request.command.arguments[1:] == ("-n", "true"):
+            tick_started.set()
+            release_tick.wait(5)
+        return CommandResult(exit_code=0)
+
+    runtime = MemoryCommandRuntime([respond] * 10_000)
+    with command_runtime_session(runtime):
+        lease = file_access._SudoLease()
+    lease.request("write protected path")
+    keepalive_thread = lease._keepalive_thread
+    assert tick_started.wait(5)
+    lease.close()
+    release_tick.set()
+    keepalive_thread.join(timeout=2)
+
+    assert not keepalive_thread.is_alive()
