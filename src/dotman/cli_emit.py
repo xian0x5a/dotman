@@ -223,7 +223,7 @@ def emit_repos(*, repos: Sequence[Any], json_output: bool, use_color: bool) -> i
         order_badge = cli_style.render_menu_badge(f"[order {repo.order}]", use_color=use_color)
         state_annotation = "" if repo.state_key == repo.name else f"state_key: {repo.state_key}"
         print(
-            f"{cli_style.join_menu_display_fields(repo_name, order_badge, str(repo.path))}"
+            f"{cli_style.join_menu_display_fields(repo_name, order_badge, terminal_safe_line(str(repo.path)))}"
             f"{cli_style.render_annotation_parentheses(state_annotation, use_color=use_color)}"
         )
     return 0
@@ -410,7 +410,7 @@ def emit_variable_detail(*, variable_detail: Any, json_output: bool, use_color: 
             provenance_label = f"{occurrence.provenance.source_kind} {provenance_label}"
         print(
             f"      {cli_style.render_payload_section_label(provenance_label, use_color=use_color)}: "
-            f"{occurrence.provenance.source_path}"
+            f"{terminal_safe_line(str(occurrence.provenance.source_path))}"
         )
     return 0
 
@@ -571,7 +571,7 @@ def emit_add_result(*, result: Any, json_output: bool, use_color: bool) -> int:
     )
     action = "created" if result.created_package else "updated"
     print(f"{action} package config {package_label}")
-    print(f"  manifest: {result.manifest_path}")
+    print(f"  manifest: {terminal_safe_line(str(result.manifest_path))}")
     print(f"  target:   {result.target_name} [{result.target_kind}]")
     print(f"  source:   {result.source_path}")
     print(f"  path:     {result.config_path}")
@@ -856,7 +856,7 @@ def emit_tracked_package_detail(*, package_detail: Any, json_output: bool, use_c
         print(cli_style.render_info_section_header("owned targets", use_color=use_color))
     for target in package_detail.owned_targets:
         target_name = cli_style.style_text(target.target.target_name, '1') if use_color else target.target.target_name
-        print(f"    {target_name} -> {target.target.live_path}")
+        print(f"    {target_name} -> {terminal_safe_line(str(target.target.live_path))}")
     return 0
 
 
@@ -1085,7 +1085,7 @@ def _structured_error_fields(error: Any, *, use_color: bool) -> list[tuple[str, 
             )
         )
         if path_rule_pattern is not None:
-            fields.append(("path rule:", terminal_safe_line(path_rule_pattern)))
+            fields.append(("path rule:", path_rule_pattern))
     else:
         package_repo = _error_attribute(error, "package_repo")
         if package_repo is not None and package_id is not None:
