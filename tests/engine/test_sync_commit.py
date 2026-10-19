@@ -250,11 +250,16 @@ def test_commit_leaves_out_ignored_untracked_sources(tmp_path, monkeypatch):
     assert git(repo, "status", "--porcelain").splitlines() == []
 
 
-def test_commit_keeps_tracked_sources_that_gitignore_matches(tmp_path, monkeypatch):
+@pytest.mark.parametrize("ignore_rule", [
+    pytest.param("/packages/app/first", id="source-file-ignored"),
+    # `git add` refuses any path under an ignored directory, tracked or not (#260).
+    pytest.param("/packages/app/", id="source-directory-ignored"),
+])
+def test_commit_keeps_tracked_sources_that_gitignore_matches(tmp_path, monkeypatch, ignore_rule):
     engine = make_engine(tmp_path, monkeypatch, TWO_DRIFTED)
     repo = tmp_path / "repo"
     # Git keeps tracking a file that .gitignore starts matching later.
-    (repo / ".gitignore").write_text("/packages/app/first\n")
+    (repo / ".gitignore").write_text(f"{ignore_rule}\n")
     git(repo, "add", ".gitignore")
     git(repo, "commit", "-qm", "ignore")
     with engine.open_pull_session(engine.resolve_sync_scope(), commit=True) as session:

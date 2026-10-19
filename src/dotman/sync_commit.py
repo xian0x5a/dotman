@@ -108,12 +108,9 @@ def committable_paths(root: Path, paths: Sequence[Path], runtime: CommandRuntime
     are kept out of history on purpose. It also leaves out unchanged sources and
     deleted sources git never tracked, so the message can describe exactly these.
     """
-    status = _git(runtime, root, "status", "--porcelain", "-z", "--no-renames", "--untracked-files=all",
-                  "--", *map(str, paths))
-    # Each -z entry is "XY <path>", relative to the work tree root.
-    changed = {root / entry[3:] for entry in status.split("\0") if entry}
+    changed = _changed_files(root, paths, runtime)
     # A directory source covers the changed files below it.
-    covered = changed.union(*(name.parents for name in changed))
+    covered = set(changed).union(*(name.parents for name in changed))
     return tuple(path for path in dict.fromkeys(paths) if path in covered)
 
 
@@ -123,12 +120,27 @@ def commit_sources(root: Path, paths: Sequence[Path], message: str, runtime: Com
     Returns the short commit hash, or None when the paths match HEAD.
     """
     pathspec = tuple(map(str, paths))
-    _git(runtime, root, "add", "-A", "--", *pathspec)
+    # `git add` refuses any path under an ignored directory, even a tracked file
+    # there. Stage the files git status reports instead: it already leaves out
+    # ignored untracked files, so forcing these names adds nothing ignored.
+    changed = _changed_files(root, paths, runtime)
+    if not changed:
+        # An empty pathspec would make `git add -A` stage the whole work tree.
+        return None
+    _git(runtime, root, "add", "-A", "--force", "--", *map(str, changed))
     if runtime.run(_git_request(root, "diff", "--cached", "--quiet", "--", *pathspec)).exit_code == 0:
         return None
     # Pathspec commit (`--only`) leaves other staged changes in the index.
     _git(runtime, root, "commit", "--quiet", "--file=-", "--", *pathspec, message=message)
     return _git(runtime, root, "rev-parse", "--short", "HEAD").strip()
+
+
+def _changed_files(root: Path, paths: Sequence[Path], runtime: CommandRuntime) -> tuple[Path, ...]:
+    """Files under `paths` that git status reports as changed; it leaves out ignored untracked files."""
+    status = _git(runtime, root, "status", "--porcelain", "-z", "--no-renames", "--untracked-files=all",
+                  "--", *map(str, paths))
+    # Each -z entry is "XY <path>", relative to the work tree root.
+    return tuple(root / entry[3:] for entry in status.split("\0") if entry)
 
 
 def _git_request(cwd: Path, *args: str, message: str | None = None) -> CommandRequest:
