@@ -5,7 +5,7 @@ from pathlib import Path
 
 from dotman.errors import UsageError
 from dotman.models import GitConfig, ManagerConfig, RepoConfig, SnapshotConfig, UiConfig, UiMenusConfig
-from dotman.printable import SELECTOR_ID_RESERVED_CHARACTERS, validate_printable_name
+from dotman.printable import SELECTOR_ID_RESERVED_CHARACTERS, validate_printable
 from dotman.sync_commit import validate_commit_message_template
 from dotman.toml_utils import load_toml_file
 
@@ -65,7 +65,7 @@ def validate_repo_name(repo_name: str) -> None:
     It follows the package ID rules without namespaces: no selector delimiters,
     no `/` and no `.` (which also rules out `.` and `..` as directories).
     """
-    validate_printable_name(repo_name, kind="repo name")
+    validate_printable(repo_name, kind="repo name")
     if (
         not repo_name.strip()
         or "/" in repo_name
@@ -88,10 +88,7 @@ def validate_state_key(state_key: object, *, repo_name: str) -> str:
     if "/" in normalized or "\\" in normalized:
         raise UsageError(f"repo '{repo_name}' state_key must not contain path separators")
     # Checked on the stripped key, which is the one that names the state directory.
-    try:
-        validate_printable_name(normalized, kind="state_key")
-    except UsageError as exc:
-        raise UsageError(f"repo '{repo_name}': {exc}") from None
+    validate_printable(normalized, kind="state_key", context=f"repo '{repo_name}'")
     return normalized
 
 
@@ -132,6 +129,9 @@ def _load_repo_entry(
     order_value = repo_payload.get("order")
     if not isinstance(repo_path_value, str):
         raise UsageError(f"repo '{repo_name}' must define string path")
+    # The path as written: `~`, `$VAR` and the config directory expand from the user's own
+    # environment afterwards, and live-path output escapes whatever those add.
+    validate_printable(repo_path_value, kind="path", context=f"repo '{repo_name}'")
     if not isinstance(order_value, int) or isinstance(order_value, bool):
         raise UsageError(f"repo '{repo_name}' must define integer order")
     if order_value in seen_orders:

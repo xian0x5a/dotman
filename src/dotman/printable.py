@@ -1,7 +1,9 @@
-"""The printable rule: what a terminal may show raw, and what a name the user writes may contain.
+"""The printable rule: what authored identity may contain, and how outside text is shown.
 
-`str.isprintable` is the one predicate. Names must pass it at load, so they are
-always shown as written, and any other text is escaped by it before it is shown.
+`str.isprintable` is the one predicate. Text the user authors as identity (names,
+target `source` and `path`, a repo `path`) must pass it at load, so it is always
+printed as written. Text from outside dotman (file names found on disk, OS and
+exception messages, rows an older dotman stored) is escaped by it where it enters output.
 """
 
 from __future__ import annotations
@@ -62,12 +64,14 @@ def terminal_safe_text(text: str) -> str:
     )
 
 
-def validate_printable_name(name: str, *, kind: str) -> None:
-    """Reject a name the user wrote that a terminal could show as something else.
+def validate_printable(text: str, *, kind: str, context: str | None = None) -> None:
+    """Reject authored identity (a name or a path) that a terminal could show as something else.
 
     Control characters, bidi overrides, zero-width joiners, non-ASCII spaces and
     private-use glyphs (such as Nerd Font icons) pass for ordinary text, so they
-    are refused up front. The name is echoed escaped.
+    are refused up front. The error echoes the value escaped on one line and,
+    given a `context` such as the file or entry being loaded, starts with it.
     """
-    if not name.isprintable():
-        raise UsageError(f"invalid {kind} '{terminal_safe_line(name)}': names must be printable characters")
+    if not text.isprintable():
+        prefix = "" if context is None else f"{context}: "
+        raise UsageError(f"{prefix}invalid {kind} '{terminal_safe_line(text)}': must contain only printable characters")
