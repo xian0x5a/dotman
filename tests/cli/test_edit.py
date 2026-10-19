@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 import dotman.cli_interaction as cli
 
 from dotman.cli import main
@@ -604,6 +606,20 @@ def test_edit_cli_sugar_rejects_cross_kind_exact_ambiguity(
     assert "edit query 'note' is ambiguous:" in err
     assert "package fixture:note" in err
     assert "target fixture:note.note" in err
+
+
+def test_edit_cli_sugar_rejects_abbreviated_global_option(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    config_path = write_named_manager_config(tmp_path, {"fixture": tmp_path / "repo"})
+
+    with pytest.raises(SystemExit) as exit_info:
+        main(["--conf", str(config_path), "edit", "git"])
+
+    assert exit_info.value.code == 2
+    err = capsys.readouterr().err
+    assert "'query'" not in err
 
 
 def test_edit_target_cli_opens_tracked_file_target_repo_path_with_editor(
