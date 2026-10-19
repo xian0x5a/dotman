@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import unicodedata
 from dataclasses import dataclass, replace
 from pathlib import PurePosixPath
 from typing import Sequence
@@ -466,7 +467,9 @@ def sync_unit_identity_bytes(identity: ResolvedSyncTarget) -> bytes:
             identity.target_name,
             identity.child_path,
         )
-        or "\x00" in identity.canonical
+        # Human output prints identities verbatim, so a control character
+        # (NUL, ESC, CR, ...) would reach the terminal raw.
+        or any(unicodedata.category(character) == "Cc" for character in identity.canonical)
     ):
         raise ValueError(
             "Sync Base requires a canonical file or directory-child identity"

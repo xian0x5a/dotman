@@ -365,8 +365,11 @@ def _stored_children(
                 if not record.identity.startswith(target + b"/"):
                     continue
                 relative = record.identity[len(target) + 1:].decode()
-                if None in selected or relative in selected:
-                    children[replace(identity, child_path=relative)] = (item, child_metadata(metadata, relative))
+                child_identity = replace(identity, child_path=relative)
+                # A Base stored before its name lost canonical identity stays inert;
+                # census reports the child itself as unsupported-name.
+                if (None in selected or relative in selected) and _has_canonical_identity(child_identity):
+                    children[child_identity] = (item, child_metadata(metadata, relative))
     return children
 
 

@@ -3,7 +3,7 @@ import os
 import pytest
 
 from dotman.engine import DotmanEngine
-from dotman.sync_base_store import DirectoryChildPresent, Missing
+from dotman.sync_base_store import DirectoryChildPresent, Missing, SyncBaseRecord, SyncBaseStore
 from dotman.sync_session import SyncSession
 from tests.engine.test_sync_session import make_engine
 from tests.helpers import resolved_child_metadata
@@ -111,6 +111,9 @@ def test_unsupported_repository_nodes_are_path_local_and_exclusions_win(tmp_path
     ('back\\slash.txt', 'back\\\\slash.txt'),
     ('trailing.txt ', 'trailing.txt '),
     ('Icon\r', 'Icon\\u000d'),
+    # Control characters inside a name would reach the terminal raw.
+    ('a\rb', 'a\\u000db'),
+    ('evil\x1b[2Kname', 'evil\\u001b[2Kname'),
     (os.fsdecode(b'caf\xe9.txt'), 'caf\\xe9.txt'),
 ])
 def test_child_name_without_canonical_identity_fails_only_that_child(tmp_path, monkeypatch, name, shown):
@@ -127,6 +130,17 @@ def test_child_name_without_canonical_identity_fails_only_that_child(tmp_path, m
         assert units[shown].state == 'observation-failed'
         assert units[shown].diagnostics[0].code == 'unsupported-name'
         assert units[shown].base.status == 'unavailable'
+
+
+def test_stored_base_under_name_without_canonical_identity_does_not_block_session(tmp_path, monkeypatch):
+    # Bases stored before control characters lost canonical identity stay inert.
+    engine = directory_engine(tmp_path, monkeypatch)
+    repo, live = tmp_path / 'repo/packages/app/tree', tmp_path / 'live/tree'
+    put(repo, 'good', b'same'); put(live, 'good', b'same')
+    with SyncBaseStore.open(engine._tracked_state_context.state_root, 'main') as store:
+        store.replace(SyncBaseRecord(b'main:app.tree/a\rb', DirectoryChildPresent(b'old', False)))
+    with open_directory(engine, preview=False) as session:
+        assert [unit.identity.child_path for unit in session.view.observations] == ['good']
 
 
 def test_path_failure_on_undecodable_name_stays_printable(tmp_path, monkeypatch):
