@@ -347,3 +347,19 @@ def test_store_read_failure_after_open_is_cli_error(tmp_path, monkeypatch, capsy
     assert code != 0
     assert "simulated read failure" in output.err
     assert "Traceback" not in output.err
+
+
+def test_child_names_with_glob_characters_are_ordinary_exact_identities(tmp_path, monkeypatch):
+    # Selectors never glob, so these characters are literal parts of a name.
+    from tests.engine.test_sync_directory_observation import directory_engine, put
+    engine = directory_engine(tmp_path, monkeypatch)
+    names = ("a[1].txt", "q?.txt", "star*.txt")
+    for name in names:
+        put(tmp_path / "repo/packages/app/tree", name); put(tmp_path / "live/tree", name)
+        store_record(engine, identity=f"main:app.tree/{name}", payload=DirectoryChildPresent(b"bytes", False))
+    assert [entry["identity"] for entry in engine.list_sync_bases()] == [f"main:app.tree/{name}" for name in names]
+    checks = {check.key: check.detail for check in engine.doctor().checks}
+    assert checks["sync_bases_corrupt"] == "0 corrupt Sync Bases"
+    assert checks["sync_bases_orphaned"] == "0 orphaned Sync Bases"
+    assert engine.info_sync_base("main:app.tree/q?.txt")["status"] == "usable"
+    assert engine.reset_sync_base("main:app.tree/star*.txt")["status"] == "reset"
