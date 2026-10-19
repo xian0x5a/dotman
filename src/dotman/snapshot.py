@@ -20,6 +20,10 @@ from dotman.models import PackagePlan, SnapshotConfig
 
 FINAL_SNAPSHOT_STATUSES = {"applied", "failed"}
 RESTORABLE_SNAPSHOT_STATUSES = {"prepared", *FINAL_SNAPSHOT_STATUSES}
+# Snapshots copy live bytes that may be secrets, so a generation is owner-only
+# regardless of the live file's mode or how broad the snapshot store already is.
+_PRIVATE_DIRECTORY_MODE = 0o700
+_PRIVATE_BLOB_MODE = 0o600
 
 
 @dataclass(frozen=True)
@@ -158,7 +162,8 @@ def create_push_snapshot(plans: Sequence[PackagePlan], snapshot_config: Snapshot
     created_at = _format_snapshot_timestamp(_utc_now())
     snapshot_root = snapshot_config.path / snapshot_id
     entries_root = snapshot_root / "entries"
-    entries_root.mkdir(parents=True, exist_ok=False)
+    snapshot_root.mkdir(mode=_PRIVATE_DIRECTORY_MODE, parents=True, exist_ok=False)
+    entries_root.mkdir(mode=_PRIVATE_DIRECTORY_MODE)
     try:
         entries: list[SnapshotEntry] = []
         for index, entry in enumerate(pending_entries, start=1):
@@ -183,7 +188,7 @@ def create_push_snapshot(plans: Sequence[PackagePlan], snapshot_config: Snapshot
                 mode = stat.S_IMODE(managed_path.stat().st_mode)
             elif existed_before and not preserve_symlink_identity:
                 content_path = Path("entries") / f"{index:04d}.bin"
-                write_bytes_atomic(snapshot_root / content_path, managed_path.read_bytes())
+                write_bytes_atomic(snapshot_root / content_path, managed_path.read_bytes(), mode=_PRIVATE_BLOB_MODE)
                 mode = stat.S_IMODE(managed_path.stat().st_mode)
             entries.append(
                 SnapshotEntry(
