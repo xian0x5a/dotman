@@ -116,6 +116,8 @@ under `examples/repo/`.
   - `pre_push = ["{{ INSTALL }} extra-tool"]`
 - Appendable lists: `depends`, `reserved_paths`, `ignore.patterns` (package or target), `editor.additional_sources`, hook commands, and list-valued `vars`.
 - `append` should fail if the targeted inherited field is not a list. Path rules are a keyed table: to add one, declare it in the child.
+- Appending to an appendable list that no parent sets starts from an empty list. Appending to a hook or `vars` entry that doesn't exist fails.
+- `remove` and `append` errors name the child's `package.toml`.
 - Targets and hooks should stay keyed so merges remain deterministic.
 - Conflicting target ownership or incompatible target/path collisions should fail hard.
 - Reserved path collisions should also fail hard when one package reserves a live path used or reserved by another package.

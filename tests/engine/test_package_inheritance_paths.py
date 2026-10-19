@@ -83,6 +83,9 @@ def test_remove_accepts_manifest_keys(
     [
         ('[append.targets.t.ignore]\npatterns = ["child"]\n', lambda p: p.targets["t"].ignore_patterns, ("base", "child")),
         ('[append.ignore]\npatterns = ["child-package"]\n', lambda p: p.ignore_patterns, ("base-package", "child-package")),
+        # A list no parent sets is still a list: appending starts from empty.
+        ('[append]\ndepends = ["dep"]\n', lambda p: p.depends, ("dep",)),
+        ('[append]\nreserved_paths = ["~/r"]\n', lambda p: p.reserved_paths, ("~/r",)),
     ],
 )
 def test_append_accepts_manifest_keys(
@@ -124,3 +127,20 @@ def test_append_rejects_keyed_path_rules(tmp_path: Path) -> None:
 def test_inheritance_paths_cover_every_manifest_key(model: type, manifest_keys: frozenset[str], not_patchable: set[str]) -> None:
     # A manifest key added without a path mapping would silently be unremovable.
     assert set(MANIFEST_FIELDS[model]) == set(manifest_keys) - not_patchable
+
+
+@pytest.mark.parametrize(
+    "child_manifest",
+    [
+        'remove = ["targets.t.rendr"]\n',
+        'remove = ["targets..t"]\n',
+        '[append]\ndescription = ["x"]\n',
+        '[append.targets.t]\nhooks = { guard_push = ["x"] }\n',
+        '[append]\ndepends = "dep"\n',
+        '[append]\ndepends = [1]\n',
+    ],
+)
+def test_inheritance_errors_name_the_child_manifest(tmp_path: Path, child_manifest: str) -> None:
+    # In a repo with many packages, the error must say which manifest to fix.
+    with pytest.raises(ValueError, match=r"package manifest \S*packages/child/package\.toml"):
+        resolve_child(tmp_path, child_manifest)

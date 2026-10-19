@@ -140,15 +140,20 @@ class _PatchContext:
     def manifest_path(self) -> Path:
         return self.package_root / "package.toml"
 
+    def error(self, message: str) -> ValueError:
+        # Name the manifest that declares the remove/append so users of a
+        # repo with many packages know which file to fix.
+        return ValueError(f"package manifest {self.manifest_path}: {message}")
 
-def _unknown_path(path: str) -> ValueError:
-    return ValueError(f"package inheritance path '{path}' does not name a manifest field that remove or append can change")
+
+def _unknown_path(path: str, context: _PatchContext) -> ValueError:
+    return context.error(f"package inheritance path '{path}' does not name a manifest field that remove or append can change")
 
 
-def _split_path(path: str) -> tuple[str, ...]:
+def _split_path(path: str, context: _PatchContext) -> tuple[str, ...]:
     parts = tuple(path.split("."))
     if any(not part for part in parts):
-        raise ValueError(f"invalid package inheritance path '{path}'")
+        raise context.error(f"invalid package inheritance path '{path}'")
     return parts
 
 
@@ -229,15 +234,16 @@ class _Append:
             return self._append_hook_commands(owner, path)
         if manifest_field.append == "sources":
             return self._append_additional_sources(owner, path)
-        if manifest_field.append == "strings" and isinstance(current, tuple):
+        if manifest_field.append == "strings":
             values = self._require_list(path)
             if not all(isinstance(item, str) for item in values):
-                raise ValueError(f"append target '{path}' must contain only strings")
-            return replace(owner, **{manifest_field.model_field: (*current, *values)})
-        raise ValueError(f"append target '{path}' is not a list")
+                raise self.context.error(f"append target '{path}' must contain only strings")
+            # An unset list (None) has no inherited entries; appending starts from empty.
+            return replace(owner, **{manifest_field.model_field: (*(current or ()), *values)})
+        raise self.context.error(f"append target '{path}' is not a list")
 
     def table(self, owner: Any, table: ManifestTable, parent: Any, path: str) -> Any:
-        raise ValueError(f"append target '{path}' is not a list")
+        raise self.context.error(f"append target '{path}' is not a list")
 
     def entry(self, mapping: dict[str, Any], key: str, path: str) -> dict[str, Any]:
         current = mapping[key]
@@ -245,14 +251,14 @@ class _Append:
             return {**mapping, key: self._append_hook_commands(current, path)}
         if isinstance(current, list):
             return {**mapping, key: [*current, *self._require_list(path)]}
-        raise ValueError(f"append target '{path}' is not a list")
+        raise self.context.error(f"append target '{path}' is not a list")
 
     def missing(self, value: Any, path: str) -> Any:
-        raise ValueError(f"append target '{path}' does not exist")
+        raise self.context.error(f"append target '{path}' does not exist")
 
     def _require_list(self, path: str) -> list[Any]:
         if not isinstance(self.values, list):
-            raise ValueError(f"append target '{path}' must receive a list")
+            raise self.context.error(f"append target '{path}' must receive a list")
         return self.values
 
     def _append_hook_commands(self, hook: HookSpec, path: str) -> HookSpec:
@@ -290,7 +296,7 @@ def _patch_value(value: Any, parts: tuple[str, ...], operation: _Operation, *, p
     if type(value) in MANIFEST_FIELDS:
         return _patch_table(value, MANIFEST_FIELDS[type(value)], parts, operation, parent=parent, path=path)
     if not isinstance(value, dict):
-        raise _unknown_path(path)
+        raise _unknown_path(path, operation.context)
     key, rest = parts[0], parts[1:]
     if key not in value:
         return operation.missing(value, path)
@@ -305,7 +311,7 @@ def _patch_table(
     key, rest = parts[0], parts[1:]
     entry = table.get(key)
     if entry is None:
-        raise _unknown_path(path)
+        raise _unknown_path(path, operation.context)
     if isinstance(entry, dict):
         if not rest:
             return operation.table(owner, entry, parent, path)
@@ -313,7 +319,7 @@ def _patch_table(
     if not rest:
         patched = operation.field(owner, entry, parent, path)
     elif not entry.nested:
-        raise _unknown_path(path)
+        raise _unknown_path(path, operation.context)
     else:
         child = getattr(owner, entry.model_field)
         if child is None:
@@ -346,7 +352,7 @@ def patch_remove_and_append(
     context = _PatchContext(package_root=package.package_root, default_command_elevation=default_command_elevation)
     patched = package
     for path in remove_paths:
-        patched = _patch_value(patched, _split_path(path), _Remove(context), parent=None, path=path)
+        patched = _patch_value(patched, _split_path(path, context), _Remove(context), parent=None, path=path)
     for path, values in _iter_append_paths(append_payload):
-        patched = _patch_value(patched, _split_path(path), _Append(context, values), parent=None, path=path)
+        patched = _patch_value(patched, _split_path(path, context), _Append(context, values), parent=None, path=path)
     return patched
