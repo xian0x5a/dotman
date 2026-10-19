@@ -662,7 +662,7 @@ Examples: `dotman pull main:git.config`,
   - `~/.config/nvim/init.lua` -> `files/config/nvim/init.lua`
   - `/etc/.ssh/ssh_config` -> `files/etc/ssh/ssh_config`
 - If another target in the same package already uses the derived `source`, `add` should append a numeric suffix such as `_2`, `_3` to the source name, before any extension, until it is unique. For example, adding `~/zshrc` after `~/.zshrc` gives `files/zshrc_2`, and `files/config/app.toml` becomes `files/config/app_2.toml`.
-- `add` should fail when the derived `source` is nested inside, or contains, another target's `source` in the same package while the two live paths do not nest (dropped leading dots can cause this, e.g. `~/.config/foo` and `~/config/foo/bar`), because push and pull reject such targets. Nested live paths are not refused.
+- `add` should fail when the new target would nest with another target of the same package in a way push or pull rejects as `incompatible nested targets`: a live path inside (or containing) another target's live path, or a derived `source` inside (or containing) another target's `source` (dropped leading dots can cause this, e.g. `~/.config/foo` and `~/config/foo/bar`). It applies the engine's own rule, so the other target's ignore patterns, gitignore rules and sync policy decide: a nested path that the parent target's ignore rules cover is added. Only the package's declared targets are compared; paths that need a profile to render are not checked.
 - `add` should inspect the actual live file mode and include `chmod` only when the mode is unusual.
 - The usual default modes are:
   - regular file: `644`
