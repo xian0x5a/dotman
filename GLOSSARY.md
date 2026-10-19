@@ -81,7 +81,7 @@ Order-preserving substitution of textual content without interpreting document s
 _Avoid_: Text transform, structured transform
 
 **Home Path Rewrite**:
-Reversible rewriting between the active home directory's absolute path and `~` when either appears as a complete path fragment in text.
+Reversible rewriting between paths under the active home directory and `~/...` when either appears as a complete path fragment in text; the bare `~` and the exact home path are rewritten only on opt-in.
 _Avoid_: Home normalization, home path transform
 
 **Render**:

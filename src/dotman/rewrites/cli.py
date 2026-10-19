@@ -32,7 +32,7 @@ def _read_input(input_path: str | None) -> tuple[bytes, Path | None]:
         raise HomeRewriteError(f"could not read input: {error.strerror or error}", path=path) from error
 
 
-def run_home_rewrite(*, action: str, input_path: str | None) -> int:
+def run_home_rewrite(*, action: str, input_path: str | None, bare_tilde: bool) -> int:
     try:
         home = active_home_path(os.environ)
     except ValueError as error:
@@ -45,7 +45,7 @@ def run_home_rewrite(*, action: str, input_path: str | None) -> int:
         raise HomeRewriteError("input is not valid UTF-8", path=source_path) from error
 
     rewrite = expand_home_paths if action == "expand" else collapse_home_paths
-    rewritten_text = rewrite(source_text, home=home)
+    rewritten_text = rewrite(source_text, home=home, bare_tilde=bare_tilde)
     # Preserve the original bytes on a no-op so byte identity is explicit and
     # cannot be weakened by a future change to text encoding behavior.
     output_bytes = source_bytes if rewritten_text == source_text else rewritten_text.encode("utf-8")

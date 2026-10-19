@@ -58,7 +58,7 @@ def test_standalone_helpers_still_run_under_sudo(
     monkeypatch.setattr("os.geteuid", lambda: 0)
     monkeypatch.setenv("SUDO_USER", "alice")
     monkeypatch.setenv("HOME", "/home/alice")
-    monkeypatch.setattr("sys.stdin", io.TextIOWrapper(io.BytesIO(b"~")))
+    monkeypatch.setattr("sys.stdin", io.TextIOWrapper(io.BytesIO(b"~/x")))
 
     assert main(["rewrite", "home", "expand", "-"]) == 0
-    assert capsysbinary.readouterr().out == b"/home/alice"
+    assert capsysbinary.readouterr().out == b"/home/alice/x"

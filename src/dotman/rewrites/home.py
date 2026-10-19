@@ -37,24 +37,29 @@ def active_home_path(environment: Mapping[str, str]) -> str:
     return trimmed_home
 
 
-def expand_home_paths(text: str, *, home: str) -> str:
+def _rewrite_standalone_fragments(
+    text: str, fragment: re.Pattern[str], replacement: str, *, bare_tilde: bool
+) -> str:
+    def rewrite(match: re.Match[str]) -> str:
+        # A bare `~` is not a home path in every format (YAML reads it as
+        # null), so only child paths rewrite unless the caller opts in.
+        is_child_path = text.startswith("/", match.end())
+        if (bare_tilde or is_child_path) and _is_standalone_fragment(
+            text, start=match.start(), end=match.end()
+        ):
+            return replacement
+        return match.group()
+
+    return fragment.sub(rewrite, text)
+
+
+def expand_home_paths(text: str, *, home: str, bare_tilde: bool = False) -> str:
     """Expand standalone home shorthand fragments without parsing paths."""
 
-    return _HOME_SHORTHAND.sub(
-        lambda match: home
-        if _is_standalone_fragment(text, start=match.start(), end=match.end())
-        else match.group(),
-        text,
-    )
+    return _rewrite_standalone_fragments(text, _HOME_SHORTHAND, home, bare_tilde=bare_tilde)
 
 
-def collapse_home_paths(text: str, *, home: str) -> str:
+def collapse_home_paths(text: str, *, home: str, bare_tilde: bool = False) -> str:
     """Collapse standalone active-home fragments without parsing paths."""
 
-    home_path = re.compile(re.escape(home))
-    return home_path.sub(
-        lambda match: "~"
-        if _is_standalone_fragment(text, start=match.start(), end=match.end())
-        else match.group(),
-        text,
-    )
+    return _rewrite_standalone_fragments(text, re.compile(re.escape(home)), "~", bare_tilde=bare_tilde)

@@ -21,7 +21,7 @@ Done when every top-level key, and every mapping you plan to split, has a verdic
 | Machine identity | device or install IDs, hostnames, absolute project paths | live-local |
 | Migration markers | schema versions, `migrated*` flags | live-local; the app rewrites them |
 | Accounts and secrets | tokens, emails, org IDs | live-local; secrets never enter the repo |
-| Home paths inside portable values | `/home/me/...` | portable, stored as `~/...` with the home path rewrite |
+| Home paths inside portable values | `/home/me/...` | portable, stored as `~/...` with the home path rewrite; add `--bare-tilde` to both commands only when a bare `~` means home in that format (never YAML, where it is null) |
 | Values that differ per OS or host | fonts, scale factors | live-local inside a transform pair; a templated value cannot round-trip through `capture` |
 
 ## 2. Pick the lowest tier that expresses the split

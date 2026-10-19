@@ -325,7 +325,7 @@ the projected file to stdout.
   with the default comparison, the target never shows as in sync after a Push.
 
 ```toml
-# The repository keeps portable `~` paths; the app needs absolute ones.
+# The repository keeps portable `~/...` paths; the app needs absolute ones.
 [targets.app_conf]
 source = "files/app.conf"
 path = "~/.config/app/app.conf"
@@ -386,7 +386,8 @@ capture = 'dotman transform json "$DOTMAN_LIVE_PATH" --stdout --mode cleanup --c
   `dotman rewrite home expand "$DOTMAN_REPO_PATH"` into `--overlay-file -` and
   Capture pipes `dotman rewrite home collapse "$DOTMAN_LIVE_PATH"` into base
   `-` ([home path rewrites](cli.md#home-path-rewrites)). The rewrite requires
-  UTF-8, so binary plists cannot use it.
+  UTF-8, so binary plists cannot use it. Leave out `--bare-tilde` for YAML,
+  where a bare `~` is null.
 - The default `compare` pair already fits; leave it unset.
 - For child files of a directory target, put the same pair on a `path_rules`
   entry.
