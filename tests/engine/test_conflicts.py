@@ -530,6 +530,11 @@ def test_package_reserved_paths_allow_each_instance_own_targets(
         "fixture:app<home>.config",
         "fixture:app<office>.config",
     ]
+    # Tracked-target lookup validates each selection's own declarations too.
+    _query, exact_matches, _partial_matches = engine.find_tracked_target_matches("app<home>.config")
+    assert [(match.package_id, match.bound_profile, match.target_name) for match in exact_matches] == [
+        ("app", "home", "config"),
+    ]
 
 
 def test_record_binding_rejects_conflicting_explicit_targets(

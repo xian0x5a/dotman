@@ -319,7 +319,7 @@ def build_target_metadata(
                 repo.config.name, packages, claims, context,
                 owner_for_package=lambda package_id: package_ref_text(
                     package_id=package_id,
-                    bound_profile=selection.identity.bound_profile if package_id == selection.identity.package_id else None,
+                    bound_profile=selection.bound_profile if package_id == selection.identity.package_id else None,
                 ),
             )
     return metadata_targets
