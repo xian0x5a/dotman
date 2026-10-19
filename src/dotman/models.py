@@ -275,7 +275,8 @@ class PackageSpec:
     hooks: dict[str, HookSpec] | None = None
     remove: tuple[str, ...] | None = None
     append: dict[str, Any] | None = None
-    # Lets extends tell an omitted binding_mode from an explicit "singleton".
+    # Lets extends tell an omitted binding_mode from an explicit "singleton";
+    # on a resolved spec it means "set somewhere in the extends chain".
     binding_mode_explicit: bool = False
 
 
