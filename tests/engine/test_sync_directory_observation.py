@@ -500,3 +500,26 @@ live = """{command}"""
         outcomes = {name: (unit.state, unit.comparison_live, unit.diagnostics) for name, unit in units.items()}
     in_sync = ('directly-in-sync', DirectoryChildPresent(literal.encode(), False), ())
     assert outcomes == {'plain': in_sync, 'ruled/file': in_sync}
+
+
+def test_full_target_ignores_parent_policy_that_a_child_package_overrides(tmp_path, monkeypatch):
+    # Path rules that don't set sync_policy follow their target. When a child
+    # package changes the target's policy through extends, the rule must follow
+    # the new policy, not the parent's, or a forbidden direction's Guards run.
+    log = tmp_path / 'pull-guard'
+    engine = directory_engine(tmp_path, monkeypatch)
+    app = tmp_path / 'repo/packages/app'
+    base = tmp_path / 'repo/packages/base'
+    base.mkdir()
+    (base / 'package.toml').write_text((app / 'package.toml').read_text().replace('"both"', '"pull-only"') + f'''
+[targets.tree.hooks]
+guard_pull = "echo pull >> {log}; exit 7"
+[targets.tree.path_rules.any]
+pattern = "*"
+''')
+    (app / 'package.toml').write_text('extends = ["base"]\n[targets.tree]\nsync_policy = "push-only"\n')
+    put(app / 'tree', 'a')
+    engine = DotmanEngine.from_config_path(tmp_path / 'config.toml')
+    with open_directory(engine, ['main:app.tree']) as session:
+        assert [unit.effective_policy for unit in session.view.observations] == ['push-only']
+    assert not log.exists()

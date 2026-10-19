@@ -65,6 +65,8 @@ def rule(package: PackageSpec, name: str) -> Any:
         ("targets.t.path_rules.a", lambda p: [r.name for r in p.targets["t"].path_rules], ["b"]),
         # A path rule without its own render inherits the target's render.
         ("targets.t.path_rules.b.render", lambda p: rule(p, "b").render, "jinja"),
+        # ...and keeps following it when a child removes the target's value.
+        ("targets.t.render", lambda p: rule(p, "a").render, "raw"),
         ("ignore.patterns", lambda p: p.ignore_patterns, None),
     ],
 )

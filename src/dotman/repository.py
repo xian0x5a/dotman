@@ -12,6 +12,7 @@ from dotman.manifest import (
     deep_merge,
     discover_package_manifests,
     merge_package_specs,
+    path_rules_following_targets,
     _validate_resolved_package,
     normalize_default_command_elevation,
     normalize_gitignore_enabled,
@@ -377,6 +378,7 @@ class Repository:
             loaded.append or {},
             default_command_elevation=self.default_command_elevation,
         )
+        merged = path_rules_following_targets(merged)
         if validate:
             merged = _validate_resolved_package(merged, repo_name=self.config.name)
             self._resolved_packages[package_id] = merged
