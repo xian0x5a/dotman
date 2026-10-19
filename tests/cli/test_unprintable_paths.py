@@ -8,7 +8,7 @@ text too. These paths come from outside the manifest and are escaped where they 
 - A live file or directory whose name holds a control character, such as a child of
   a directory target.
 - A target or repo path that expanded to a value holding one: a Jinja var in a target
-  `path`, an environment variable in a repo `path`.
+  `path`, an environment variable in a repo `path`, and every path under such a repo root.
 - The config file's own location, which the user chose.
 
 Escaping is `\\uNNNN` per unprintable character, newline and tab included: a path is
@@ -108,6 +108,24 @@ def write_config_with_expanded_repo_path(tmp_path: Path) -> Path:
     return config_path
 
 
+def write_repo_under_expanded_root(tmp_path: Path) -> Path:
+    """Write a repo at `$EVIL/repo2` (a real directory once `EVIL` is `EXPANDED_VALUE`) with a var `y`, and a live `~/live.conf`.
+
+    Every path inside the repo, the package manifest included, is under that hostile root.
+    """
+    repo_root = tmp_path / EXPANDED_VALUE / "repo2"  # the directory `write_config_with_expanded_repo_path` points at
+    (repo_root / "profiles").mkdir(parents=True)
+    (repo_root / "profiles" / "default.toml").write_text("", encoding="utf-8")
+    package_root = repo_root / "packages" / "app"
+    (package_root / "files").mkdir(parents=True)
+    (package_root / "files" / "a.conf").write_text("a\n", encoding="utf-8")
+    (package_root / "package.toml").write_text(
+        '[vars]\ny = "1"\n[targets.conf]\nsource = "files/a.conf"\npath = "~/a.conf"\n', encoding="utf-8"
+    )
+    (Path.home() / "live.conf").write_text("x\n", encoding="utf-8")
+    return write_config_with_expanded_repo_path(tmp_path)
+
+
 @pytest.mark.parametrize(
     ("write_config", "setup_argv", "argv"),
     [
@@ -118,6 +136,19 @@ def write_config_with_expanded_repo_path(tmp_path: Path) -> Path:
             id="info-tracked-templated-target-path",
         ),
         pytest.param(write_config_with_expanded_repo_path, None, ["list", "repo"], id="list-repo-expanded-repo-path"),
+        # The provenance line of a variable names the manifest that set it.
+        pytest.param(
+            write_repo_under_expanded_root,
+            ["track", f"{REPO_NAME}:app@default"],
+            ["info", "var", "y"],
+            id="info-var-provenance-under-expanded-repo-root",
+        ),
+        pytest.param(
+            write_repo_under_expanded_root,
+            None,
+            ["add", "~/live.conf", f"{REPO_NAME}:app"],
+            id="add-manifest-line-under-expanded-repo-root",
+        ),
     ],
 )
 def test_a_path_that_expanded_to_unprintable_characters_is_shown_escaped_on_one_line(
