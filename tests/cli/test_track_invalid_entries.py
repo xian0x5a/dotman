@@ -100,3 +100,73 @@ def test_kept_invalid_entry_leaves_conflict_checks_on(
     assert main(["--config", str(config_path), "--no-confirm", *command]) == 1
 
     assert _listed_package_entries(config_path, capsys) == before
+
+
+def _write_stale_row_repo(repo_root: Path, stale_kind: str) -> tuple[str, str]:
+    """Write packages `a` and `b` (b owns one target) plus what `stale_kind` needs; return the stale row."""
+    _write_plain_packages(repo_root, ["a", "b"])
+    (repo_root / "packages" / "b" / "files").mkdir()
+    (repo_root / "packages" / "b" / "files" / "b.conf").write_text("b\n", encoding="utf-8")
+    (repo_root / "packages" / "b" / "package.toml").write_text(
+        f'[targets.conf]\nsource = "files/b.conf"\npath = "{repo_root.parent / "live" / "b.conf"}"\n',
+        encoding="utf-8",
+    )
+    if stale_kind == "profile-missing":
+        return ("b", "removed-profile")
+    if stale_kind == "dependency-broken":
+        (repo_root / "packages" / "broken").mkdir(parents=True)
+        (repo_root / "packages" / "broken" / "package.toml").write_text('depends = ["nope"]\n', encoding="utf-8")
+        return ("broken", "default")
+    if stale_kind == "group-row":
+        (repo_root / "groups").mkdir(parents=True)
+        (repo_root / "groups" / "stack.toml").write_text('members = ["b"]\n', encoding="utf-8")
+        return ("stack", "default")
+    raise AssertionError(stale_kind)
+
+
+@pytest.mark.parametrize("stale_kind", ["profile-missing", "dependency-broken", "group-row"])
+def test_row_that_does_not_resolve_is_reported_invalid_and_skipped_by_planning(
+    tmp_path: Path,
+    capsys,
+    stale_kind: str,
+) -> None:
+    # list, doctor and planning must agree: a row that does not resolve is reported
+    # as invalid, and push/track neither use it silently nor fail because of it.
+    repo_root = tmp_path / "repo"
+    stale_package, stale_profile = _write_stale_row_repo(repo_root, stale_kind)
+    config_path = write_named_manager_config(tmp_path, {"main": repo_root})
+    write_tracked_packages_state(tmp_path / "state", repo_name="main", entries=[(stale_package, stale_profile)])
+
+    capsys.readouterr()
+    assert main(["--config", str(config_path), "--json", "list", "tracked"]) == 0
+    listed = json.loads(capsys.readouterr().out)
+    assert listed["packages"] == []
+    assert [(entry["package_id"], entry["profile"]) for entry in listed["invalid_package_entries"]] == [
+        (stale_package, stale_profile)
+    ]
+
+    main(["--config", str(config_path), "--json", "doctor"])
+    doctor = json.loads(capsys.readouterr().out)
+    assert doctor["ok"] is False
+    assert [(entry["package_id"], entry["profile"]) for entry in doctor["invalid_package_entries"]] == [
+        (stale_package, stale_profile)
+    ]
+
+    assert main(["--config", str(config_path), "--json", "--no-confirm", "push", "--dry-run"]) == 0
+    pushed = json.loads(capsys.readouterr().out)
+    assert pushed["sync_units"] == []
+
+    assert main(["--config", str(config_path), "--no-confirm", "track", "main:a@default"]) == 0
+
+
+def test_invalid_row_in_another_repo_leaves_conflict_checks_on(tmp_path: Path, capsys) -> None:
+    repo_root = tmp_path / "repo"
+    write_implicit_conflict_repo(repo_root)
+    other_root = tmp_path / "other"
+    _write_plain_packages(other_root, ["a"])
+    config_path = write_named_manager_config(tmp_path, {"fixture": repo_root, "other": other_root})
+    write_tracked_packages_state(tmp_path / "state", repo_name="fixture", entries=[("alpha", "basic")])
+    write_tracked_packages_state(tmp_path / "state", repo_name="other", entries=[("gone", "default")])
+
+    assert main(["--config", str(config_path), "--no-confirm", "track", "fixture:beta@basic"]) == 1
+    assert "conflicting explicit tracked targets" in capsys.readouterr().err

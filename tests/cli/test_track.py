@@ -665,7 +665,7 @@ def test_track_cli_confirms_before_overriding_implicit_targets(
                 "",
                 "[[packages]]",
                 'repo = "example"',
-                'package_id = "os/arch"',
+                'package_id = "core-cli-meta"',
                 'profile = "basic"',
                 "",
             ]
@@ -707,7 +707,7 @@ def test_track_cli_refuses_implicit_override_in_non_interactive_mode(
                 "",
                 "[[packages]]",
                 'repo = "example"',
-                'package_id = "os/arch"',
+                'package_id = "core-cli-meta"',
                 'profile = "basic"',
                 "",
             ]
@@ -785,7 +785,7 @@ def test_track_cli_can_promote_conflicting_package_from_implicit_conflict(
                 "",
                 "[[packages]]",
                 'repo = "fixture"',
-                'package_id = "beta-stack"',
+                'package_id = "beta-meta"',
                 'profile = "basic"',
                 "",
             ]
@@ -852,7 +852,7 @@ def test_track_cli_skips_same_profile_package_override_prompt(
                 "",
                 "[[packages]]",
                 'repo = "fixture"',
-                'package_id = "beta-stack"',
+                'package_id = "beta-meta"',
                 'profile = "basic"',
                 "",
             ]
