@@ -126,7 +126,7 @@ def test_main_formats_toml_load_error_with_package_path_and_error_fields(
     assert "path:" in error_output
     assert "detail:" in error_output
     stripped_output = re.sub(r"\x1b\[[0-9;]*m", "", error_output)
-    assert "\n:: TomlLoadError\n" in stripped_output
+    assert "\n:: UserTomlLoadError\n" in stripped_output
     assert "fixture:git" in stripped_output
     assert str(package_manifest_path) in error_output
     assert "\x1b[" in error_output

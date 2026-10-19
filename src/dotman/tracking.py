@@ -324,7 +324,7 @@ def tracked_packages_file_path(state_dir: Path) -> Path:
 def read_tracked_packages_file(state_path: Path) -> list[TrackedPackageEntry]:
     if not state_path.exists():
         return []
-    payload = load_toml_file(state_path, context="tracked packages file")
+    payload = load_toml_file(state_path, context="tracked packages file", dotman_written=True)
     schema_version = payload.get("schema_version")
     if schema_version != TRACKED_PACKAGES_SCHEMA_VERSION:
         raise TrackedPackagesFileError(state_path, f"must declare schema_version = {TRACKED_PACKAGES_SCHEMA_VERSION}")

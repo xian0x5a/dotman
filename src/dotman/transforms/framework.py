@@ -304,7 +304,7 @@ def decode_utf8_input(content: bytes, source: str) -> str:
         # parsers reject; output is re-serialized without it.
         return content.decode("utf-8-sig")
     except UnicodeDecodeError as error:
-        raise UsageError(f"{source} is not valid UTF-8: {error}") from error
+        raise ValueError(f"{source} is not valid UTF-8: {error}") from error
 
 
 def read_input_text(path: Path, *, stdin_bytes: bytes | None = None) -> str | None:

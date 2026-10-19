@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dotman.errors import UsageError
 from collections.abc import Mapping, Sequence
+
+from dotman.errors import UsageError
 
 
 def compute_profile_heights(profiles: Mapping[str, Sequence[str]]) -> dict[str, int]:

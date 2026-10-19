@@ -814,7 +814,7 @@ def test_number_out_of_float_range_is_an_error_not_infinity(tmp_path: Path, caps
     input_path = tmp_path / "input.json"
     input_path.write_text('{"a": 1e400, "b": 1}\n', encoding="utf-8")
 
-    assert cli.main(["transform", "json", str(input_path), "--stdout", "--mode", "cleanup"]) == 2
+    assert cli.main(["transform", "json", str(input_path), "--stdout", "--mode", "cleanup"]) == 1
     captured = capsys.readouterr()
     assert "Infinity" not in captured.out
     assert "1e400" in captured.err
@@ -827,7 +827,7 @@ def test_non_json_number_token_is_an_error_not_passed_through(token: str, tmp_pa
     input_path = tmp_path / "input.json"
     input_path.write_text(f'{{"a": {token}, "b": 1}}\n', encoding="utf-8")
 
-    assert cli.main(["transform", "json", str(input_path), "--stdout", "--mode", "cleanup"]) == 2
+    assert cli.main(["transform", "json", str(input_path), "--stdout", "--mode", "cleanup"]) == 1
     captured = capsys.readouterr()
     assert captured.out == ""
     assert token in captured.err

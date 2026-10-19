@@ -2,15 +2,19 @@
 
 0   success
 1   runtime failure: any error that is not a usage error, unattended decisions
-    (InteractionRequiredError), Sync Base store errors, `doctor` unhealthy
+    (InteractionRequiredError), Sync Base store errors, `doctor` unhealthy,
+    malformed input documents and dotman-written state
 2   usage/config error: argparse syntax, selector/scope/manifest/config validation
 130 interrupt (covered by the interrupt tests)
 """
 
 from __future__ import annotations
 
+import io
+import json
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Callable
 
 import pytest
@@ -35,6 +39,8 @@ class Case:
     # Some cases are only meaningful in one mode, e.g. Sync refuses to run
     # without a terminal unless `--no-confirm` is given.
     no_confirm_modes: tuple[bool, ...] = (False, True)
+    # `--json` runs must still print their one JSON document when they fail.
+    stdout_is_json_document: bool = False
 
 
 def _example_repo(tmp_path, monkeypatch):
@@ -73,6 +79,36 @@ def _failing_store_read(tmp_path, monkeypatch):
     return engine.config.config_path
 
 
+def _unrenderable_target_path(tmp_path, monkeypatch):
+    # Fails while Sync resolves its scope, before any session opens.
+    config_path = _sync_repo()(tmp_path, monkeypatch)
+    manifest = tmp_path / "repo/packages/app/package.toml"
+    manifest.write_text(manifest.read_text().replace('path = "', 'path = "{{ undefined_var.x }}', 1))
+    return config_path
+
+
+def _malformed_transform_stdin(tmp_path, monkeypatch):
+    monkeypatch.setattr("sys.stdin", io.TextIOWrapper(io.BytesIO(b"{not json")))
+    return None
+
+
+def _unreadable_rewrite_stdin(tmp_path, monkeypatch):
+    class UnreadableInput:
+        def read(self):
+            raise OSError("input/output error")
+
+    monkeypatch.setenv("HOME", "/home/alice")
+    monkeypatch.setattr("sys.stdin", SimpleNamespace(buffer=UnreadableInput()))
+    return None
+
+
+def _corrupt_tracked_state(tmp_path, monkeypatch):
+    # dotman-written state, unlike a manifest, is not the user's input to fix.
+    config_path = _sync_repo()(tmp_path, monkeypatch)
+    (tmp_path / "state/dotman/repos/main/tracked-packages.toml").write_text("not = [valid")
+    return config_path
+
+
 def _missing_repo_path(tmp_path, monkeypatch):
     return write_single_repo_config(tmp_path, repo_name="fixture", repo_path=tmp_path / "missing-repo")
 
@@ -96,6 +132,13 @@ CASES = [
     Case("invalid-sync-scope", _sync_repo(), ("push", "--dry-run", "main:nothere"), 2, (True,)),
     Case("config-path-is-directory", _config_path_is_directory, ("doctor",), 2),
     Case("missing-default-config", _no_default_config, ("list", "tracked"), 2),
+    Case(
+        "json-preflight-runtime-failure", _unrenderable_target_path, ("--json", "push", "--dry-run"), 1, (True,),
+        stdout_is_json_document=True,
+    ),
+    Case("malformed-transform-input", _malformed_transform_stdin, ("transform", "json", "-", "-", "--mode", "cleanup"), 1),
+    Case("unreadable-rewrite-stdin", _unreadable_rewrite_stdin, ("rewrite", "home", "expand"), 1),
+    Case("corrupt-dotman-written-state", _corrupt_tracked_state, ("list", "tracked"), 1),
     Case("doctor-unhealthy", _missing_repo_path, ("doctor",), 1),
     Case("failing-ignore-command", _failing_ignore_command, ("push", "--dry-run"), 1, (True,)),
     Case("failing-hook", _sync_repo('[targets.unit.hooks]\npre_push = "exit 4"'), ("push",), 1, (True,)),
@@ -130,4 +173,7 @@ def test_exit_code_table(case: Case, no_confirm: bool, tmp_path, monkeypatch, ca
     except SystemExit as exit_info:  # argparse exits instead of returning
         exit_code = exit_info.code
 
-    assert exit_code == case.expected, capsys.readouterr().err
+    captured = capsys.readouterr()
+    assert exit_code == case.expected, captured.err
+    if case.stdout_is_json_document:
+        assert json.loads(captured.out)["status"] == "failed"

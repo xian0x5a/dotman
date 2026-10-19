@@ -166,7 +166,7 @@ def _build_cli_patch_capture_projector(
             raise_for_command_interruption(result)
             if result.exit_code != 0:
                 stderr = result.stderr.decode("utf-8", errors="replace")
-                raise UsageError(stderr.strip() or f"render command exited with status {result.exit_code}")
+                raise ValueError(stderr.strip() or f"render command exited with status {result.exit_code}")
             return result.stdout
         finally:
             temp_source_path.unlink(missing_ok=True)

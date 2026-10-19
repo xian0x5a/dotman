@@ -842,7 +842,7 @@ def test_invalid_yaml_is_a_clean_cli_error(tmp_path: Path, capsys) -> None:
         input_path = tmp_path / f"input{index}.yaml"
         input_path.write_text(source, encoding="utf-8")
 
-        assert cli.main(["transform", "yaml", str(input_path), "-", "--mode", "cleanup"]) == 2
+        assert cli.main(["transform", "yaml", str(input_path), "-", "--mode", "cleanup"]) == 1
         assert str(input_path) in capsys.readouterr().err
 
 

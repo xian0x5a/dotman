@@ -9,7 +9,6 @@ import re
 from typing import Any
 from xml.parsers.expat import ExpatError
 
-from dotman.errors import UsageError
 from dotman.transforms.cli import run_engine_cli
 from dotman.transforms.framework import (
     BaseTransformEngine,
@@ -56,10 +55,10 @@ def load_plist(path: Path, *, stdin_bytes: bytes | None = None) -> PlistDict:
     except (AttributeError, ExpatError, ValueError) as error:
         # plistlib reports malformed XML as ExpatError and a malformed value such
         # as `<date>nope</date>` as AttributeError, not only as ValueError.
-        raise UsageError(f"invalid plist in {path}: {error}") from error
+        raise ValueError(f"invalid plist in {path}: {error}") from error
 
     if not isinstance(loaded, dict):
-        raise UsageError(f"Expected plist dictionary in {path}")
+        raise ValueError(f"Expected plist dictionary in {path}")
 
     return loaded
 
@@ -301,7 +300,7 @@ def plist_bytes(data: PlistDict, fmt: str) -> bytes:
     except (TypeError, OverflowError) as error:
         # Some values only fit one format: UID needs binary, and both formats
         # cap integers at 64 bits.
-        raise UsageError(f"cannot write {fmt} plist: {error}") from error
+        raise ValueError(f"cannot write {fmt} plist: {error}") from error
 
 
 def get_existing_bytes_if_semantically_unchanged(

@@ -77,7 +77,7 @@ def parse_document(text: str) -> TOMLDocument:
     except KeyAlreadyPresent as error:
         # Unlike tomlkit's other parse errors, a repeated key or table is not a
         # ValueError, so it would escape the CLI's invalid-input handling.
-        raise UsageError(str(error)) from error
+        raise ValueError(str(error)) from error
     return assign_comment_owners(parsed)
 
 

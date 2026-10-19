@@ -667,7 +667,7 @@ def test_malformed_xml_fails_cleanly_naming_its_source(operand, tmp_path, monkey
         ["transform", "xml", str(base), "-", "--mode", "merge", "--overlay-file", str(overlay), "--selectors", "config/a"]
     )
 
-    assert exit_code == 2
+    assert exit_code == 1
     error = capsys.readouterr().err
     assert source in error
     assert "tag mismatch" in error
@@ -678,7 +678,7 @@ def test_missing_base_file_fails_cleanly(tmp_path, capsys) -> None:
 
     missing_path = tmp_path / "missing.xml"
 
-    assert cli.main(["transform", "xml", str(missing_path), "-", "--mode", "cleanup", "--selectors", "config/a"]) == 2
+    assert cli.main(["transform", "xml", str(missing_path), "-", "--mode", "cleanup", "--selectors", "config/a"]) == 1
     assert f"base XML file not found: {missing_path}" in capsys.readouterr().err
 
 
@@ -845,7 +845,7 @@ def test_merge_that_keeps_an_entity_the_output_doctype_lacks_is_an_error(
     assert cli.main([
         "transform", "xml", str(live_path), str(output_path),
         "--mode", "merge", "--overlay-file", str(repo_path), "--selectors", "config/title",
-    ]) == 2
+    ]) == 1
     assert "brand" in capsys.readouterr().err
     assert not output_path.exists()
 

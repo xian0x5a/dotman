@@ -191,7 +191,7 @@ def run_parsed_engine(engine: TransformEngine, parser: argparse.ArgumentParser, 
     except OSError as error:
         # Unreadable inputs and unwritable outputs are user errors; report
         # them like other transform errors instead of as a traceback.
-        raise UsageError(str(error)) from error
+        raise ValueError(str(error)) from error
     return 0
 
 

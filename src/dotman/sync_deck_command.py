@@ -185,11 +185,14 @@ class SyncDeckCommandRunner:
         except InteractionRequiredError as exc:
             self._emit(args, None, None, diagnostic={"code": "decision-required", "message": str(exc)})
             return 1
-        except UsageError as exc:
+        except ValueError as exc:
+            # Every preflight failure keeps its structured diagnostic; only the
+            # user's own input errors are exit 2.
+            usage = isinstance(exc, UsageError)
             self._emit(args, None, None, diagnostic={
-                "code": "invalid-input", "message": str(exc),
+                "code": "invalid-input" if usage else "preflight-failed", "message": str(exc),
             })
-            return 2
+            return 2 if usage else 1
         except (KeyboardInterrupt, InterruptedError):
             self._emit(args, None, None, diagnostic={
                 "code": "interrupted", "message": f"{self.operation.title()} preflight interrupted",

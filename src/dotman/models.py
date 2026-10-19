@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from dotman.errors import UsageError
 from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any, Literal
+
+from dotman.errors import UsageError
 
 if TYPE_CHECKING:
     from dotman.planning import PackagePlanningInput

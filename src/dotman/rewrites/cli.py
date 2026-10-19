@@ -8,11 +8,15 @@ from dotman.errors import UsageError
 from dotman.rewrites.home import active_home_path, collapse_home_paths, expand_home_paths
 
 
-class HomeRewriteError(UsageError):
+class HomeRewriteError(ValueError):
     def __init__(self, detail: str, *, path: Path | None = None) -> None:
         super().__init__(detail)
         self.detail = detail
         self.path = path
+
+
+class HomeRewriteUsageError(HomeRewriteError, UsageError):
+    """The caller named an input that cannot be used, as opposed to a failure while reading it."""
 
 
 def _read_input(input_path: str | None) -> tuple[bytes, Path | None]:
@@ -26,7 +30,7 @@ def _read_input(input_path: str | None) -> tuple[bytes, Path | None]:
     try:
         return path.read_bytes(), path
     except FileNotFoundError as error:
-        raise HomeRewriteError("input file does not exist", path=path) from error
+        raise HomeRewriteUsageError("input file does not exist", path=path) from error
     except PermissionError as error:
         raise HomeRewriteError("input file is not readable", path=path) from error
     except OSError as error:
@@ -34,10 +38,7 @@ def _read_input(input_path: str | None) -> tuple[bytes, Path | None]:
 
 
 def run_home_rewrite(*, action: str, input_path: str | None, bare_tilde: bool) -> int:
-    try:
-        home = active_home_path(os.environ)
-    except ValueError as error:
-        raise HomeRewriteError(str(error)) from error
+    home = active_home_path(os.environ)
 
     source_bytes, source_path = _read_input(input_path)
     try:

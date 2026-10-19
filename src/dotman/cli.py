@@ -27,7 +27,6 @@ RUNTIME_FAILURE_EXIT_CODE = 1
 USAGE_ERROR_EXIT_CODE = 2
 
 
-
 class RootUnderSudoError(UsageError):
     def __init__(self, invoking_user: str) -> None:
         self.detail = f"dotman does not run as root under sudo (started by {invoking_user})"

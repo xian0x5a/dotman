@@ -65,11 +65,11 @@ Exit codes do not depend on `--no-confirm` or `--json`.
 | Code | Meaning |
 | --- | --- |
 | `0` | Success. |
-| `1` | Runtime failure: a command, hook, render, or Sync Base store failed; `doctor` found failed checks; or dotman needed a decision it could not ask for (no terminal, or `--no-confirm`), including choosing among ambiguous matches. |
-| `2` | Usage or configuration error: invalid command-line syntax or option combination, an unknown or invalid selector or Sync scope, an invalid or conflicting manifest or config (including a missing config file), or running as root under `sudo`. |
+| `1` | Runtime failure: a command, hook, or render failed; `doctor` found failed checks; a Sync Base store, dotman-written state file, or input document (live file content, a malformed file given to `transform` or `rewrite`) could not be read; or dotman needed a decision it could not ask for (no terminal, or `--no-confirm`), including ambiguous matches a prompt could have resolved. |
+| `2` | Usage or configuration error: invalid command-line syntax or option combination, an unknown, ambiguous or invalid selector or Sync scope, an invalid or conflicting manifest or manager config (including a missing config file and invalid `[vars]` templates), or running as root under `sudo`. |
 | `130` | Interruption or explicit abort. |
 
-Code `2` means the input is wrong and no prompt would fix it; code `1` covers everything else.
+Code `2` means the user's own input is wrong and no prompt would fix it; code `1` covers everything else. With `--json`, a failed Sync still prints its one JSON document under either code.
 
 ## Sync scope resolution
 

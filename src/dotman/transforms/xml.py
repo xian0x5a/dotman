@@ -409,14 +409,14 @@ def ensure_well_formed_output(document_text: str) -> None:
     try:
         etree.fromstring(document_text.encode("utf-8"), XML_PARSER)
     except etree.XMLSyntaxError as error:
-        raise UsageError(f"XML output would not be well-formed: {error.msg}") from error
+        raise ValueError(f"XML output would not be well-formed: {error.msg}") from error
 
 
 def parse_xml_bytes(content: bytes, source: str) -> XmlNode:
     try:
         return etree.fromstring(content, XML_PARSER)
     except etree.XMLSyntaxError as error:
-        raise UsageError(f"{source} is not valid XML: {error.msg}") from error
+        raise ValueError(f"{source} is not valid XML: {error.msg}") from error
 
 
 def read_xml_root(path: Path, stdin_bytes: bytes | None) -> XmlNode | None:
@@ -458,7 +458,7 @@ def render_xml_output(
 
     if base_root is None:
         if overlay_root is None:
-            raise UsageError(f"base XML file not found: {base_path}")
+            raise ValueError(f"base XML file not found: {base_path}")
         root = etree.Element(overlay_root.tag)
     else:
         root = build_tree_with_selector_action(

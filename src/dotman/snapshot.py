@@ -270,7 +270,7 @@ def find_snapshot_matches(snapshot_root: Path, reference: str | None) -> list[Sn
 
 def load_snapshot(snapshot_root: Path) -> SnapshotRecord:
     manifest_path = snapshot_root / "manifest.toml"
-    payload = load_toml_file(manifest_path, context="snapshot manifest")
+    payload = load_toml_file(manifest_path, context="snapshot manifest", dotman_written=True)
     snapshot_id = payload.get("snapshot_id")
     created_at = payload.get("created_at")
     status = payload.get("status")

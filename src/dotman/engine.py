@@ -8,6 +8,7 @@ from dotman.collisions import TrackedTargetOverride
 from dotman.command_runtime import CommandRuntime, current_command_runtime
 from dotman.config import default_state_root, load_manager_config
 from dotman.errors import UsageError
+from dotman.interaction_policy import InteractionRequiredError
 from dotman.models import (
     FullSpecSelector,
     ResolvedPackageSelection,
@@ -174,7 +175,7 @@ class DotmanEngine:
         repo, resolved_selector, selector_kind = self.resolve_selector(selector, explicit_repo)
         resolved_profile = profile or selector_profile
         if not resolved_profile:
-            raise ValueError("profile is required in non-interactive mode")
+            raise InteractionRequiredError("profile is required in non-interactive mode")
         return repo, FullSpecSelector(
             repo=repo.config.name,
             selector=resolved_selector,
