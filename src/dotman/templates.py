@@ -144,7 +144,9 @@ def _referenced_var_path(reference: VarPath, variables: dict[str, Any]) -> VarPa
     """Map a lookup chain to the deepest var node it can reach, or None when it names no var.
 
     Steps that are not keys (such as `.items()`) stop the walk, so the reference
-    depends on the whole node reached so far.
+    depends on the whole node reached so far. A computed key (`vars[name]`) is
+    not known before rendering, so it depends on every var; when that includes
+    the referencing var itself, it is reported as a cycle rather than guessed.
     """
     head, *steps = reference
     if head == "vars":
@@ -157,7 +159,9 @@ def _referenced_var_path(reference: VarPath, variables: dict[str, Any]) -> VarPa
     for step in steps:
         if isinstance(node, dict) and step in node:
             node = node[step]
-        elif isinstance(node, list) and isinstance(step, int) and 0 <= step < len(node):
+        elif isinstance(node, list) and isinstance(step, int) and -len(node) <= step < len(node):
+            # Template string paths use non-negative indexes, so `items[-1]` must match them.
+            step %= len(node)
             node = node[step]
         else:
             break

@@ -226,6 +226,8 @@ def test_template_context_cpu_arch_explicit_override_is_normalized() -> None:
         ({"home": "/h", "git": {"dir": "{{ home }}/git", "config": "{{ git.dir }}/config"}}, "git", {"dir": "/h/git", "config": "/h/git/config"}),
         ({"git": {"dir": "/g", "config": "{{ vars['git'].dir }}/config"}}, "git", {"dir": "/g", "config": "/g/config"}),
         ({"items": ["a", "{{ items[0] }}b"]}, "items", ["a", "ab"]),
+        ({"items": ["a", "{{ items[-2] }}b"]}, "items", ["a", "ab"]),
+        ({"theme": "dark", "palettes": {"dark": "{{ theme }}-bg"}, "bg": "{{ palettes[theme] }}"}, "bg", "dark-bg"),
         ({"names": {"a": "x", "b": "{{ names.a }}"}, "all": "{% for key, value in vars.names.items() %}{{ value }}{% endfor %}"}, "all", "xx"),
     ],
 )
