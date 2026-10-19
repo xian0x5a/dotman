@@ -115,8 +115,9 @@ as advanced, with crash durability unconfirmed.
 Required operation safety and effect failures still stop execution.
 
 Inspection and explicit reset retain their own error reporting: unsafe or
-unreadable storage is not reported as a successful empty inspection. No repair,
-quarantine, or bulk-reset command is provided.
+unreadable storage is not reported as a successful empty inspection. No repair
+or quarantine command is provided; `reset sync-base --unusable` only discards
+records doctor flags (see below).
 
 Atomic replacement depends on the host filesystem's rename and durability
 semantics. Storage uses POSIX descriptor-relative filesystem operations and
@@ -149,8 +150,19 @@ its obsolete Bases wait for a later run.
   `*`, `?`, `[` and `]` are literal name characters (`main:app.tree/a[1].txt`).
   Reset takes the manager non-blocking operation lock before resolution and fails
   while a real Push, Pull, or Sync owns it.
+- `dotman reset sync-base --unusable [repo]` discards what doctor flags; those
+  Bases were not usable anyway. It drops every record doctor counts as corrupt
+  (including record files too damaged to name) or proven orphaned, in the named
+  repo or in all repos, using the same classification as doctor. It takes the
+  manager lock, has no confirmation, and is exactly one of `<sync-unit>` or
+  `--unusable` (both or neither is a usage error). Usable Bases are untouched;
+  unversioned stores are skipped like doctor does; unsafe or unreadable stores
+  still fail. A record that was only transiently unreadable is dropped too.
+  Output is only the count (`{"status": "reset", "dropped": N}`), never identities,
+  which may contain control characters.
 - `dotman doctor` warns with aggregate corrupt and proven orphaned record counts
-  per repository, without identities or repair plans. A complete unrestricted
+  per repository, without identities or repair plans, and hints at the command
+  above when either count is nonzero. A complete unrestricted
   directory census can prove absent children; excluded, guarded, or failed
   discovery cannot. Unsafe/unreadable stores report repository, path, and cause;
   unversioned stores warn that the next real Push, Pull, or Sync replaces them.
@@ -164,7 +176,8 @@ or `corrupt`. Structured reason codes distinguish `record_corrupt` and
 List and info expose canonical identity, policy, eligibility, status/reason,
 payload kind, size, digest, and child executable state, with the integrity check. Unknown/not-performed checks are null. Unavailable output
 does not disclose stale payload metadata; payload bytes are never output.
-Reset reports identity and `reset` or `already_absent`.
+Reset reports identity and `reset` or `already_absent`; `--unusable` reports
+`reset` and the number dropped.
 
 List, info, and doctor never inspect Verification Records or run Guards, Render,
 Capture, Pull View, live comparison, or drift Observation. Static resolution and

@@ -138,7 +138,11 @@ class SyncBaseScan:
     """Validated records and isolated corruption, without exposing unusable metadata."""
 
     records: tuple[SyncBaseRecord, ...]
-    corrupt_count: int
+    corrupt_files: tuple[RecordLocation, ...]
+
+    @property
+    def corrupt_count(self) -> int:
+        return len(self.corrupt_files)
 
 
 def _identity(status: os.stat_result) -> tuple[int, int]:
@@ -877,10 +881,10 @@ class SyncBaseStore:
 
     def _scan_group(self, group: str) -> SyncBaseScan:
         records = []
-        corrupt_count = 0
+        corrupt_files = []
         with self._layout.group(group) as directory:
             if directory is None:
-                return SyncBaseScan((), 0)
+                return SyncBaseScan((), ())
             for name in sorted(self._layout.file_names(directory[1])):
                 # Interrupted replacements leave hidden temporaries, never records.
                 if name.startswith(".") or not name.endswith(RECORD_FILE_SUFFIX):
@@ -890,14 +894,14 @@ class SyncBaseStore:
                 except SyncBaseRecordCorruptionError:
                     # A broken record may have no recoverable identity. Count the
                     # self-contained file rather than trusting corrupted metadata.
-                    corrupt_count += 1
+                    corrupt_files.append((group, name))
                     continue
                 if record is None:
                     raise SyncBaseStoreSecurityError(
                         "Sync Base record disappeared during enumeration"
                     )
                 records.append(record)
-        return SyncBaseScan(tuple(records), corrupt_count)
+        return SyncBaseScan(tuple(records), tuple(corrupt_files))
 
     def record_path(self, identity: bytes) -> Path:
         """Locate one record for diagnostics without opening or creating storage."""
@@ -934,7 +938,7 @@ class SyncBaseStore:
                 (record for group in groups for record in group.records),
                 key=lambda record: record.identity,
             )),
-            sum(group.corrupt_count for group in groups),
+            tuple(location for group in groups for location in group.corrupt_files),
         )
 
     def target_records(self, target: bytes) -> tuple[SyncBaseRecord, ...]:
@@ -1013,8 +1017,23 @@ class SyncBaseStore:
         identity = _require_bytes(
             identity, field_name="canonical identity", allow_empty=False
         )
-        group, name = _record_location(identity)
-        with self._write_transaction(), self._layout.group(group) as directory:
+        with self._write_transaction():
+            return self._delete_file(*_record_location(identity))
+
+    def discard_corrupt_files(self) -> int:
+        """Remove record files that fail validation; they have no identity to delete by."""
+        with self._write_transaction():
+            locations = [
+                location
+                for group in self._layout.group_names()
+                for location in self._scan_group(group).corrupt_files
+            ]
+            for location in locations:
+                self._delete_file(*location)
+            return len(locations)
+
+    def _delete_file(self, group: str, name: str) -> bool:
+        with self._layout.group(group) as directory:
             if directory is None:
                 return False
             try:

@@ -332,6 +332,10 @@ class DotmanEngine:
         from dotman.sync_base_inspection import reset_sync_base
         return reset_sync_base(self._planning_context, identity)
 
+    def reset_unusable_sync_bases(self, repo_name: str | None):
+        from dotman.sync_base_inspection import reset_unusable_sync_bases
+        return reset_unusable_sync_bases(self._planning_context, repo_name)
+
     def read_tracked_package_entries(self, repo: Repository) -> list[FullSpecSelector]:
         return tracking.read_tracked_package_entries(repo)
 

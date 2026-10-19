@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from dataclasses import replace
+from dataclasses import dataclass, replace
 import hashlib
 
 from dotman.models import ResolvedSyncTarget
@@ -18,6 +18,9 @@ from dotman.sync_base_store import (
 from dotman.sync_directory import census_directory, child_metadata
 from dotman.sync_observation import _base_unit, _resolve_inputs
 from dotman.sync_scope import _parse_scope_selector, resolve_sync_scope, sync_unit_identity_bytes
+
+
+UNUSABLE_RESET_HINT = "Run `dotman reset sync-base --unusable` to discard them."
 
 
 def _identity(text: str) -> ResolvedSyncTarget:
@@ -160,16 +163,105 @@ def reset_sync_base(context, text: str):
         return {"identity": text, "status": "reset" if deleted else "already_absent"}
 
 
-def doctor_sync_bases(context):
-    from dotman.doctor import DoctorCheck
-
-    checks = []
+def _static_inputs(context):
     # Failed static resolution is not evidence that stored identities are orphaned.
     try:
         scope = resolve_sync_scope(context, include_on_demand=True)
         inputs, _ = _resolve_inputs(scope)
     except ValueError:
-        inputs = None
+        return None
+    return inputs
+
+
+@dataclass(frozen=True)
+class _UnusableBases:
+    """What doctor counts as corrupt or orphaned in one repo's store."""
+
+    unreadable_files: int  # corrupt record files whose identity cannot be recovered
+    corrupt: tuple[bytes, ...]
+    orphaned: tuple[bytes, ...]
+
+    @property
+    def corrupt_count(self) -> int:
+        return self.unreadable_files + len(self.corrupt)
+
+
+def _classify_unusable(context, repo, store, inputs, censuses) -> _UnusableBases:
+    """Single source of the corrupt/orphaned verdicts shared by doctor and reset --unusable."""
+    corrupt = []
+    orphaned = []
+    scanned = store.scan()
+    for record in scanned.records:
+        try:
+            identity = _identity(record.identity.decode("utf-8"))
+            if (
+                identity.repo != repo.config.name
+                or not record_matches_identity(record, identity)
+            ):
+                corrupt.append(record.identity)
+                continue
+        except (ValueError, UnicodeError):
+            corrupt.append(record.identity)
+            continue
+        if inputs is None:
+            continue
+        try:
+            _unit(inputs, identity)
+        except ValueError:
+            orphaned.append(record.identity)
+            continue
+        if identity.child_path is not None:
+            target = replace(identity, child_path=None)
+            item, metadata = inputs[target]
+            # Inspection cannot execute Guards to prove participation.
+            guarded_scopes = (item.repo, metadata.package, metadata.target, *metadata.path_rules)
+            if any(
+                (scope.hooks or {}).get(name)
+                for scope in guarded_scopes
+                for name in ("guard_push", "guard_pull")
+            ):
+                continue
+            if target not in censuses:
+                censuses[target] = census_directory(
+                    metadata,
+                    follow_live_directories=context.config.dir_symlink_mode == "follow",
+                )
+            census = censuses[target]
+            # Exclusions and failed discovery cannot prove absence.
+            if census.unrestricted and identity.child_path not in dict(census.entries):
+                orphaned.append(record.identity)
+    return _UnusableBases(scanned.corrupt_count, tuple(corrupt), tuple(orphaned))
+
+
+def reset_unusable_sync_bases(context, repo_name: str | None):
+    """Discard what doctor flags; those Bases were not usable anyway."""
+    repos = [
+        context.repositories[repo_config.name] for repo_config in context.config.ordered_repos
+        if repo_name in (None, repo_config.name)
+    ]
+    if repo_name is not None and not repos:
+        raise ValueError(f"unknown repo '{repo_name}'")
+    with OperationLock.acquire(context.tracked_state.state_root):
+        inputs = _static_inputs(context)
+        censuses = {}
+        dropped = 0
+        for repo in repos:
+            # Like doctor, leave unversioned stores to the next real operation.
+            if _store_unversioned(context, repo) or not _store_exists(context, repo):
+                continue
+            with _open(context, repo) as store, store.read_transaction():
+                unusable = _classify_unusable(context, repo, store, inputs, censuses)
+            with _open(context, repo, read_only=False) as store:
+                dropped += store.discard_corrupt_files()
+                dropped += sum(store.delete(identity) for identity in (*unusable.corrupt, *unusable.orphaned))
+        return {"status": "reset", "dropped": dropped}
+
+
+def doctor_sync_bases(context):
+    from dotman.doctor import DoctorCheck
+
+    checks = []
+    inputs = _static_inputs(context)
     censuses = {}
     for repo_config in context.config.ordered_repos:
         repo = context.repositories[repo_config.name]
@@ -184,53 +276,13 @@ def doctor_sync_bases(context):
                 continue
             if not _store_exists(context, repo):
                 continue
-            corrupt = 0
-            orphaned = 0
             with _open(context, repo) as store, store.read_transaction():
-                scanned = store.scan()
-                corrupt += scanned.corrupt_count
-                for record in scanned.records:
-                    try:
-                        identity = _identity(record.identity.decode("utf-8"))
-                        if (
-                            identity.repo != repo.config.name
-                            or not record_matches_identity(record, identity)
-                        ):
-                            corrupt += 1
-                            continue
-                    except (ValueError, UnicodeError):
-                        corrupt += 1
-                        continue
-                    if inputs is not None:
-                        try:
-                            _unit(inputs, identity)
-                        except ValueError:
-                            orphaned += 1
-                            continue
-                        if identity.child_path is not None:
-                            target = replace(identity, child_path=None)
-                            item, metadata = inputs[target]
-                            # Inspection cannot execute Guards to prove participation.
-                            guarded_scopes = (item.repo, metadata.package, metadata.target, *metadata.path_rules)
-                            if any(
-                                (scope.hooks or {}).get(name)
-                                for scope in guarded_scopes
-                                for name in ("guard_push", "guard_pull")
-                            ):
-                                continue
-                            if target not in censuses:
-                                censuses[target] = census_directory(
-                                    metadata,
-                                    follow_live_directories=context.config.dir_symlink_mode == "follow",
-                                )
-                            census = censuses[target]
-                            # Exclusions and failed discovery cannot prove absence.
-                            if census.unrestricted and identity.child_path not in dict(census.entries):
-                                orphaned += 1
-            for category, count in (("corrupt", corrupt), ("orphaned", orphaned)):
+                unusable = _classify_unusable(context, repo, store, inputs, censuses)
+            for category, count in (("corrupt", unusable.corrupt_count), ("orphaned", len(unusable.orphaned))):
                 checks.append(DoctorCheck(
                     key=f"sync_bases_{category}", status="warn" if count else "ok",
                     detail=f"{count} {category} Sync Bases", path=path, repo_name=repo.config.name, count=count,
+                    hint=UNUSABLE_RESET_HINT if count else None,
                 ))
         except (SyncBaseStoreError, OSError) as exc:
             checks.append(DoctorCheck(
