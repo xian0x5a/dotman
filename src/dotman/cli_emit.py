@@ -15,6 +15,7 @@ from dotman.operation_runner import (
     RestoreOperationFinished,
     RestoreOperationStarted,
 )
+from dotman.tracking import SkippedCatalogPackage
 
 
 def _format_variable_value(value: Any) -> str:
@@ -1106,10 +1107,17 @@ def _structured_error_fields(error: Any, *, use_color: bool) -> list[tuple[str, 
     return fields
 
 
-def emit_skipped_tracked_row_warnings(skipped_rows: Sequence[Any], *, use_color: bool) -> None:
-    """Tell the user which stale tracked rows a command skipped, one line per row."""
+def emit_skipped_entry_warnings(skipped_entries: Sequence[Any], *, use_color: bool) -> None:
+    """Tell the user which stale entries a command skipped, one line per entry."""
     warning = cli_style.render_sync_term("warning", use_color=use_color)
-    for skipped in skipped_rows:
+    for skipped in skipped_entries:
+        if isinstance(skipped, SkippedCatalogPackage):
+            package = cli_style.render_package_label(
+                repo_name=skipped.repo, package_id=skipped.package_id, use_color=use_color
+            )
+            # Not tracked, so there is no row to untrack; the fix is in the repo.
+            print(f"{warning}: skipped package {package} ({skipped.message})", file=sys.stderr)
+            continue
         row = cli_style.render_full_spec_selector_reference(skipped.binding, use_color=use_color)
         # Plain text for the untrack hint so it stays copy-pasteable.
         untrack_hint = cli_style.full_spec_selector_label_text(
