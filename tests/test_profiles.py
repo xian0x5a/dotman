@@ -71,6 +71,7 @@ def test_rank_profiles_places_more_composed_profiles_first(tmp_path: Path) -> No
         ("os/arch", ["os/arch"], "linux"),
         ("home_linux", ["home_linux"], "linux"),
         ("archlinux", ["archlinux"], "linux"),
+        ("host/mac", ["runtime/linux", "host/mac"], "darwin"),
         # Words that merely contain an OS name must not infer that OS.
         ("machete", ["machete"], "fallback"),
         ("work-machine", ["work-machine"], "fallback"),
