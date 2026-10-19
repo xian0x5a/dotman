@@ -469,9 +469,9 @@ def sync_unit_identity_bytes(identity: ResolvedSyncTarget) -> bytes:
         # escaped stand-in, so they are held to the stricter rule `printable_text`
         # escapes by (str.isprintable): one predicate, so the check and the
         # escaping cannot drift, and bidi/format characters cannot reorder
-        # displayed rows. Repo/package/profile/target names are authored in the
-        # manifest; validating them belongs to manifest load, and rejecting them
-        # here would fail the whole session open instead of one child.
+        # displayed rows. Repo/package/profile/target names are authored, and
+        # manifest and config load already reject unprintable ones (#295), so
+        # only child names are checked here.
         or (identity.child_path is not None and not identity.child_path.isprintable())
     ):
         raise UsageError(

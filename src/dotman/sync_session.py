@@ -16,7 +16,7 @@ from dotman.execution import ExecutionStep, ExecutionStepResult, StepFinished, S
 from dotman.atomic_files import default_created_file_mode
 from dotman.capture import CaptureError
 from dotman.sync_capture import capture_observation
-from dotman.sync_directory import printable_text
+from dotman.printable import printable_text
 from dotman.sync_observation import _identity
 from dotman.sync_auxiliary import AuxiliaryRow, guard_skip_rows, plan_auxiliary, retain_directional_hooks
 from dotman.sync_commit import CommitFailed, GitWorkTree, RepositoryCommit, commit_sources, committable_paths, probe_work_tree, render_commit_message

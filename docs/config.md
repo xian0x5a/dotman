@@ -22,6 +22,7 @@ This reference owns user-level manager configuration. See
 - Dotman should derive the repo state dir as `$XDG_STATE_HOME/dotman/repos/<state_key>/`.
 - `state_key` must be a non-empty simple key and must not contain path separators or use `.` / `..`.
 - Repo names should be treated as stable identifiers, because dotman also uses the repo name to locate per-repo local overrides under XDG config.
+- A repo name must pass `str.isprintable()`. A bad name is a usage error that names the config file and shows the name escaped.
 
 ## Local Overrides
 

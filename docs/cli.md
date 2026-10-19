@@ -23,6 +23,7 @@ See [Sync lifecycle](sync.md) for convergence semantics and
 - `/` belongs inside selector IDs for namespacing, for example `work/git` or `os/arch`.
 - `<...>` is reserved for resolved tracked package instances, not selector+profile forms or manifest IDs.
 - `.` is reserved as the package/target separator in human-facing target labels.
+- Package, group, profile, target and repo names must be printable (`str.isprintable()`); `docs/repository.md` and `docs/config.md` list the full name rules.
 - When a menu, confirmation, diff banner, list output, or info view includes repo context, it should print the canonical colon-qualified form.
 - `repo:` is the only repo qualifier. `repo/selector` is not a repo alias: `work/git` always means the package or group `work/git`, and a repo-scoped lookup must be written `repo:work/git`.
 - `\` is not a valid selector separator or menu-display form.

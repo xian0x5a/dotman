@@ -15,6 +15,7 @@ from dotman.operation_runner import (
     RestoreOperationFinished,
     RestoreOperationStarted,
 )
+from dotman.printable import printable_text
 from dotman.tracking import SkippedCatalogPackage
 
 
@@ -302,7 +303,7 @@ def emit_doctor_summary(*, engine: Any, summary: Any, json_output: bool, use_col
             print(
                 "  - "
                 f"{_render_tracked_issue_label(engine, issue, use_color=use_color)} "
-                f"{cli_style.render_tracked_state(issue.state, use_color=use_color)} — {issue.message}"
+                f"{cli_style.render_tracked_state(issue.state, use_color=use_color)} — {_escape_unprintable(issue.message)}"
             )
     if summary.ok:
         print("  no issues found")
@@ -1053,16 +1054,31 @@ def _emit_error_block(*, header_text: str, fields: Sequence[tuple[str, str]], us
         print(f"  {cli_style.render_error_metadata_label(label, use_color=use_color)} {value}", file=sys.stderr)
 
 
+def _escape_unprintable(text: Any) -> str:
+    """Escape what a terminal could misread in error text, which can echo any user-written name or file path.
+
+    Names are validated at load, but the error that rejects one, and every path
+    that contains one, still carries the raw characters. Newlines stay: a
+    multi-line detail such as a profile conflict uses them for layout.
+    """
+    return "\n".join(printable_text(line) for line in str(text).split("\n"))
+
+
+def _error_attribute(error: Any, name: str) -> str | None:
+    value = getattr(error, name, None)
+    return None if value is None else _escape_unprintable(value)
+
+
 def _structured_error_fields(error: Any, *, use_color: bool) -> list[tuple[str, str]]:
     fields: list[tuple[str, str]] = []
     scope_kind = getattr(error, "scope_kind", None)
-    repo_name = getattr(error, "repo_name", None)
-    package_id = getattr(error, "package_id", None)
-    bound_profile = getattr(error, "bound_profile", None)
-    target_name = getattr(error, "target_name", None)
-    path_rule_pattern = getattr(error, "path_rule_pattern", None)
+    repo_name = _error_attribute(error, "repo_name")
+    package_id = _error_attribute(error, "package_id")
+    bound_profile = _error_attribute(error, "bound_profile")
+    target_name = _error_attribute(error, "target_name")
+    path_rule_pattern = _error_attribute(error, "path_rule_pattern")
     if scope_kind == "repo" and repo_name is not None:
-        fields.append(("repo:", str(repo_name)))
+        fields.append(("repo:", repo_name))
     elif scope_kind in {"package", "target", "path_rule"} and repo_name is not None and package_id is not None:
         fields.append(
             (
@@ -1077,9 +1093,9 @@ def _structured_error_fields(error: Any, *, use_color: bool) -> list[tuple[str, 
             )
         )
         if path_rule_pattern is not None:
-            fields.append(("path rule:", str(path_rule_pattern)))
+            fields.append(("path rule:", path_rule_pattern))
     else:
-        package_repo = getattr(error, "package_repo", None)
+        package_repo = _error_attribute(error, "package_repo")
         if package_repo is not None and package_id is not None:
             fields.append(
                 (
@@ -1091,19 +1107,20 @@ def _structured_error_fields(error: Any, *, use_color: bool) -> list[tuple[str, 
                     ),
                 )
             )
-    path = getattr(error, "path", None)
+    path = _error_attribute(error, "path")
     if path is not None:
-        fields.append(("path:", str(path)))
-    detail = getattr(error, "detail", None)
+        fields.append(("path:", path))
+    detail = _error_attribute(error, "detail")
     if detail is None:
         if hasattr(error, "package_identity") and hasattr(error, "conflict_kind") and hasattr(error, "contenders"):
+            # Styled and built from loaded identities, whose names already passed validation.
             detail = cli_style.render_profile_conflict_detail(error, use_color=use_color)
         else:
-            detail = str(error) or error.__class__.__name__
-    fields.append(("detail:", str(detail)))
-    hint = getattr(error, "hint", None)
+            detail = _escape_unprintable(str(error) or error.__class__.__name__)
+    fields.append(("detail:", detail))
+    hint = _error_attribute(error, "hint")
     if hint is not None:
-        fields.append(("hint:", str(hint)))
+        fields.append(("hint:", hint))
     return fields
 
 
@@ -1116,7 +1133,7 @@ def emit_skipped_entry_warnings(skipped_entries: Sequence[Any], *, use_color: bo
                 repo_name=skipped.repo, package_id=skipped.package_id, use_color=use_color
             )
             # Not tracked, so there is no row to untrack; the fix is in the repo.
-            print(f"{warning}: skipped package {package} ({skipped.message})", file=sys.stderr)
+            print(f"{warning}: skipped package {package} ({_escape_unprintable(skipped.message)})", file=sys.stderr)
             continue
         row = cli_style.render_full_spec_selector_reference(skipped.binding, use_color=use_color)
         # Plain text for the untrack hint so it stays copy-pasteable.
@@ -1124,7 +1141,7 @@ def emit_skipped_entry_warnings(skipped_entries: Sequence[Any], *, use_color: bo
             repo_name=skipped.binding.repo, selector=skipped.binding.selector, profile=skipped.binding.profile
         )
         print(
-            f"{warning}: skipped stale tracked row {row} ({skipped.message}); "
+            f"{warning}: skipped stale tracked row {row} ({_escape_unprintable(skipped.message)}); "
             f"see 'dotman list tracked' or remove it with 'dotman untrack {untrack_hint}'",
             file=sys.stderr,
         )

@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 
 from dotman.errors import UsageError
+from dotman.manifest import validate_printable_name
 from dotman.models import GitConfig, ManagerConfig, RepoConfig, SnapshotConfig, UiConfig, UiMenusConfig
 from dotman.sync_commit import validate_commit_message_template
 from dotman.toml_utils import load_toml_file
@@ -56,6 +57,10 @@ def expand_path(value: str, *, base_dir: Path | None = None, dereference: bool =
 
 def default_local_override_path(repo_name: str) -> Path:
     return default_config_root() / "repos" / repo_name / "local.toml"
+
+
+def validate_repo_name(repo_name: str) -> None:
+    validate_printable_name(repo_name, kind="repo name")
 
 
 def validate_state_key(state_key: object, *, repo_name: str) -> str:
@@ -112,6 +117,15 @@ def load_manager_config(config_path: str | Path | None = None) -> ManagerConfig:
     seen_orders: dict[int, str] = {}
     seen_state_keys: dict[str, str] = {}
     for repo_name, repo_payload in repos_payload.items():
+        # First, so a bad name gets this message and not a state_key one: the state_key defaults to the name.
+        try:
+            validate_repo_name(repo_name)
+        except UsageError as exc:
+            raise ManagerConfigLoadError(
+                path=resolved_path,
+                detail=str(exc),
+                hint="Rename the [repos.<name>] table to printable characters.",
+            ) from None
         if not isinstance(repo_payload, dict):
             raise UsageError(f"repo entry '{repo_name}' must be a table")
         if "state_path" in repo_payload:

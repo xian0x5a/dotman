@@ -45,7 +45,19 @@ def validate_supported_keys(
         raise UsageError(f"{context} has unsupported keys: {unsupported_text}")
 
 
+def validate_printable_name(name: str, *, kind: str) -> None:
+    """Reject a name the user wrote that a terminal could show as something else.
+
+    Control characters, bidi overrides, zero-width joiners and non-ASCII spaces
+    pass for ordinary text, so they are refused up front. The predicate is the one
+    `printable_text` escapes by, so a name that loads is always shown as written.
+    """
+    if not name.isprintable():
+        raise UsageError(f"invalid {kind} '{name}': names must be printable characters")
+
+
 def _validate_namespaced_id(selector_id: str, *, kind: str) -> None:
+    validate_printable_name(selector_id, kind=f"{kind} id")
     if not selector_id.strip():
         raise UsageError(f"{kind} id must not be empty")
     if any(character in selector_id for character in SELECTOR_ID_RESERVED_CHARACTERS):
@@ -72,6 +84,7 @@ def validate_group_id(group_id: str) -> None:
 
 
 def validate_profile_id(profile_id: str) -> None:
+    validate_printable_name(profile_id, kind="profile id")
     if any(character in profile_id for character in PROFILE_ID_RESERVED_CHARACTERS):
         raise UsageError(f"invalid profile id '{profile_id}'")
 
@@ -93,6 +106,7 @@ def discover_package_manifests(packages_root: Path) -> list[Path]:
 
 
 def validate_target_name(target_name: str) -> None:
+    validate_printable_name(target_name, kind="target name")
     if (
         not target_name.strip()
         or "." in target_name

@@ -20,6 +20,7 @@ under `examples/repo/`.
 - Human-facing target labels use `repo:package.target` and `repo:package<profile>.target`.
 - `.` is reserved for the package/target separator and must not appear inside package IDs or target names.
 - `/` is reserved for the target/child separator and must not appear inside target names. Package IDs may still use `/` for namespaces, and profile IDs may contain dots inside `<profile>`.
+- Package, group, profile and target names must pass Python's `str.isprintable()`, the same rule that escapes unprintable text in output (`docs/sync.md`). Control characters, bidi overrides, zero-width joiners and non-ASCII spaces such as NBSP fail to load with a usage error that names the file and shows the name escaped (`work\u00a0laptop`). A plain ASCII space is printable, so profile IDs may still contain spaces.
 - Packages may declare `depends` for hard requirements.
 - `depends` entries may reference either package IDs or group selectors.
 - Group dependencies expand to their member packages during dependency resolution.
