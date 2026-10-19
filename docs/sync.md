@@ -472,7 +472,10 @@ exception: they are the Guard's declared explanation and appear in both.
 Merge lazily reconciles the usable Base payload, frozen repository representation,
 and frozen Capture result. Equal sides agree; when one side still equals the Base,
 the other side wins. Otherwise present file contents use Git's three-way
-`merge-file --zdiff3` through Command Runtime. A conflict keeps that merge output
+`merge-file --zdiff3` through Command Runtime. When both sides added a file the
+Base records as `Missing`, the merge uses an empty ancestor, as Git does for
+add/add; a child's executable state then keeps the repository's on disagreement.
+A conflict keeps that merge output
 as evidence for Proposal Review and the Editor. Conflicts and provider failures remain
 distinct typed, blocked, retryable diagnostics. They clear the affected Approval,
 not its Resolution Intent; Dotman never selects another intent or opens an Editor

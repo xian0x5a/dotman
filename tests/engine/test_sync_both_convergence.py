@@ -444,3 +444,20 @@ def test_capture_drift_without_push_hooks_writes_nothing(tmp_path, monkeypatch):
         command(session, SetApproval, "main:app.unit", True)
         proposal = session.view.rows[0].proposal
         assert proposal.primary_source_change is None and proposal.publication_effects == ()
+
+
+def test_add_add_since_missing_base_merges_against_empty_ancestor(tmp_path, monkeypatch):
+    # A Base recorded Missing; both sides then created different files (add/add).
+    engine = make_engine(tmp_path, monkeypatch, [("unit", "both", None, None, "")])
+    with open_session(engine, preview=False):
+        pass
+    (tmp_path / "repo/packages/app/unit").write_bytes(b"shared\nrepository\n")
+    (tmp_path / "live").mkdir(exist_ok=True)
+    (tmp_path / "live/unit").write_bytes(b"shared\nlive\n")
+    with open_session(engine) as session:
+        assert session.view.rows[0].intent == "merge"
+        command(session, SetApproval, "main:app.unit", True)
+        diagnostic = session.view.rows[0].diagnostics[0]
+        assert diagnostic.code == "reconciliation-conflict"
+        assert diagnostic.conflict == FilePresent(
+            b"shared\n<<<<<<< repository\nrepository\n||||||| Sync Base\n=======\nlive\n>>>>>>> Capture\n")
