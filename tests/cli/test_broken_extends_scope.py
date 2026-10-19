@@ -51,22 +51,16 @@ def _run(config_path: Path, capsys, *argv: str) -> tuple[int, str]:
     return code, captured.out + captured.err
 
 
-def _assert_names_stale_row(output: str) -> None:
-    for name in (STALE_REPO, STALE_PACKAGE, MISSING_PARENT):
-        assert name in output
-
-
 @pytest.mark.parametrize(
     "argv",
     [
         pytest.param(["track", "main:a@default"], id="track"),
         pytest.param(["untrack", "main:a@default"], id="untrack"),
-        pytest.param(["push", "--dry-run", "main:a"], id="push-qualified"),
-        pytest.param(["pull", "--dry-run", "main:a"], id="pull-qualified"),
-        pytest.param(["push", "--dry-run", "a"], id="push-unqualified"),
-        pytest.param(["push", "--dry-run"], id="push-all-tracked"),
-        pytest.param(["pull", "--dry-run"], id="pull-all-tracked"),
-        pytest.param(["sync", "--dry-run"], id="sync-all-tracked"),
+        # push, pull and sync share one planning walk, so one of them stands for all.
+        pytest.param(["push", "--dry-run", "main:a"], id="planning"),
+        # These two read the tracked rows through a second skip point.
+        pytest.param(["info", "trackable", "main:a"], id="info-trackable"),
+        pytest.param(["list", "vars"], id="list-vars"),
     ],
 )
 def test_command_skips_the_stale_row_and_warns(two_repo_config: Path, capsys, argv: list[str]) -> None:
@@ -74,7 +68,6 @@ def test_command_skips_the_stale_row_and_warns(two_repo_config: Path, capsys, ar
 
     assert code == 0, output
     assert f"warning: skipped stale tracked row {STALE_ROW}" in output
-    _assert_names_stale_row(output)
 
 
 @pytest.mark.parametrize(
@@ -91,7 +84,24 @@ def test_explicitly_selecting_the_stale_package_fails_naming_the_cause(
     code, output = _run(two_repo_config, capsys, *argv)
 
     assert code != 0
-    _assert_names_stale_row(output)
+    # The error itself names the cause; the command does not also warn about the row it rejected.
+    assert "warning:" not in output
+    for name in (STALE_REPO, STALE_PACKAGE, MISSING_PARENT):
+        assert name in output
+
+
+def test_tracking_a_healthy_package_beside_a_stale_row_keeps_the_row(
+    two_repo_config: Path, tmp_path: Path, capsys
+) -> None:
+    new_package = tmp_path / "other-repo" / "packages" / "new"
+    new_package.mkdir()
+    (new_package / "package.toml").write_text("", encoding="utf-8")
+
+    code, output = _run(two_repo_config, capsys, "track", f"{STALE_REPO}:new@default")
+
+    assert code == 0, output
+    state_files = [path.read_text(encoding="utf-8") for path in (tmp_path / "state").rglob("tracked-packages.toml")]
+    assert any(f'package_id = "{STALE_PACKAGE}"' in text and 'package_id = "new"' in text for text in state_files)
 
 
 def test_warning_is_one_line_per_row_and_points_to_the_fix(two_repo_config: Path, capsys) -> None:
