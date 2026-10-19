@@ -46,14 +46,21 @@ def load_repo(tmp_path: Path, files: dict[str, str]) -> None:
         (
             PACKAGE,
             VALID_TARGET + '[targets.a.path_rules.r]\npattern = "*"\nsync_policy = "bogus"\n',
-            r"package\.toml target 'a' path_rules\.r has unsupported sync_policy 'bogus'",
+            r"package\.toml target 'a' has unsupported path_rules\.r\.sync_policy 'bogus'",
         ),
         (
             PACKAGE,
             VALID_TARGET + '[targets.a.path_rules.r]\npattern = "*"\nrender = 5\n',
-            r"package\.toml target 'a' path_rules\.r render must be a string",
+            r"package\.toml target 'a' path_rules\.r\.render must be a string",
         ),
         (PACKAGE, VALID_TARGET + '[targets.a.path_rules.r]\nrender = "jinja"\n', r'target "fixture:p\.a" path rule \'r\' must define pattern'),
+        (
+            PACKAGE,
+            VALID_TARGET + '[targets.a.hooks.pre_push]\ncommands = [{ run = "true", io = "bogus" }]\n',
+            r"package\.toml target 'a' hook 'pre_push' command object has unsupported io 'bogus'",
+        ),
+        (PACKAGE, VALID_TARGET + 'editor = { run = "vi", io = "bogus" }\n', r"package\.toml target 'a' has unsupported editor\.io 'bogus'"),
+        ("repo.toml", 'default_command_elevation = "bogus"\n', r"repo config .*repo\.toml has unsupported default_command_elevation 'bogus'"),
         ("groups/g.toml", 'member = ["p"]\n', r"g\.toml has unsupported keys: member"),
         ("groups/g.toml", "members = [1]\n", r"g\.toml members\[0\] must be a string"),
         ("groups/g.toml", 'members = ["p"]\ndescription = 5\n', r"g\.toml description must be a string"),
@@ -70,5 +77,5 @@ def test_manifest_errors_name_file_and_field(tmp_path: Path, relative_path: str,
         load_repo(tmp_path, {relative_path: text})
 
 
-def test_profile_ids_may_contain_dots(tmp_path: Path) -> None:
-    load_repo(tmp_path, {"profiles/work.v2.toml": '[vars]\nname = "work"\n', "groups/g.toml": 'members = ["p"]\ndescription = "all"\n'})
+def test_profile_ids_may_contain_dots_and_spaces(tmp_path: Path) -> None:
+    load_repo(tmp_path, {"profiles/work.v2.toml": '[vars]\nname = "work"\n', "profiles/my laptop.toml": "", "groups/g.toml": 'members = ["p"]\ndescription = "all"\n'})

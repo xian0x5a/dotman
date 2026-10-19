@@ -44,10 +44,10 @@ def validate_supported_keys(
         raise ValueError(f"{context} has unsupported keys: {unsupported_text}")
 
 
-def _validate_namespaced_id(selector_id: str, *, kind: str, reserved_characters: tuple[str, ...]) -> None:
+def _validate_namespaced_id(selector_id: str, *, kind: str) -> None:
     if not selector_id.strip():
         raise ValueError(f"{kind} id must not be empty")
-    if any(character in selector_id for character in reserved_characters):
+    if any(character in selector_id for character in SELECTOR_ID_RESERVED_CHARACTERS):
         raise ValueError(f"invalid {kind} id '{selector_id}'")
     parts = selector_id.split("/")
     if any(not part or part in {".", ".."} or any(character.isspace() for character in part) for part in parts):
@@ -57,21 +57,22 @@ def _validate_namespaced_id(selector_id: str, *, kind: str, reserved_characters:
 # Package and group IDs are selectors in `repo:selector@profile` and
 # `repo:package<profile>.target`, so they can't hold any of that syntax.
 SELECTOR_ID_RESERVED_CHARACTERS = ("\\", ":", "@", "<", ">", ".")
-# Profile IDs sit inside `@profile` and `<profile>`, where dots and other
-# punctuation are allowed; only the characters that delimit them are reserved.
+# Profile IDs sit inside `@profile` and `<profile>`, where dots, spaces and
+# other punctuation are allowed; only the characters that delimit them are reserved.
 PROFILE_ID_RESERVED_CHARACTERS = ("@", "<", ">")
 
 
 def validate_package_id(package_id: str) -> None:
-    _validate_namespaced_id(package_id, kind="package", reserved_characters=SELECTOR_ID_RESERVED_CHARACTERS)
+    _validate_namespaced_id(package_id, kind="package")
 
 
 def validate_group_id(group_id: str) -> None:
-    _validate_namespaced_id(group_id, kind="group", reserved_characters=SELECTOR_ID_RESERVED_CHARACTERS)
+    _validate_namespaced_id(group_id, kind="group")
 
 
 def validate_profile_id(profile_id: str) -> None:
-    _validate_namespaced_id(profile_id, kind="profile", reserved_characters=PROFILE_ID_RESERVED_CHARACTERS)
+    if any(character in profile_id for character in PROFILE_ID_RESERVED_CHARACTERS):
+        raise ValueError(f"invalid profile id '{profile_id}'")
 
 
 def discover_package_manifests(packages_root: Path) -> list[Path]:
@@ -554,8 +555,11 @@ def normalize_target_path_rules(
         if not isinstance(priority, int) or isinstance(priority, bool):
             raise ValueError(f"package manifest {manifest_path} target '{target_name}' path_rules.{name}.priority must be an integer")
         rule_context = f"package manifest {manifest_path} target '{target_name}' path_rules.{name}"
-        render = normalize_projection(val("render", inherited_render), context=rule_context, key="render", default=inherited_render, builtins=("raw", "jinja"))
-        capture = normalize_projection(val("capture", inherited_capture), context=rule_context, key="capture", default=inherited_capture, builtins=("raw", "patch"))
+        # Field errors read `target 't' path_rules.r.render ...`, like the
+        # pattern/priority/chmod errors above.
+        target_context, rule_key = f"package manifest {manifest_path} target '{target_name}'", f"path_rules.{name}"
+        render = normalize_projection(val("render", inherited_render), context=target_context, key=f"{rule_key}.render", default=inherited_render, builtins=("raw", "jinja"))
+        capture = normalize_projection(val("capture", inherited_capture), context=target_context, key=f"{rule_key}.capture", default=inherited_capture, builtins=("raw", "patch"))
         preset_compare = preset_payload.get("compare")
         rule_compare = payload.get("compare")
         if preset_compare is not None and not isinstance(preset_compare, dict):
@@ -606,7 +610,8 @@ def normalize_target_path_rules(
         chmod = val("chmod", None)
         if chmod is not None and (not isinstance(chmod, str) or _invalid_chmod(chmod)):
             raise ValueError(f"package manifest {manifest_path} target '{target_name}' path_rules.{name}.chmod must be 3 or 4 octal digits")
-        sync_policy = normalize_sync_policy(payload.get("sync_policy", inherited_sync_policy), context=rule_context)
+        sync_policy = normalize_optional_string_enum(payload.get("sync_policy", inherited_sync_policy), context=target_context,
+                                                     key=f"{rule_key}.sync_policy", allowed=VALID_SYNC_POLICY_VALUES)
         hooks = normalize_path_rule_hooks(payload.get("hooks"), manifest_path=manifest_path, target_name=target_name, rule_index=name,
                                           default_command_elevation=default_command_elevation)
         rules.append(TargetPathRule(name=name, pattern=normalized_pattern, priority=priority, chmod=chmod,

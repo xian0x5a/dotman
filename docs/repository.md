@@ -44,7 +44,7 @@ under `examples/repo/`.
 - A group file may define only `members` and `description`; other keys fail to load.
 - Profiles provide variable values only.
 - Profiles may define `includes = [...]` to compose other profiles.
-- A profile file may define only `includes` and `[vars]`; other keys fail to load. Profile IDs may contain dots but not `@`, `<` or `>`.
+- A profile file may define only `includes` and `[vars]`; other keys fail to load. Profile IDs may contain dots and spaces but not `@`, `<` or `>`.
 - Included profiles merge in declaration order.
 - Later included profiles override earlier included profiles.
 - The profile's own vars override all included profiles.
