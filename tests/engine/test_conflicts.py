@@ -433,6 +433,105 @@ def test_package_reserved_paths_conflict_with_other_package_reserved_paths(
         engine.resolve_sync_scope()
 
 
+def write_multi_instance_reserved_path_repo(repo_root: Path, *, reserved_path: str, target_path: str) -> None:
+    """Write a `multi_instance` package `app` with `home` and `office` profiles.
+
+    Each profile names the other one as `vars.peer`, so a target path can point at
+    the peer instance's area. Sources are per profile so the instances never share
+    a Primary Source, which would trip an unrelated ownership check.
+    """
+    (repo_root / "profiles").mkdir(parents=True)
+    (repo_root / "packages" / "app" / "files").mkdir(parents=True)
+    for profile_name, peer_name in (("home", "office"), ("office", "home")):
+        (repo_root / "profiles" / f"{profile_name}.toml").write_text(
+            f'[vars]\npeer = "{peer_name}"\n',
+            encoding="utf-8",
+        )
+        (repo_root / "packages" / "app" / "files" / f"{profile_name}.conf").write_text(
+            f"profile={profile_name}\n",
+            encoding="utf-8",
+        )
+    (repo_root / "packages" / "app" / "package.toml").write_text(
+        "\n".join(
+            [
+                'binding_mode = "multi_instance"',
+                f'reserved_paths = ["{reserved_path}"]',
+                "",
+                "[targets.config]",
+                'source = "files/{{ profile }}.conf"',
+                f'path = "{target_path}"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+
+@pytest.mark.parametrize(
+    ("reserved_path", "target_path"),
+    [
+        pytest.param(
+            "~/.local/share/app",
+            "~/.config/app/{{ profile }}.conf",
+            id="same-reserved-path",
+        ),
+        pytest.param(
+            "~/.local/share/app/{{ profile }}",
+            "~/.local/share/app/{{ vars.peer }}/app.conf",
+            id="target-inside-peer-reserved-path",
+        ),
+    ],
+)
+def test_package_reserved_paths_conflict_between_instances_of_same_multi_instance_package(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    reserved_path: str,
+    target_path: str,
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+
+    repo_root = tmp_path / "repo"
+    write_multi_instance_reserved_path_repo(repo_root, reserved_path=reserved_path, target_path=target_path)
+    config_path = write_single_repo_config(tmp_path, repo_name="fixture", repo_path=repo_root)
+    write_tracked_packages_state(tmp_path / "state", repo_name="fixture", entries=[("app", "home"), ("app", "office")])
+    engine = DotmanEngine.from_config_path(config_path)
+
+    with pytest.raises(ValueError, match=r"^reserved path conflict") as exc_info:
+        engine.resolve_sync_scope()
+
+    message = str(exc_info.value)
+    assert "app<home>" in message
+    assert "app<office>" in message
+
+
+def test_package_reserved_paths_allow_each_instance_own_targets(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+
+    repo_root = tmp_path / "repo"
+    write_multi_instance_reserved_path_repo(
+        repo_root,
+        reserved_path="~/.local/share/app/{{ profile }}",
+        target_path="~/.local/share/app/{{ profile }}/app.conf",
+    )
+    config_path = write_single_repo_config(tmp_path, repo_name="fixture", repo_path=repo_root)
+    write_tracked_packages_state(tmp_path / "state", repo_name="fixture", entries=[("app", "home"), ("app", "office")])
+    engine = DotmanEngine.from_config_path(config_path)
+
+    scope = engine.resolve_sync_scope()
+
+    assert sorted(target.canonical for target in scope.targets) == [
+        "fixture:app<home>.config",
+        "fixture:app<office>.config",
+    ]
+
+
 def test_record_binding_rejects_conflicting_explicit_targets(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
