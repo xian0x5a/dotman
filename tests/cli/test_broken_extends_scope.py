@@ -152,10 +152,10 @@ def test_explicitly_selecting_the_stale_package_fails_naming_the_cause(
     code, output = _run(two_repo_config, capsys, *argv)
 
     assert code != 0
-    # The error itself names the cause, not just the skip warning or entry.
-    error_output = "\n".join(
-        line for line in output.splitlines() if not line.startswith("warning:") and not _is_stale_entry_line(line)
-    )
+    # The row made the command fail, so it is not also listed as a skipped entry.
+    assert not any(_is_stale_entry_line(line) for line in output.splitlines()), output
+    # The error itself names the cause, not just the skip warning.
+    error_output = "\n".join(line for line in output.splitlines() if not line.startswith("warning:"))
     for name in (STALE_REPO, STALE_PACKAGE, MISSING_PARENT):
         assert name in error_output
 

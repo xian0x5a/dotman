@@ -565,7 +565,7 @@ def silencing_skipped_entries() -> Iterator[None]:
 
 
 def take_unreported_skipped_entries(
-    entry_type: type[SkippedTrackedRow] | type[SkippedCatalogPackage] | None = None,
+    entry_type: type | None = None,
 ) -> list[SkippedEntry]:
     """Return the skipped entries (of `entry_type`, if given) no output has shown yet, marking them shown."""
     log = _SKIPPED_ENTRIES.get()
