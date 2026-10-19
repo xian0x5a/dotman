@@ -508,6 +508,9 @@ def directory_child_policy(
             compare_live = rule.compare_live
         if rule.editor_explicit:
             editor = rule.editor
+        elif rule.editor.additional_sources_explicit:
+            # Sources are independent of the editor selection an earlier layer chose.
+            editor = editor.with_sources_of(rule.editor)
         if rule.sync_policy_explicit:
             sync_policy = rule.sync_policy
         if compare_live == "capture" and capture_command is None:
