@@ -332,7 +332,8 @@ otherwise **Use repository** is the visible fallback and Merge is unavailable.
 - Exit `0` means healthy completion, including deliberately unselected healthy
   interactive rows and completed work with checkpoint-only warnings. Exit `1`
   covers Observation, materialization, blocking,
-  decision-required, execution, or incomplete-convergence failure. Partial
+  decision-required, execution, or incomplete-convergence failure, and a
+  Command Deck that stops on an unexpected error (status `failed`, code `deck-failed`). Partial
   convergence with any failure exits `1`. Exit `2` means invalid syntax;
   exit `130` means interruption or explicit abort.
 

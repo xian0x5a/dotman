@@ -114,6 +114,10 @@ def retry_materialization(session: SyncSession, row_id: str):
     return session.dispatch(RetryMaterialization(view.session_id, view.revision, row_id))
 
 
+class CommandDeckCrashed(RuntimeError):
+    """The Deck stopped on an unhandled error; Textual has already printed it."""
+
+
 class SyncDeckCommandRunner:
     command_names = frozenset({"sync"})
     operation = "sync"
@@ -214,6 +218,14 @@ class SyncDeckCommandRunner:
                         confirmed = run_command_deck(session, use_color=self._use_color)
                     except (KeyboardInterrupt, InterruptedError):
                         confirmed = False
+                    except CommandDeckCrashed:
+                        session.abort()
+                        # No session result: its "aborted" status would report a crash as a user abort.
+                        self._emit(args, session, None, diagnostic={
+                            "code": "deck-failed",
+                            "message": f"{self.operation.title()} failed: the Command Deck stopped on an error",
+                        }, deck_dismissed=True)
+                        return 1
                     if not confirmed:
                         aborted = session.abort()
                         self._emit(args, session, aborted.result, diagnostic={
