@@ -583,6 +583,8 @@ Examples: `dotman pull main:git.config`,
 - `restore` should accept `-d` / `--dry-run` as an explicit preview-only mode selector.
 - `restore` should accept `--full-path` to disable human-output path compaction for preview, review menus, and human execution output.
 - Plain `restore` should perform real execution after planning and inspection-only diff review.
+- Preview and execution headers should show the snapshot ID, creation time, and status in the same form as `info snapshot`.
+- Review items should be labeled with the target recorded in the snapshot (`repo:package.target`), or with the live path when the snapshot recorded none.
 - Diff review should use `git diff --no-index --color=auto`.
 - Diff review headers should use explicit `live/...` and `repo/...` paths instead of opaque `before-*` or `after-*` temp names.
 - Diff review headers should compact long compared paths for readability, and should additionally collapse the current home directory to `~` instead of a machine-specific absolute prefix.
