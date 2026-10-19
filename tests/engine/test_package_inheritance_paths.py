@@ -6,7 +6,10 @@ from typing import Any, Callable
 import pytest
 
 from dotman.engine import DotmanEngine
-from dotman.models import PackageSpec
+from dotman.manifest import TARGET_MANIFEST_KEYS, TARGET_PATH_RULE_KEYS
+from dotman.models import PackageSpec, TargetPathRule, TargetSpec
+from dotman.package_inheritance import MANIFEST_FIELDS
+from dotman.repository import PACKAGE_MANIFEST_TOP_LEVEL_KEYS
 from tests.helpers import write_single_repo_config
 
 BASE_MANIFEST = """
@@ -106,3 +109,16 @@ def test_append_rejects_keyed_path_rules(tmp_path: Path) -> None:
     # Path rules are a keyed table; a child adds one by declaring it, not by appending.
     with pytest.raises(ValueError, match=r"append target 'targets\.t\.path_rules' is not a list"):
         resolve_child(tmp_path, '[append.targets.t]\npath_rules = [{ pattern = "*.c" }]\n')
+
+
+@pytest.mark.parametrize(
+    ("model", "manifest_keys", "not_patchable"),
+    [
+        (PackageSpec, PACKAGE_MANIFEST_TOP_LEVEL_KEYS, {"extends", "remove", "append"}),
+        (TargetSpec, TARGET_MANIFEST_KEYS, {"preset"}),
+        (TargetPathRule, TARGET_PATH_RULE_KEYS, {"preset"}),
+    ],
+)
+def test_inheritance_paths_cover_every_manifest_key(model: type, manifest_keys: frozenset[str], not_patchable: set[str]) -> None:
+    # A manifest key added without a path mapping would silently be unremovable.
+    assert set(MANIFEST_FIELDS[model]) == set(manifest_keys) - not_patchable
