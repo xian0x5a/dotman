@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Thread
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Callable, Iterable, Iterator, Literal, Mapping, Protocol, Sequence, TextIO, TypeAlias, TypeVar
+from typing import TYPE_CHECKING, Callable, Iterable, Iterator, Literal, Mapping, NoReturn, Protocol, Sequence, TextIO, TypeAlias, TypeVar
 
 from dotman.terminal import preserve_terminal_state
 
@@ -105,6 +105,56 @@ def first_output_line(stderr: str, stdout: str) -> str | None:
             if stripped:
                 return stripped
     return None
+
+
+_sigint_received = False
+
+
+def record_sigint() -> None:
+    """Note that a real SIGINT reached this process, not just a key or a child's 130."""
+    global _sigint_received
+    _sigint_received = True
+
+
+def sigint_received() -> bool:
+    return _sigint_received
+
+
+def install_sigint_recorder() -> None:
+    """Keep Python's KeyboardInterrupt on SIGINT while recording that it arrived."""
+    # A shell starts background jobs with SIGINT ignored; Python then leaves it
+    # ignored, and so must dotman.
+    if signal.getsignal(signal.SIGINT) is not signal.default_int_handler:
+        return
+
+    def record_and_interrupt(signum: int, frame: object) -> None:
+        record_sigint()
+        signal.default_int_handler(signum, frame)
+
+    signal.signal(signal.SIGINT, record_and_interrupt)
+
+
+def exit_from_interrupt() -> NoReturn:
+    """End this process by dying from SIGINT, as a program that received one must.
+
+    After Ctrl-C a shell stops the script (or typed command line) that ran this
+    process only when the child died from SIGINT; a child that exits 130 tells
+    it Ctrl-C was handled. Interactive shells also cancel the rest of the
+    command line when a child dies from SIGINT they never saw, so call this
+    only after a real SIGINT, never for a key-driven abort.
+    """
+    # Death by signal skips interpreter shutdown, which would flush these. The
+    # process is about to die, so a reader that is already gone is not an error.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            if stream is not None:
+                stream.flush()
+        except (OSError, ValueError):
+            pass
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
+    os.kill(os.getpid(), signal.SIGINT)
+    # Reached only when SIGINT is blocked, so the signal cannot end this process.
+    raise SystemExit(INTERRUPTED_EXIT_CODE)
 
 
 def raise_for_command_interruption(result: CommandResult) -> None:
@@ -375,6 +425,12 @@ class ProductionCommandRuntime(_CancellationLatch):
                 if main_thread:
                     signal.signal(signal.SIGINT, signal.SIG_IGN)
                 return_code = self._wait(process)
+                # The child shares the terminal's process group, so a Ctrl-C it died
+                # from also reached this process, which was ignoring SIGINT meanwhile.
+                # Off the main thread SIGINT was not ignored, so dotman's own
+                # handler already saw any SIGINT meant for it.
+                if main_thread and return_code == -signal.SIGINT:
+                    record_sigint()
             except (KeyboardInterrupt, InterruptedError):
                 self.request_cancel()
                 with _defer_repeated_interrupts():

@@ -202,11 +202,10 @@ _SUDO_SHIM_BODY = """from __future__ import annotations
 
 import json
 import os
-import signal
 import socket
 import sys
 
-from dotman.command_runtime import INTERRUPTED_EXIT_CODE, ArgvCommand, CommandRequest, ProductionCommandRuntime
+from dotman.command_runtime import INTERRUPTED_EXIT_CODE, ArgvCommand, CommandRequest, ProductionCommandRuntime, exit_from_interrupt, sigint_received
 
 broker = os.environ.get("DOTMAN_ELEVATION_BROKER")
 real_sudo = os.environ.get("DOTMAN_REAL_SUDO")
@@ -218,15 +217,6 @@ if not broker:
 if not real_sudo:
     print("dotman sudo shim: DOTMAN_REAL_SUDO is not set", file=sys.stderr)
     raise SystemExit(1)
-
-
-def die_from_sigint() -> None:
-    # When SIGINT reached this process or the sudo it wraps, a shell stops the
-    # hook script only if this child dies from SIGINT too. Exiting 130 instead
-    # would let the script carry on with the commands after sudo.
-    signal.signal(signal.SIGINT, signal.SIG_DFL)
-    os.kill(os.getpid(), signal.SIGINT)
-    raise SystemExit(INTERRUPTED_EXIT_CODE)
 
 
 def has_controlling_terminal() -> bool:
@@ -244,7 +234,7 @@ def request_broker_lease() -> None:
             client.sendall((json.dumps({"reason": reason}) + "\\n").encode("utf-8"))
             response = client.makefile("r", encoding="utf-8").readline()
     except KeyboardInterrupt:
-        die_from_sigint()
+        exit_from_interrupt()
     except OSError as exc:
         print(f"dotman sudo shim: elevation broker request failed: {exc}", file=sys.stderr)
         raise SystemExit(1)
@@ -278,8 +268,9 @@ result = ProductionCommandRuntime().run(
         io="tty",
     )
 )
-if result.exit_code == INTERRUPTED_EXIT_CODE:
-    die_from_sigint()
+# sudo dying from SIGINT is passed on as one; a command that chose to exit 130 is not.
+if result.exit_code == INTERRUPTED_EXIT_CODE and sigint_received():
+    exit_from_interrupt()
 raise SystemExit(result.exit_code)
 """
 

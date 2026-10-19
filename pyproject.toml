@@ -27,7 +27,7 @@ dev = [
 ]
 
 [project.scripts]
-dotman = "dotman.cli:main"
+dotman = "dotman.cli:console_main"
 
 # Release tags are the only version source, so a release cannot ship a stale number.
 [tool.hatch.version]
