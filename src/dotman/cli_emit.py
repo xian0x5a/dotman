@@ -1085,6 +1085,7 @@ def _structured_error_fields(error: Any, *, use_color: bool) -> list[tuple[str, 
             )
         )
         if path_rule_pattern is not None:
+            # Patterns are authored and must be printable at load, so this prints as written.
             fields.append(("path rule:", path_rule_pattern))
     else:
         package_repo = _error_attribute(error, "package_repo")
