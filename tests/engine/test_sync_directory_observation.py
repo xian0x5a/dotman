@@ -237,6 +237,16 @@ def test_inferred_directory_and_root_marker_do_not_become_payloads(tmp_path, mon
         assert session.view.rows == ()
 
 
+def test_child_of_live_only_inferred_directory_is_selectable(tmp_path, monkeypatch):
+    # Observation infers a directory from either side, so selection must too.
+    engine = directory_engine(tmp_path, monkeypatch, inferred=True)
+    put(tmp_path / 'live/tree', 'child')
+    with open_directory(engine) as session:
+        assert [unit.identity.canonical for unit in session.view.observations] == ['main:app.tree/child']
+    with open_directory(engine, ['main:app.tree/child']) as session:
+        assert [unit.identity.canonical for unit in session.view.observations] == ['main:app.tree/child']
+
+
 def test_partial_child_selection_retains_ancestor_discovery_failure(tmp_path, monkeypatch):
     engine = directory_engine(tmp_path, monkeypatch)
     repo = tmp_path / 'repo/packages/app/tree'

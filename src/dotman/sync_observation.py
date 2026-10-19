@@ -155,7 +155,7 @@ def _resolve_inputs(
                 entry for entry in item.target_metadata if _identity(entry) in selected
             ]
             for entry in metadata:
-                if entry.target.target_type is None and (entry.repo_path.is_dir() or entry.live_path.is_dir()):
+                if entry.target.target_type is None and projection.rendered_target_is_directory(entry):
                     entry = replace(entry, target=replace(entry.target, target_type="directory"))
                 # Provider identity belongs to the invoking workflow, not the
                 # direction that happened to supply this unit's metadata.

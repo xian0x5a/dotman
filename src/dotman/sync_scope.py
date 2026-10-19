@@ -19,6 +19,7 @@ from dotman.collisions import (
     validate_target_collisions,
 )
 from dotman.config import expand_path
+from dotman.projection import rendered_target_is_directory
 from dotman.templates import render_template_string
 
 
@@ -236,19 +237,6 @@ def _target_key(target: ResolvedSyncTarget) -> tuple[str, str, str | None, str]:
     return target.repo, target.package_id, target.bound_profile, target.target_name
 
 
-def _target_is_directory(context, selection: ResolvedPackageSelection, target_name: str) -> bool:
-    repo = context.repositories[selection.identity.repo]
-    package = repo.resolve_package(selection.identity.package_id)
-    target = (package.targets or {}).get(target_name)
-    if target is None:
-        return False
-    if target.target_type is not None:
-        return target.target_type == "directory"
-    if target.source is None:
-        return False
-    return (target.declared_in / target.source).is_dir()
-
-
 def resolve_sync_scope(
     context,
     selectors: Sequence[str] | None = None,
@@ -298,6 +286,7 @@ def resolve_sync_scope(
     winner_keys_by_operation: dict[str, set[tuple[str, str, str | None, str]]] = {}
     planning_inputs_by_operation: dict[str, tuple[planning.PackagePlanningInput, ...]] = {}
     primary_targets = {}
+    primary_metadata = {}
     primary_gitignore = {}
     for operation in ("push", "pull"):
         planning_inputs, candidates = planning.collect_static_target_candidates(
@@ -351,6 +340,7 @@ def resolve_sync_scope(
                     )
                 )
                 primary_targets[metadata_key] = rendered_targets[-1]
+                primary_metadata[metadata_key] = metadata
                 primary_gitignore[(metadata.repo_path, metadata.live_path)] = metadata.gitignore
         validate_target_collisions(rendered_targets, operation=operation, gitignore_chains={
             (metadata.repo_path, metadata.live_path): metadata.gitignore
@@ -378,8 +368,6 @@ def resolve_sync_scope(
         if item.target_name is not None:
             if not _target_exists(context, root, item.target_name):
                 raise ValueError(f"sync scope '{item.text}' did not match an exact target")
-            if item.child_path is not None and not _target_is_directory(context, root, item.target_name):
-                raise ValueError(f"sync scope '{item.text}' child identity requires a resolved directory target")
             target = ResolvedSyncTarget(
                 repo=item.repo,
                 package_id=root.identity.package_id,
@@ -389,6 +377,9 @@ def resolve_sync_scope(
             )
             if not any(_target_key(target) in keys for keys in winner_keys_by_operation.values()):
                 raise ValueError(f"sync scope '{item.text}' is not an owning tracked target")
+            metadata = primary_metadata.get(_target_key(target))
+            if item.child_path is not None and (metadata is None or not rendered_target_is_directory(metadata)):
+                raise ValueError(f"sync scope '{item.text}' child identity requires a resolved directory target")
             requested_scopes.add(replace(target, child_path=None).canonical)
             key = (*_target_key(target), target.child_path)
             if key not in selected_target_keys:
