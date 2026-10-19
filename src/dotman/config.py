@@ -71,7 +71,10 @@ def validate_repo_name(repo_name: str) -> None:
         or "/" in repo_name
         or any(character in repo_name for character in SELECTOR_ID_RESERVED_CHARACTERS)
     ):
-        raise UsageError(f"invalid repo name '{repo_name}'")
+        raise UsageError(
+            f"invalid repo name '{repo_name}': a repo name cannot be blank or contain "
+            f"{' '.join(SELECTOR_ID_RESERVED_CHARACTERS)} /"
+        )
 
 
 def validate_state_key(state_key: object, *, repo_name: str) -> str:
@@ -85,7 +88,10 @@ def validate_state_key(state_key: object, *, repo_name: str) -> str:
     if "/" in normalized or "\\" in normalized:
         raise UsageError(f"repo '{repo_name}' state_key must not contain path separators")
     # Checked on the stripped key, which is the one that names the state directory.
-    validate_printable_name(normalized, kind="state_key")
+    try:
+        validate_printable_name(normalized, kind="state_key")
+    except UsageError as exc:
+        raise UsageError(f"repo '{repo_name}': {exc}") from None
     return normalized
 
 
@@ -103,6 +109,50 @@ def validate_positive_integer(value: object, *, field_name: str) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value < 1:
         raise UsageError(f"config {field_name} must be an integer >= 1")
     return value
+
+
+def _load_repo_entry(
+    repo_name: str,
+    repo_payload: object,
+    *,
+    config_dir: Path,
+    seen_orders: dict[int, str],
+    seen_state_keys: dict[str, str],
+) -> RepoConfig:
+    """Validate one `[repos.<name>]` entry; the seen_* maps catch values another repo already uses."""
+    # The name goes first, so a bad name gets its own message and not a state_key one: state_key defaults to it.
+    validate_repo_name(repo_name)
+    if not isinstance(repo_payload, dict):
+        raise UsageError(f"repo entry '{repo_name}' must be a table")
+    if "state_path" in repo_payload:
+        # Orphan-state discovery only works when every repo state dir is derived from one
+        # predictable manager root, so custom per-repo state paths are no longer supported.
+        raise UsageError(f"repo '{repo_name}' uses unsupported key 'state_path'; use state_key and migrate bindings under the dotman state root")
+    repo_path_value = repo_payload.get("path")
+    order_value = repo_payload.get("order")
+    if not isinstance(repo_path_value, str):
+        raise UsageError(f"repo '{repo_name}' must define string path")
+    if not isinstance(order_value, int) or isinstance(order_value, bool):
+        raise UsageError(f"repo '{repo_name}' must define integer order")
+    if order_value in seen_orders:
+        raise UsageError(
+            f"repo order values must be unique: {repo_name} and {seen_orders[order_value]} both use {order_value}"
+        )
+    seen_orders[order_value] = repo_name
+    state_key = validate_state_key(repo_payload.get("state_key", repo_name), repo_name=repo_name)
+    if state_key in seen_state_keys:
+        raise UsageError(
+            f"repo state_key values must be unique: {repo_name} and {seen_state_keys[state_key]} both use '{state_key}'"
+        )
+    seen_state_keys[state_key] = repo_name
+    return RepoConfig(
+        name=repo_name,
+        path=expand_path(repo_path_value, base_dir=config_dir),
+        order=order_value,
+        state_key=state_key,
+        state_path=default_repo_state_dir(state_key).resolve(),
+        local_override_path=default_local_override_path(repo_name).resolve(),
+    )
 
 
 def load_manager_config(config_path: str | Path | None = None) -> ManagerConfig:
@@ -130,51 +180,17 @@ def load_manager_config(config_path: str | Path | None = None) -> ManagerConfig:
     seen_orders: dict[int, str] = {}
     seen_state_keys: dict[str, str] = {}
     for repo_name, repo_payload in repos_payload.items():
-        # First, so a bad name gets this message and not a state_key one: the state_key defaults to the name.
         try:
-            validate_repo_name(repo_name)
-        except UsageError as exc:
-            raise ManagerConfigLoadError(
-                path=resolved_path,
-                detail=str(exc),
-                hint="Rename the [repos.<name>] table. A repo name must be printable and cannot be blank or contain / . : @ < > or a backslash.",
-            ) from None
-        if not isinstance(repo_payload, dict):
-            raise UsageError(f"repo entry '{repo_name}' must be a table")
-        if "state_path" in repo_payload:
-            # Orphan-state discovery only works when every repo state dir is derived from one
-            # predictable manager root, so custom per-repo state paths are no longer supported.
-            raise UsageError(f"repo '{repo_name}' uses unsupported key 'state_path'; use state_key and migrate bindings under the dotman state root")
-        repo_path_value = repo_payload.get("path")
-        order_value = repo_payload.get("order")
-        if not isinstance(repo_path_value, str):
-            raise UsageError(f"repo '{repo_name}' must define string path")
-        if not isinstance(order_value, int) or isinstance(order_value, bool):
-            raise UsageError(f"repo '{repo_name}' must define integer order")
-        if order_value in seen_orders:
-            raise UsageError(
-                f"repo order values must be unique: {repo_name} and {seen_orders[order_value]} both use {order_value}"
+            repos[repo_name] = _load_repo_entry(
+                repo_name,
+                repo_payload,
+                config_dir=resolved_path.parent,
+                seen_orders=seen_orders,
+                seen_state_keys=seen_state_keys,
             )
-        seen_orders[order_value] = repo_name
-        state_key_value = repo_payload.get("state_key", repo_name)
-        try:
-            state_key = validate_state_key(state_key_value, repo_name=repo_name)
         except UsageError as exc:
+            # Every `[repos]` entry error has this shape, so the user knows which file to open.
             raise ManagerConfigLoadError(path=resolved_path, detail=str(exc)) from None
-        if state_key in seen_state_keys:
-            raise UsageError(
-                f"repo state_key values must be unique: {repo_name} and {seen_state_keys[state_key]} both use '{state_key}'"
-            )
-        seen_state_keys[state_key] = repo_name
-        state_path = default_repo_state_dir(state_key).resolve()
-        repos[repo_name] = RepoConfig(
-            name=repo_name,
-            path=expand_path(repo_path_value, base_dir=resolved_path.parent),
-            order=order_value,
-            state_key=state_key,
-            state_path=state_path,
-            local_override_path=default_local_override_path(repo_name).resolve(),
-        )
 
     symlinks_payload = payload.get("symlinks", {})
     if not isinstance(symlinks_payload, dict):
