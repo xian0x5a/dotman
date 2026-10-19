@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, replace
 from pathlib import Path
 from string import Formatter
@@ -108,9 +109,9 @@ def committable_paths(root: Path, paths: Sequence[Path], runtime: CommandRuntime
     are kept out of history on purpose. It also leaves out unchanged sources and
     deleted sources git never tracked, so the message can describe exactly these.
     """
-    changed = _changed_files(root, paths, runtime)
+    changed = {path for _index_status, path in _status_entries(root, paths, runtime)}
     # A directory source covers the changed files below it.
-    covered = set(changed).union(*(name.parents for name in changed))
+    covered = changed.union(*(name.parents for name in changed))
     return tuple(path for path in dict.fromkeys(paths) if path in covered)
 
 
@@ -120,14 +121,17 @@ def commit_sources(root: Path, paths: Sequence[Path], message: str, runtime: Com
     Returns the short commit hash, or None when the paths match HEAD.
     """
     pathspec = tuple(map(str, paths))
-    # `git add` refuses any path under an ignored directory, even a tracked file
-    # there. Stage the files git status reports instead: it already leaves out
-    # ignored untracked files, so forcing these names adds nothing ignored.
-    changed = _changed_files(root, paths, runtime)
-    if not changed:
-        # An empty pathspec would make `git add -A` stage the whole work tree.
-        return None
-    _git(runtime, root, "add", "-A", "--force", "--", *map(str, changed))
+    tracked, untracked = _files_to_stage(_status_entries(root, paths, runtime))
+    # Each add needs names: an empty pathspec makes `git add -A` stage the whole work tree.
+    if untracked:
+        # No --force: re-adding an ignored file the user untracked must fail, not
+        # silently undo their `git rm --cached`. It runs first, so a refusal
+        # stages nothing.
+        _git(runtime, root, "add", "-A", "--", *map(str, untracked))
+    if tracked:
+        # `git add` refuses any path under an ignored directory, even a file git
+        # tracks there; --force lets these index entries through.
+        _git(runtime, root, "add", "-A", "--force", "--", *map(str, tracked))
     if runtime.run(_git_request(root, "diff", "--cached", "--quiet", "--", *pathspec)).exit_code == 0:
         return None
     # Pathspec commit (`--only`) leaves other staged changes in the index.
@@ -135,12 +139,21 @@ def commit_sources(root: Path, paths: Sequence[Path], message: str, runtime: Com
     return _git(runtime, root, "rev-parse", "--short", "HEAD").strip()
 
 
-def _changed_files(root: Path, paths: Sequence[Path], runtime: CommandRuntime) -> tuple[Path, ...]:
-    """Files under `paths` that git status reports as changed; it leaves out ignored untracked files."""
+def _status_entries(root: Path, paths: Sequence[Path], runtime: CommandRuntime) -> tuple[tuple[str, Path], ...]:
+    """(index status, file) for each change git status reports under `paths`; it leaves out ignored untracked files."""
     status = _git(runtime, root, "status", "--porcelain", "-z", "--no-renames", "--untracked-files=all",
                   "--", *map(str, paths))
     # Each -z entry is "XY <path>", relative to the work tree root.
-    return tuple(root / entry[3:] for entry in status.split("\0") if entry)
+    return tuple((entry[0], root / entry[3:]) for entry in status.split("\0") if entry)
+
+
+def _files_to_stage(entries: Sequence[tuple[str, Path]]) -> tuple[tuple[Path, ...], tuple[Path, ...]]:
+    """Split changed files into those the index tracks and those it does not."""
+    tracked = tuple(path for index_status, path in entries if index_status not in "?D")
+    # A staged deletion is already in the index; only a file still on disk needs staging.
+    untracked = tuple(path for index_status, path in entries
+                      if index_status == "?" or (index_status == "D" and os.path.lexists(path)))
+    return tracked, untracked
 
 
 def _git_request(cwd: Path, *args: str, message: str | None = None) -> CommandRequest:
