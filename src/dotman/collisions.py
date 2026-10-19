@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from dotman.config import expand_path
 from dotman.ignore import GitIgnoreChain, IgnoreMatcher, collect_gitignore_chain
@@ -100,7 +100,9 @@ def resolve_tracked_target_winners(
 class TargetClaim:
     """One path-claiming target, as ownership checks see it."""
 
-    package_id: str
+    # Package instance (`package` or `package<profile>`) that owns the claim.
+    # Only claims from the same instance skip each other's reserved paths.
+    owner: str
     # Canonical `repo:package.target` identity, for messages.
     label: str
     repo_path: Path
@@ -166,12 +168,14 @@ def validate_reserved_path_conflicts(
     packages: list[PackageSpec],
     claims: list[TargetClaim],
     context: dict[str, Any],
+    *,
+    owner_for_package: Callable[[str], str],
 ) -> None:
     reserved_claims: list[tuple[str, Path]] = []
     for package in packages:
         for reserved_path in package.reserved_paths or ():
             rendered_path = render_template_string(reserved_path, context, base_dir=package.package_root, source_path=package.package_root)
-            reserved_claims.append((package.id, expand_path(rendered_path, dereference=False)))
+            reserved_claims.append((owner_for_package(package.id), expand_path(rendered_path, dereference=False)))
 
     validate_reserved_path_claims(repo_name=repo_name, target_claims=claims, reserved_claims=reserved_claims)
 
@@ -182,25 +186,25 @@ def validate_reserved_path_claims(
     target_claims: list[TargetClaim],
     reserved_claims: list[tuple[str, Path]],
 ) -> None:
-    """Reject claims inside another package's reserved paths, within one repo."""
-    for package_id, reserved_path in reserved_claims:
+    """Reject claims inside another package instance's reserved paths, within one repo."""
+    for owner, reserved_path in reserved_claims:
         for claim in target_claims:
-            if package_id == claim.package_id:
+            if owner == claim.owner:
                 continue
             if paths_conflict(reserved_path, claim.live_path):
                 raise ValueError(
-                    f"reserved path conflict: {repo_name}:{package_id} reserves {reserved_path} "
+                    f"reserved path conflict: {repo_name}:{owner} reserves {reserved_path} "
                     f"and {claim.label} maps to {claim.live_path}"
                 )
 
-    for index, (package_id, reserved_path) in enumerate(reserved_claims):
-        for other_package_id, other_reserved_path in reserved_claims[index + 1 :]:
-            if package_id == other_package_id:
+    for index, (owner, reserved_path) in enumerate(reserved_claims):
+        for other_owner, other_reserved_path in reserved_claims[index + 1 :]:
+            if owner == other_owner:
                 continue
             if paths_conflict(reserved_path, other_reserved_path):
                 raise ValueError(
-                    f"reserved path conflict: {repo_name}:{package_id} reserves {reserved_path} "
-                    f"and {repo_name}:{other_package_id} reserves {other_reserved_path}"
+                    f"reserved path conflict: {repo_name}:{owner} reserves {reserved_path} "
+                    f"and {repo_name}:{other_owner} reserves {other_reserved_path}"
                 )
 
 

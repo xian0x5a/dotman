@@ -34,6 +34,7 @@ from dotman.models import (
     ResolvedPackageSelection,
     TargetPathRule,
     TargetSpec,
+    package_ref_text,
     repo_qualified_target_text,
     target_path_rule_matches,
 )
@@ -92,7 +93,7 @@ class TargetMetadata:
 
 def target_claim(metadata: TargetMetadata) -> TargetClaim:
     return TargetClaim(
-        package_id=metadata.package_id,
+        owner=package_ref_text(package_id=metadata.package_id, bound_profile=metadata.bound_profile),
         label=metadata.canonical,
         repo_path=metadata.repo_path,
         live_path=metadata.live_path,
@@ -312,7 +313,15 @@ def build_target_metadata(
             (metadata.repo_path, metadata.live_path): metadata.gitignore for metadata in metadata_targets
         })
         if operation == "push":
-            validate_reserved_path_conflicts(repo.config.name, packages, claims, context)
+            # `packages` is the selection's dependency closure; only the selected
+            # package itself renders as the selection's instance.
+            validate_reserved_path_conflicts(
+                repo.config.name, packages, claims, context,
+                owner_for_package=lambda package_id: package_ref_text(
+                    package_id=package_id,
+                    bound_profile=selection.bound_profile if package_id == selection.identity.package_id else None,
+                ),
+            )
     return metadata_targets
 
 

@@ -6,6 +6,7 @@ from typing import Sequence
 
 from dotman import planning, tracking
 from dotman.models import (
+    package_ref_text,
     ResolvedPackageIdentity,
     ResolvedPackageSelection,
     ResolvedSyncScope,
@@ -23,13 +24,20 @@ from dotman.projection import rendered_target_is_directory, target_claim
 from dotman.templates import render_template_string
 
 
+def _instance_ref(item: planning.PackagePlanningInput) -> str:
+    identity = item.selection.identity
+    return package_ref_text(package_id=identity.package_id, bound_profile=identity.bound_profile)
+
+
 def _validate_reserved_paths(
     planning_inputs: list[planning.PackagePlanningInput],
     winning_target_keys: set[tuple[str, str, str | None, str]],
 ) -> None:
-    """Reject winning Push targets or reservations inside another package's reserved paths."""
+    """Reject winning Push targets or reservations inside another package instance's reserved paths."""
     for repo_name in dict.fromkeys(item.repo.config.name for item in planning_inputs):
         repo_inputs = [item for item in planning_inputs if item.repo.config.name == repo_name]
+        # Claims are owned by package instances, so two instances of one
+        # `multi_instance` package are checked against each other.
         target_claims = [
             target_claim(metadata)
             for item in repo_inputs
@@ -46,7 +54,7 @@ def _validate_reserved_paths(
                     reserved_path, item.package_context.context,
                     base_dir=package.package_root, source_path=package.package_root,
                 )
-                reserved_claims.append((package.id, expand_path(rendered_path, dereference=False)))
+                reserved_claims.append((_instance_ref(item), expand_path(rendered_path, dereference=False)))
         validate_reserved_path_claims(repo_name=repo_name, target_claims=target_claims, reserved_claims=reserved_claims)
 
 
