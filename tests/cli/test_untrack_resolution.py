@@ -17,6 +17,7 @@ from tests.helpers import (
     write_multi_instance_repo,
     write_named_manager_config,
     write_tracked_packages_state,
+    untrack_entry,
 )
 
 
@@ -169,7 +170,7 @@ def test_untrack_resolver_describes_remaining_tracking_after_removal(tmp_path: P
     resolver = UntrackResolver(engine)
     request = resolver.resolve("example:git@basic")
     assert isinstance(request, UntrackEntryRequest)
-    engine.remove_tracked_package_entry("example:git@basic")
+    untrack_entry(engine, "example:git@basic")
 
     remaining = resolver.remaining_tracked_package(request.binding)
 

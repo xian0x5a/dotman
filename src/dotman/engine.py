@@ -370,10 +370,15 @@ class DotmanEngine:
             repo_name=repo_name,
         )
 
-    def remove_tracked_package_entry(self, binding_text: str, *, operation: str = "untrack") -> FullSpecSelector:
-        return tracking.remove_tracked_package_entry(
+    def remove_persisted_tracked_package_entry(
+        self,
+        record: PersistedTrackedPackageEntryRecord,
+        *,
+        operation: str = "untrack",
+    ) -> FullSpecSelector:
+        return tracking.remove_persisted_tracked_package_entry(
             self._planning_context,
-            binding_text,
+            record,
             operation=operation,
         )
 

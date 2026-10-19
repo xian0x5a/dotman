@@ -22,13 +22,20 @@ from dotman.resolver import (
     parse_slash_qualified_query,
     rank_resolver_matches,
 )
+from dotman.tracking import PersistedTrackedPackageEntryRecord
 
 Match = TypeVar("Match")
 
 
 @dataclass(frozen=True)
 class UntrackEntryRequest:
-    binding: FullSpecSelector
+    # The resolved record, not its text form: an orphan row and a configured row can
+    # share one repo:package@profile identity and differ only by state directory.
+    record: PersistedTrackedPackageEntryRecord
+
+    @property
+    def binding(self) -> FullSpecSelector:
+        return self.record.package_entry
 
 
 @dataclass(frozen=True)
@@ -191,7 +198,7 @@ class UntrackResolver:
                 ),
             )
             if selected_kind == "entry":
-                return UntrackEntryRequest(binding=selected_item.package_entry)
+                return UntrackEntryRequest(record=selected_item)
             raise self._package_owner_error(
                 selected_item,
                 explicit_repo=explicit_repo,
@@ -199,7 +206,7 @@ class UntrackResolver:
             )
 
         if len(exact_entries) == 1:
-            return UntrackEntryRequest(binding=exact_entries[0].package_entry)
+            return UntrackEntryRequest(record=exact_entries[0])
         if len(exact_entries) > 1:
             raise ValueError(
                 f"tracked package entry '{binding_label}' is ambiguous: "

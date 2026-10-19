@@ -603,3 +603,12 @@ async def wait_until_idle(app, pilot) -> None:
         await asyncio.sleep(.01)
     assert not app.busy
     await pilot.pause()
+
+
+def untrack_entry(engine, binding_text: str):
+    """Resolve and remove one tracked package entry the way `dotman untrack` does."""
+    from dotman.untrack_resolution import UntrackEntryRequest, UntrackResolver
+
+    request = UntrackResolver(engine).resolve(binding_text)
+    assert isinstance(request, UntrackEntryRequest)
+    return engine.remove_persisted_tracked_package_entry(request.record)

@@ -158,9 +158,8 @@ class StateCommandRunner:
             )
         if not isinstance(request, UntrackEntryRequest):
             raise TypeError(f"unsupported untrack request: {type(request).__name__}")
-        binding = request.binding
-        removed_binding = engine.remove_tracked_package_entry(
-            f"{binding.repo}:{binding.selector}@{binding.profile}",
+        removed_binding = engine.remove_persisted_tracked_package_entry(
+            request.record,
             operation="untrack",
         )
         return cli_emit.emit_untracked_package_entry(
