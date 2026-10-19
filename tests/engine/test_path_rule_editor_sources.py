@@ -52,6 +52,7 @@ def child_sources(tmp_path: Path, child_manifest: str, child_file: str) -> tuple
         ('[append.targets.t.path_rules.plain.editor]\nadditional_sources = ["y"]\n', "f.plain", ("x", "y")),
         ('[append.targets.t.path_rules.plain.editor]\nadditional_sources = ["y"]\n', "f.other", ("x",)),
         ('remove = ["targets.t.path_rules.plain.editor.additional_sources"]\n', "f.plain", ("x",)),
+        ('[targets.t.path_rules.plain]\neditor = { run = "true", additional_sources = [] }\n', "f.plain", ()),
         # Appending to a rule that declared its own sources extends them; removing them returns to the target's.
         ('[append.targets.t.path_rules.own_sources.editor]\nadditional_sources = ["y"]\n', "f.src", ("s", "y")),
         ('remove = ["targets.t.path_rules.own_sources.editor.additional_sources"]\n', "f.src", ("x",)),
