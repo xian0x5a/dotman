@@ -3,10 +3,10 @@ from __future__ import annotations
 import os
 import sys
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NoReturn
 
 from dotman.cli_parser import build_parser, normalize_edit_query_argv
-from dotman.command_runtime import command_operation
+from dotman.command_runtime import INTERRUPTED_EXIT_CODE, command_operation, exit_from_interrupt
 from dotman.interaction_policy import InteractionRequiredError, interaction_scope
 from dotman.standalone_commands import StandaloneCommandRunner
 from dotman.terminal import colors_enabled, emit_interrupt_notice
@@ -14,8 +14,6 @@ from dotman.terminal import colors_enabled, emit_interrupt_notice
 if TYPE_CHECKING:
     from dotman.interaction import Interaction
 
-
-INTERRUPTED_EXIT_CODE = 130
 
 
 class RootUnderSudoError(ValueError):
@@ -59,6 +57,15 @@ def main(
             raise
         _emit_error(exc, use_color=colors_enabled(sys.stderr))
         return 1 if no_confirm else 2
+
+
+def console_main() -> NoReturn:
+    """Process entry point. `main` returns exit codes so tests can call it in-process."""
+    exit_code = main()
+    # Every 130 is a Ctrl-C or an explicit abort, whichever layer reported it.
+    if exit_code == INTERRUPTED_EXIT_CODE:
+        exit_from_interrupt()
+    raise SystemExit(exit_code)
 
 
 def _emit_error(exc: Exception, *, use_color: bool) -> None:
@@ -144,4 +151,4 @@ def _repo_command_runner(args: Any, interaction: Interaction | None) -> Any:
     return selected_runner
 
 if __name__ == "__main__":  # pragma: no cover
-    raise SystemExit(main())
+    console_main()

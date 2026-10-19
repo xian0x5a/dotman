@@ -261,7 +261,7 @@ def test_cli_broker_password_prompt_result_and_terminal_lifecycle(
         _wait_for(lambda: process.poll() is not None, process, master, output)
         for _ in range(5):
             _read_available(master, output)
-        assert process.returncode == (0 if action == "success" else 130), output.decode(errors="replace")
+        assert process.returncode == (0 if action == "success" else -signal.SIGINT), output.decode(errors="replace")
         assert (source.read_bytes(), live.read_bytes()) == before
         assert post_push.exists() == (action == "success"), output.decode(errors="replace")
         assert child_success.exists() == (action == "success")
@@ -365,7 +365,7 @@ def test_broker_password_prompt_in_tty_editor_cancels_only_editor_attempt(
         _wait_for(lambda: process.poll() is not None, process, master, output)
         for _ in range(5):
             _read_available(master, output)
-        assert process.returncode == 130, output.decode(errors="replace")
+        assert process.returncode == -signal.SIGINT, output.decode(errors="replace")
         assert (source.read_bytes(), live.read_bytes()) == before
         assert termios.tcgetattr(slave) == terminal_before, output.decode(errors="replace")
         assert b"Traceback" not in output, output.decode(errors="replace")

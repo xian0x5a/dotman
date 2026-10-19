@@ -68,7 +68,7 @@ def test_ctrl_c_with_sync_base_exits_cleanly(tmp_path, monkeypatch, keys, title)
             read_output()
         assert b"Traceback" not in output, output[-2000:].decode(errors="replace")
         assert b"Task exception" not in output
-        assert process.returncode == 130
+        assert process.returncode == -signal.SIGINT
         assert termios.tcgetattr(slave) == terminal_before
         assert b"\x1b[?1049l" in output  # Leave the alternate screen.
         assert b"\x1b[?25h" in output  # Restore cursor visibility.
@@ -104,7 +104,7 @@ def test_sigint_with_sync_base_emits_clean_json_and_stops_execution(tmp_path, mo
         stdout, stderr = process.communicate(timeout=5)
         assert b"Traceback" not in stderr, stderr.decode()
         assert stderr == b""
-        assert process.returncode == 130
+        assert process.returncode == -signal.SIGINT
         payload = json.loads(stdout)
         assert payload["sync_units"][0]["base"]["status"] == "usable"
         assert (source.read_bytes(), live.read_bytes()) == before
@@ -251,7 +251,7 @@ def _assert_materialization_interrupt(
         wait_until(lambda: process.poll() is not None, process, read_output)
         while select.select([master], [], [], 0.05)[0]:
             read_output()
-        assert process.returncode == 130, output[-3000:].decode(errors="replace")
+        assert process.returncode == -signal.SIGINT, output[-3000:].decode(errors="replace")
         assert b"Traceback" not in output
         assert b"Task exception" not in output
         assert b"never awaited" not in output
@@ -279,3 +279,39 @@ def _assert_materialization_interrupt(
                     pass
         os.close(master)
         os.close(slave)
+
+
+@pytest.mark.parametrize("launcher", ["direct", "bash-script"])
+def test_ctrl_c_terminates_dotman_by_sigint_so_calling_scripts_stop(tmp_path, monkeypatch, launcher):
+    """A Ctrl-C'd dotman must die from SIGINT, not exit 130.
+
+    Shells stop a script after Ctrl-C only when the foreground child itself died
+    from SIGINT ("wait and cooperative exit"); a child exiting 130 lets the
+    script carry on to its next command.
+    """
+    ready, after = tmp_path / "ready", tmp_path / "after"
+    established(tmp_path, monkeypatch, (
+        '[targets.unit.hooks]\n'
+        f'pre_pull = "touch {ready}; sleep 30"'
+    ))
+    dotman = [sys.executable, "-m", "dotman.cli", "--config", str(tmp_path / "config.toml"),
+              "--json", "--no-confirm", "sync"]
+    command = dotman if launcher == "direct" else [
+        "bash", "-c", f'"$@"; touch {after}', "bash", *dotman,
+    ]
+    process = subprocess.Popen(
+        command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        start_new_session=True,
+    )
+    try:
+        wait_until(ready.exists, process)
+        # A terminal's Ctrl-C reaches the whole foreground process group.
+        os.killpg(process.pid, signal.SIGINT)
+        _, stderr = process.communicate(timeout=5)
+        assert b"Traceback" not in stderr, stderr.decode()
+        assert not after.exists(), "the calling script continued after Ctrl-C"
+        assert process.returncode == -signal.SIGINT
+    finally:
+        if process.poll() is None:
+            os.killpg(process.pid, signal.SIGKILL)
+        process.wait(timeout=5)

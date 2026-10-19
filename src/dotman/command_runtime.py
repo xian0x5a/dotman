@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Thread
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Callable, Iterable, Iterator, Literal, Mapping, Protocol, Sequence, TextIO, TypeAlias, TypeVar
+from typing import TYPE_CHECKING, Callable, Iterable, Iterator, Literal, Mapping, NoReturn, Protocol, Sequence, TextIO, TypeAlias, TypeVar
 
 from dotman.terminal import preserve_terminal_state
 
@@ -105,6 +105,23 @@ def first_output_line(stderr: str, stdout: str) -> str | None:
             if stripped:
                 return stripped
     return None
+
+
+def exit_from_interrupt() -> NoReturn:
+    """End this process the way an interrupted program must: by dying from SIGINT.
+
+    A shell stops the script that ran this process after Ctrl-C only when the
+    child died from SIGINT; a child that exits 130 tells it Ctrl-C was handled,
+    so the script carries on. A shell that saw no SIGINT itself reads either
+    outcome as status 130.
+    """
+    # Death by signal skips interpreter shutdown, which would flush these.
+    for stream in (sys.stdout, sys.stderr):
+        stream.flush()
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
+    os.kill(os.getpid(), signal.SIGINT)
+    # Reached only when SIGINT is blocked, so the signal cannot end this process.
+    raise SystemExit(INTERRUPTED_EXIT_CODE)
 
 
 def raise_for_command_interruption(result: CommandResult) -> None:

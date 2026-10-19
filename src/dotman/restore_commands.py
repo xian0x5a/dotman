@@ -4,6 +4,7 @@ from collections.abc import Callable
 from typing import Any
 
 from dotman import cli_emit, cli_interaction
+from dotman.command_runtime import INTERRUPTED_EXIT_CODE
 from dotman.interaction_policy import InteractionRequiredError
 from dotman.models import ManagerConfig
 from dotman.operation_runner import run_restore_operation
@@ -13,7 +14,6 @@ from dotman.ui_context import ui_config_scope
 
 
 ConfigLoader = Callable[[str | None], ManagerConfig]
-INTERRUPTED_EXIT_CODE = 130
 
 
 class RestoreCommandRunner:
