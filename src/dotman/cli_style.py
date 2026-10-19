@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Sequence
+from typing import NamedTuple, Sequence
 
 from dotman.package_resolution import parse_full_spec_selector_text
 from dotman.models import FullSpecSelector, ResolvedPackageIdentity, package_ref_text, repo_qualified_target_text, target_ref_text
@@ -518,19 +518,18 @@ def render_sync_term(term: str, *, use_color: bool) -> str:
     return style_text(term, *SYNC_TERM_STYLE_BY_NAME.get(term, ())) if use_color else term
 
 
-# Unified-diff line kinds keyed by prefix; longer prefixes are checked first.
-DIFF_LINE_STYLE_BY_PREFIX: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("+++", ("1",)),
-    ("---", ("1",)),
-    ("@@", ("36",)),
-    ("old mode", ("2",)),
-    ("new mode", ("2",)),
-    ("new file", ("2",)),
-    ("deleted file", ("2",)),
-    ("\\", ("2",)),
-    ("+", ("32",)),
-    ("-", ("31",)),
-)
+# Unified-diff line styles by kind; see _diff_line_kind.
+DIFF_STYLE_BY_KIND: dict[str, tuple[str, ...]] = {
+    "header": ("1",),
+    "hunk": ("36",),
+    "meta": ("2",),
+    "added": ("32",),
+    "removed": ("31",),
+    "context": (),
+}
+DIFF_CHANGE_KIND_BY_MARKER = {"+": "added", "-": "removed"}
+# Git extended headers; like ---/+++ file headers, they only precede the first hunk.
+DIFF_EXTENDED_HEADER_PREFIXES = ("old mode", "new mode", "new file", "deleted file")
 
 
 # zdiff3 conflict regions, colored like common merge editors (e.g. VS Code): current
@@ -555,10 +554,37 @@ def render_conflict_lines(lines: Sequence[str], *, use_color: bool) -> list[str]
     return rendered
 
 
-def render_diff_line(line: str, *, use_color: bool) -> tuple[str, str]:
-    """Split a unified-diff line into its one-column marker and styled content."""
-    marker, content = line[:1], line[1:]
-    if not use_color:
-        return marker, content
-    codes = next((codes for prefix, codes in DIFF_LINE_STYLE_BY_PREFIX if line.startswith(prefix)), ())
-    return (style_text(marker, *codes), style_text(content, *codes)) if codes else (marker, content)
+class RenderedDiffLine(NamedTuple):
+    marker: str
+    content: str
+    changed: bool
+
+
+def _diff_line_kind(line: str, *, in_hunk: bool) -> str:
+    if line.startswith("@@"):
+        return "hunk"
+    if line.startswith("\\"):
+        return "meta"
+    # Inside a hunk every line starts with its +/-/space marker, so removed "-- x"
+    # or added "++x" content reads "--- x"/"+++x" and must not match file headers.
+    if in_hunk:
+        return DIFF_CHANGE_KIND_BY_MARKER.get(line[:1], "context")
+    if line.startswith(("---", "+++")):
+        return "header"
+    if line.startswith(DIFF_EXTENDED_HEADER_PREFIXES):
+        return "meta"
+    return "context"
+
+
+def render_diff_lines(lines: Sequence[str], *, use_color: bool) -> list[RenderedDiffLine]:
+    """Split one file's unified-diff lines into one-column markers and styled content."""
+    rendered, in_hunk = [], False
+    for line in lines:
+        in_hunk = in_hunk or line.startswith("@@")
+        kind = _diff_line_kind(line, in_hunk=in_hunk)
+        marker, content = line[:1], line[1:]
+        codes = DIFF_STYLE_BY_KIND[kind] if use_color else ()
+        if codes:
+            marker, content = style_text(marker, *codes), style_text(content, *codes)
+        rendered.append(RenderedDiffLine(marker, content, changed=kind in DIFF_CHANGE_KIND_BY_MARKER.values()))
+    return rendered
