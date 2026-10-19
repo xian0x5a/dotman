@@ -185,10 +185,10 @@ def atomic_temp_file_owner_is_definitely_absent(temp_path: Path) -> bool:
 
 
 __all__ = [
-    "create_directories_durably",
     "atomic_temp_file_owner_is_definitely_absent",
     "cleanup_atomic_temp_file",
     "cleanup_stale_atomic_temp_files",
+    "create_directories_durably",
     "default_created_file_mode",
     "target_replacement_mode",
     "write_bytes_atomic",
