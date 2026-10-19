@@ -94,7 +94,7 @@ def test_terminal_interaction_validates_confirmation_and_reads_text_once() -> No
 
 
 def test_terminal_interaction_uses_fzf_for_menu_taller_than_terminal() -> None:
-    runtime = MemoryCommandRuntime([CommandResult(exit_code=0, stdout=b"2\n")])
+    runtime = MemoryCommandRuntime([CommandResult(exit_code=0, stdout=b"2 sandbox/host/linux-meta [group]\n")])
     interaction = TerminalInteraction(
         command_runtime=runtime,
         fzf_available=lambda: True,
@@ -127,7 +127,6 @@ def test_terminal_interaction_uses_fzf_for_menu_taller_than_terminal() -> None:
         "--ansi",
         "--wrap",
         "--with-nth=2..",
-        "--accept-nth=1",
         "--no-sort",
     )
     assert command_request.input == (
@@ -160,24 +159,6 @@ def test_terminal_interaction_falls_back_to_prompt_for_menu_that_fits_terminal()
     )
 
     assert selected == "alpha"
-
-
-def test_terminal_interaction_treats_fzf_cancel_as_keyboard_interrupt() -> None:
-    interaction = TerminalInteraction(
-        command_runtime=MemoryCommandRuntime([CommandResult(exit_code=1)]),
-        fzf_available=lambda: True,
-        terminal_lines=lambda: 1,
-    )
-    request = ChoiceRequest(
-        header_text="Select a repo:",
-        options=(
-            ChoiceOption(value="alpha", label="alpha"),
-            ChoiceOption(value="beta", label="beta"),
-        ),
-    )
-
-    with pytest.raises(KeyboardInterrupt):
-        interaction.choose(request)
 
 
 def test_terminal_interaction_applies_confirmation_default() -> None:

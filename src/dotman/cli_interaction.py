@@ -26,7 +26,7 @@ from dotman.diff_review import (
     run_review_item_diff,
 )
 from dotman.engine import DotmanEngine
-from dotman.interaction import Interaction
+from dotman.interaction import Interaction, choose_with_fzf
 from dotman.interaction_policy import no_confirm_enabled
 from dotman.models import (
     FullSpecSelector,
@@ -389,37 +389,12 @@ def _select_menu_option_with_fzf(
 ) -> int:
     if option_display_fields is not None and len(option_display_fields) != len(option_labels):
         raise ValueError("fzf display fields must align with option labels")
-    display_fields_by_option = [
-        tuple(field for field in fields if field)
-        for fields in (option_display_fields or [(label,) for label in option_labels])
-    ]
-    entries = [
-        " ".join([str(index), *display_fields])
-        for index, display_fields in enumerate(display_fields_by_option, start=1)
-    ]
-    result = current_command_runtime().run(
-        CommandRequest(
-            command=ArgvCommand(
-                (
-                    "fzf",
-                    "--prompt=Select> ",
-                    f"--header={header_text}",
-                    "--ansi",
-                    "--wrap",
-                    "--with-nth=2..",
-                    "--accept-nth=1",
-                    "--no-sort",
-                )
-            ),
-            input=("\n".join(entries) + "\n").encode("utf-8"),
-            # fzf reads its UI from the controlling terminal while selection
-            # data uses pipes, so it must stay in Dotman's process group.
-            isolate_process_group=False,
-        )
+    selected = choose_with_fzf(
+        current_command_runtime(),
+        header_text=header_text,
+        option_display_fields=option_display_fields or [(label,) for label in option_labels],
     )
-    if result.exit_code != 0:
-        raise KeyboardInterrupt
-    return parse_selection_index(result.stdout_text.strip(), len(option_labels)) - 1
+    return parse_selection_index(selected, len(option_labels)) - 1
 
 
 def select_menu_option(
