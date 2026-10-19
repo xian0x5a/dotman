@@ -316,3 +316,20 @@ def test_directory_base_maintenance_failure_flags_only_that_directory(tmp_path, 
         # The failing directory still reports it, once per unit.
         child = rows["main:app.tree/same"].observation
         assert [item.code for item in child.diagnostics].count("base-maintenance-failed") == 1
+
+
+def test_blocker_without_canonical_identity_is_an_unmanaged_conflict(tmp_path, monkeypatch):
+    import os
+    engine = directory_engine(tmp_path, monkeypatch, policy="push-only")
+    put(tmp_path / "repo/packages/app/tree", "node", b"new")
+    blocked = put(tmp_path / "live/tree", os.fsdecode(b"node/caf\xe9"), b"private")
+    with open_directory(engine, preview=False) as session:
+        row = next(row for row in session.view.rows if row.row_id == "main:app.tree/node")
+        command(session, SetApproval, row.row_id, True)
+        rejected = session.execute()
+        assert isinstance(rejected, CommandRejected)
+        diagnostic, = rejected.diagnostics
+        # Its row can never be approved for deletion, and the message must stay printable.
+        assert diagnostic.code == "structural-conflict"
+        assert diagnostic.message == "main:app.tree/node: requires deletion of node/caf\\xe9"
+    assert blocked.read_bytes() == b"private"

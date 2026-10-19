@@ -16,6 +16,7 @@ from dotman.execution import ExecutionStep, ExecutionStepResult, StepFinished, S
 from dotman.atomic_files import default_created_file_mode
 from dotman.capture import CaptureError
 from dotman.sync_capture import capture_observation
+from dotman.sync_directory import printable_text
 from dotman.sync_observation import _identity
 from dotman.sync_auxiliary import AuxiliaryRow, guard_skip_rows, plan_auxiliary, retain_directional_hooks
 from dotman.sync_commit import CommitFailed, GitWorkTree, RepositoryCommit, commit_sources, probe_work_tree, render_commit_message
@@ -1068,7 +1069,7 @@ class ProposalSession:
                         else any(effect.kind == "delete" for effect in blocker.proposal.publication_effects))
                     if not deletion:
                         failures.append(Diagnostic("structural-approval-required" if path in row.observation.managed_children else "structural-conflict",
-                                                   f"{identity.canonical}: requires deletion of {path}"))
+                                                   f"{identity.canonical}: requires deletion of {printable_text(path)}"))
         return tuple(failures)
 
     def _row_additional(self, row: SessionRow) -> tuple[AdditionalEdit, ...]:

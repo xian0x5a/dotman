@@ -18,7 +18,7 @@ from dotman.manifest import resolve_sync_policy, sync_policy_allows_operation
 from dotman.models import GuardSkip, ResolvedSyncScope, ResolvedSyncTarget, resolved_package_selection_key
 from dotman.planning_guards import evaluate_directional_guards, evaluate_directory_path_rule_guards
 from dotman.progress import ProgressSink
-from dotman.sync_directory import CensusFailure, census_directory, child_metadata, validate_planned_child
+from dotman.sync_directory import CensusFailure, census_directory, printable_text, child_metadata, validate_planned_child
 from dotman.sync_base_lifecycle import (
     BaseUnit,
     FrozenBaseUnit,
@@ -202,25 +202,6 @@ def _has_canonical_identity(identity: ResolvedSyncTarget) -> bool:
     except ValueError:  # includes UnicodeEncodeError for non-UTF-8 names
         return False
     return True
-
-
-def _escaped_child_path(relative: str) -> str:
-    """Printable, injective stand-in for a child path that has no canonical identity.
-
-    Backslashes are doubled, undecodable bytes become `\\xNN` and other
-    unprintable characters `\\uNNNN`, so the result stays non-canonical and
-    never collides with another child or with a canonical identity.
-    """
-    def escape(character: str) -> str:
-        code = ord(character)
-        if character == "\\":
-            return "\\\\"
-        if 0xDC80 <= code <= 0xDCFF:  # os.fsdecode keeps an undecodable byte as a lone surrogate
-            return f"\\x{code - 0xDC00:02x}"
-        if not character.isprintable():
-            return f"\\u{code:04x}" if code <= 0xFFFF else f"\\U{code:08x}"
-        return character
-    return "".join(escape(character) for character in relative)
 
 
 def _base_unit(identity: ResolvedSyncTarget, metadata: projection.TargetMetadata) -> BaseUnit:
@@ -499,7 +480,7 @@ def observe_scope(
                 child_identity = replace(identity, child_path=relative or None)
                 if not _has_canonical_identity(child_identity):
                     # A name that cannot key a Base fails alone instead of blocking the session.
-                    escaped = _escaped_child_path(relative)
+                    escaped = printable_text(relative)
                     child_identity = replace(identity, child_path=escaped)
                     unrepresentable.add(child_identity)
                     failures = (*failures, CensusFailure("unsupported-name", (
@@ -536,8 +517,11 @@ def observe_scope(
                 bound_profile=identity.bound_profile, target_name=identity.target_name,
             )
             guard_skips.extend((direction, skip) for skip in child_skips)
+        # A child without a canonical identity can never be approved, so it is not a managed blocker.
+        managed_children = tuple(path for path, failures in census.entries
+                                 if not failures and _has_canonical_identity(replace(identity, child_path=path)))
         for relative, (child_identity, child, failures) in children.items():
-            child_topology[child_identity] = (census.blockers(relative, repository=True), census.blockers(relative, repository=False), tuple(path for path, failures in census.entries if not failures))
+            child_topology[child_identity] = (census.blockers(relative, repository=True), census.blockers(relative, repository=False), managed_children)
             expanded_inputs[child_identity] = (item, child)
             configured = resolve_sync_policy(package=child.package, target=child.target)
             child_policies[child_identity] = _effective_policy(configured, relative in child_admitted["push"], relative in child_admitted["pull"])

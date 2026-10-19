@@ -34,6 +34,25 @@ class DirectoryCensus:
         ))
 
 
+def printable_text(text: str) -> str:
+    """Printable, injective form of a file name or message for terminal output.
+
+    Backslashes are doubled, undecodable bytes become `\\xNN` and other
+    unprintable characters `\\uNNNN`. Used as a stand-in identity for a child
+    path that has no canonical one, the result stays non-canonical and never
+    collides with another child or with a canonical identity.
+    """
+    def escape(character: str) -> str:
+        code = ord(character)
+        if character == "\\":
+            return "\\\\"
+        if 0xDC80 <= code <= 0xDCFF:  # os.fsdecode keeps an undecodable byte as a lone surrogate
+            return f"\\x{code - 0xDC00:02x}"
+        if not character.isprintable():
+            return f"\\u{code:04x}" if code <= 0xFFFF else f"\\U{code:08x}"
+        return character
+    return "".join(escape(character) for character in text)
+
 
 def census_directory(
     metadata: projection.TargetMetadata, *, follow_live_directories: bool,
@@ -52,7 +71,8 @@ def census_directory(
     exclusions = IgnoreMatcher.from_patterns(metadata.ignore_patterns)
 
     def failure(relative: str, code: str, message: str) -> None:
-        entries.setdefault(relative, []).append(CensusFailure(code, f"{relative or '.'}: {message}"))
+        # Names and OS errors may carry undecodable bytes that would crash output.
+        entries.setdefault(relative, []).append(CensusFailure(code, printable_text(f"{relative or '.'}: {message}")))
 
     def excluded(relative: str, matcher: IgnoreMatcher, *, directory: bool = False) -> bool:
         path = Path(relative)

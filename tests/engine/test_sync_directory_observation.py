@@ -129,6 +129,20 @@ def test_child_name_without_canonical_identity_fails_only_that_child(tmp_path, m
         assert units[shown].base.status == 'unavailable'
 
 
+def test_path_failure_on_undecodable_name_stays_printable(tmp_path, monkeypatch):
+    engine = directory_engine(tmp_path, monkeypatch)
+    live = tmp_path / 'live/tree'
+    live.mkdir(parents=True)
+    os.mkfifo(live / os.fsdecode(b'f\xe9fo'))
+    with open_directory(engine) as session:
+        unit, = session.view.observations
+        assert unit.identity.child_path == 'f\\xe9fo'
+        assert [diagnostic.message for diagnostic in unit.diagnostics] == [
+            'f\\xe9fo: endpoint must be a regular file',
+            "'f\\xe9fo': name has no canonical Sync identity; rename it or exclude it with an ignore pattern",
+        ]
+
+
 def test_child_rules_resolve_on_missing_endpoints_and_guards_run_once(tmp_path, monkeypatch):
     log = tmp_path / 'guards'
     engine = directory_engine(tmp_path, monkeypatch, policy='push-only', extra=f'''
