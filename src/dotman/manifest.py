@@ -325,6 +325,11 @@ def normalize_additional_sources(value: Any, *, manifest_path: Path, target_name
     ) or ()
     result: list[str] = []
     for source in values:
+        validate_printable(
+            source,
+            kind="additional_sources entry",
+            context=f"package manifest {manifest_path} target '{target_name}' editor",
+        )
         normalized = source.replace("\\", "/")
         path = Path(normalized)
         if path.is_absolute() or any(part in {"", ".", ".."} for part in normalized.split("/")):
@@ -545,6 +550,11 @@ def normalize_target_path_rules(
             raise UsageError(f"package manifest {manifest_path} target '{target_name}' path_rules.{name}.pattern must be a string")
         if not pattern.strip() and "pattern" in payload:
             raise UsageError(f"package manifest {manifest_path} target '{target_name}' path_rules.{name}.pattern must be a non-empty string")
+        validate_printable(
+            pattern,
+            kind=f"path_rules.{name}.pattern",
+            context=f"package manifest {manifest_path} target '{target_name}'",
+        )
         normalized_pattern = pattern.replace("\\", "/")
         if normalized_pattern.startswith("/") or any(part == ".." for part in normalized_pattern.split("/")):
             raise UsageError(f"package manifest {manifest_path} target '{target_name}' path_rules.{name}.pattern must be relative to the target root")
