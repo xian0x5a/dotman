@@ -144,7 +144,7 @@ chmod = "600"
 - Target keys are arbitrary manifest identifiers.
 - Tools may still generate deterministic path-derived target keys for convenience, but that naming is a convention rather than a schema rule.
 - `path` may use `~/...` for home-relative destinations or an absolute path otherwise.
-- `source` and `path` must pass `str.isprintable()` as written, before `~` and `$VAR` expand. A value with a control character, bidi override or non-ASCII space such as NBSP fails to load with a usage error that names `package.toml`, the target and the field, and shows the value with each unprintable character as `\uNNNN`. Authored names and paths print as written everywhere else.
+- `source`, `path`, each path rule `pattern` and each editor `additional_sources` entry must pass `str.isprintable()` as written, before templates render and before `~` and `$VAR` expand. A value with a control character, bidi override or non-ASCII space such as NBSP fails to load with a usage error that names `package.toml`, the target and the field, and shows the value with each unprintable character as `\uNNNN`. Authored names and paths print as written everywhere else; a path after rendering and expansion is outside text and prints escaped.
 - Targets may define `type = "file" | "directory"` when filesystem inference is not enough, such as when both source and live paths are absent. An explicit type establishes the endpoint kind, not permission to Render a missing file source.
 - Targets may define `chmod` when the installed root path needs an explicit mode. Target and path-rule `chmod` values are strings of 3 or 4 octal digits such as `"600"` or `"0755"`.
 - `chmod` is optional and should usually be omitted unless the target needs a non-default live mode.

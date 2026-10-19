@@ -1,9 +1,11 @@
 """The printable rule: what authored identity may contain, and how outside text is shown.
 
 `str.isprintable` is the one predicate. Text the user authors as identity (names,
-target `source` and `path`, a repo `path`) must pass it at load, so it is always
-printed as written. Text from outside dotman (file names found on disk, OS and
-exception messages, rows an older dotman stored) is escaped by it where it enters output.
+target `source` and `path`, path rule `pattern`s, `additional_sources` entries, a
+repo `path`) must pass it at load, as written, before templates render and before
+`~` or `$VAR` expand, so it is always printed as written. Text from outside dotman
+(file names found on disk, expanded and rendered paths, OS and exception messages,
+rows an older dotman stored) is escaped by it where it enters output.
 """
 
 from __future__ import annotations
@@ -45,7 +47,7 @@ def terminal_safe_line(text: str) -> str:
     """Outside text for a person to read inside one line: every unprintable character is escaped, tab and newline included.
 
     Use it where text dotman does not control enters a row or a labelled line
-    (a live file name, an environment value, a row an older dotman stored), so
+    (a live file name, an expanded path, an environment value, a row an older dotman stored), so
     it cannot start a new line or shift a column. Not injective: a backslash
     stays a backslash. Outside text that may span lines uses `terminal_safe_text`;
     Sync identities use `printable_text`. Authored identity is validated at load

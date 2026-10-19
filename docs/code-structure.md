@@ -24,8 +24,9 @@ It is guidance, not a promise that every internal module name or boundary is per
 Focused CLI responsibilities live in dedicated modules:
 
 - `cli_parser.py` — argparse construction
-- `cli_emit.py` — text/JSON output formatting; text from outside dotman goes through
-  `printable.py` where it enters output, so a live path or OS message never reaches the terminal raw
+- `cli_emit.py` — text/JSON output formatting; text from outside dotman (a live path,
+  an expanded repo root, an OS message) goes through `printable.py` where it enters output, so it prints escaped;
+  authored identity was validated at load and prints as written
 - `standalone_commands.py` — configuration-independent rewrite, transform,
   elevation, capture, editor, and render workflows. Repo manifests call these
   once per render, capture, or probe, so `cli.py` dispatches them before
@@ -79,7 +80,8 @@ Current responsibility split:
 - `planning_guards.py` — repo/package-instance/target/path-rule planning eligibility and guard diagnostics
 - `collisions.py` — tracked-target winner resolution and conflict checks
 - `printable.py` — the `str.isprintable()` rule in one place. `validate_printable` rejects authored identity at load
-  (names, target `source` and `path`, a repo `path`), and that identity prints as written afterwards. Three escapes
+  (names, target `source` and `path`, path rule `pattern`s, `additional_sources` entries, a repo `path`), and that
+  identity prints as written afterwards. It takes an optional `hint` for the refusal (`add` uses it). Three escapes
   show text from outside dotman, where it enters output. `printable_text` is injective (backslash doubled) for Sync
   identity stand-ins; `terminal_safe_line` escapes every unprintable character, tab and newline included, for outside
   text inside a one-line row or field (live paths, OS messages, legacy tracked rows); `terminal_safe_text` keeps
