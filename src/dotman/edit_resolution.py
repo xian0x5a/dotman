@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Generic, TypeVar
 
 from dotman import cli_style
+from dotman import tracking
 from dotman.engine import DotmanEngine
 from dotman.interaction import ChoiceOption, ChoiceRequest, Interaction
 from dotman.models import ManagerConfig, package_ref_text
@@ -208,6 +209,8 @@ class EditResolver:
             ),
             not_found_error=(
                 f"{subject} '{query_text}' did not match any tracked package or target"
+                if exact_candidates or partial_candidates
+                else self._not_found_error(subject, query_text)
             ),
             single_partial_error=(
                 f"no exact match for '{query_text}'; use exact name "
@@ -216,6 +219,15 @@ class EditResolver:
                 else None
             ),
         )
+
+    @staticmethod
+    def _not_found_error(subject: str, query_text: str) -> str:
+        """Explain a miss; a query naming a stale tracked row says why that row cannot match."""
+        repo_name, package_id, _bound_profile = parse_package_ref_text(query_text.partition(".")[0])
+        stale = tracking.find_skipped_tracked_row(repo_name, package_id)
+        if stale is None:
+            return f"{subject} '{query_text}' did not match any tracked package or target"
+        return f"{subject} '{query_text}' matches stale tracked row {stale.binding.repo}:{stale.binding.selector}@{stale.binding.profile}: {stale.message}"
 
     def _resolve_repo_config(
         self,

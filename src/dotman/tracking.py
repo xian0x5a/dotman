@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
@@ -29,7 +32,7 @@ from dotman.package_resolution import (
     parse_full_spec_selector_text,
     resolve_package_ids,
 )
-from dotman.repository import Repository
+from dotman.repository import MissingExtendsParentError, Repository
 
 if TYPE_CHECKING:
     from dotman.planning import PlanningContext
@@ -404,9 +407,18 @@ def tracked_package_entry_scope_key(
     repo: Repository,
     binding: FullSpecSelector,
 ) -> tuple[str, str, str | None]:
-    if binding.selector in repo.packages and repo.package_binding_mode(binding.selector) == "multi_instance":
+    if binding.selector in repo.packages and _is_multi_instance(repo, binding.selector):
         return (binding.repo, binding.selector, binding.profile)
     return (binding.repo, binding.selector, None)
+
+
+def _is_multi_instance(repo: Repository, package_id: str) -> bool:
+    try:
+        return repo.package_binding_mode(package_id) == "multi_instance"
+    except MissingExtendsParentError:
+        # A stale row kept in state has no resolvable binding mode; scope it like a singleton
+        # so tracking another package in the same repo does not trip over it.
+        return False
 
 
 
@@ -482,13 +494,71 @@ def expand_tracked_package_entry_in_repo(repo: Repository, package_entry: FullSp
 
 
 
+@dataclass(frozen=True)
+class SkippedTrackedRow:
+    binding: FullSpecSelector
+    message: str
+
+
+# Rows skipped as stale during the running command, keyed by row identity so repeated
+# walks report each row once. Scoped to one command by `collecting_skipped_tracked_rows`.
+_SKIPPED_TRACKED_ROWS: ContextVar[dict[tuple[str, str, str], SkippedTrackedRow] | None] = ContextVar(
+    "dotman_skipped_tracked_rows", default=None,
+)
+
+
+@contextmanager
+def collecting_skipped_tracked_rows() -> Iterator[dict[tuple[str, str, str], SkippedTrackedRow]]:
+    """Collect the stale rows that effective-entry walks skip while a command runs."""
+    skipped_rows: dict[tuple[str, str, str], SkippedTrackedRow] = {}
+    token = _SKIPPED_TRACKED_ROWS.set(skipped_rows)
+    try:
+        yield skipped_rows
+    finally:
+        _SKIPPED_TRACKED_ROWS.reset(token)
+
+
+@contextmanager
+def silencing_skipped_tracked_rows() -> Iterator[None]:
+    """Stop collecting skipped rows, for commands that list every invalid row themselves."""
+    token = _SKIPPED_TRACKED_ROWS.set(None)
+    try:
+        yield
+    finally:
+        _SKIPPED_TRACKED_ROWS.reset(token)
+
+
+def _record_skipped_tracked_row(binding: FullSpecSelector, message: str) -> None:
+    skipped_rows = _SKIPPED_TRACKED_ROWS.get()
+    if skipped_rows is not None:
+        skipped_rows.setdefault(
+            (binding.repo, binding.selector, binding.profile),
+            SkippedTrackedRow(binding=binding, message=message),
+        )
+
+
+def find_skipped_tracked_row(repo_name: str | None, package_id: str) -> SkippedTrackedRow | None:
+    """Return the stale row this command skipped for a package, so a miss on it can say why."""
+    skipped_rows = _SKIPPED_TRACKED_ROWS.get() or {}
+    return next(
+        (
+            skipped for skipped in skipped_rows.values()
+            if skipped.binding.selector == package_id and repo_name in (None, skipped.binding.repo)
+        ),
+        None,
+    )
+
+
 def effective_tracked_package_entries_for_repo(
     repo: Repository,
     raw_bindings: list[FullSpecSelector],
 ) -> list[FullSpecSelector]:
     effective_bindings: list[FullSpecSelector] = []
     for binding in raw_bindings:
-        if not is_resolvable_persisted_tracked_package_entry(repo, binding):
+        try:
+            resolve_persisted_tracked_package_entry(repo, binding)
+        except PersistedTrackedPackageEntryResolutionError as exc:
+            _record_skipped_tracked_row(binding, exc.message)
             continue
         effective_bindings = _normalize_tracked_package_entries_in_repo(repo, effective_bindings, binding)
     return effective_bindings
@@ -735,7 +805,11 @@ def remove_tracked_package_entry_record(bindings: list[FullSpecSelector], target
 def iter_tracked_package_entries(
     context: TrackedStateContext,
 ) -> list[tuple[Repository, FullSpecSelector, SelectorKind, list[str]]]:
-    valid_records, _invalid_records = configured_persisted_tracked_package_entry_records(context)
+    valid_records, invalid_records = configured_persisted_tracked_package_entry_records(context)
+    for record in invalid_records:
+        # package_invalid rows are malformed manifests, not stale state; they stay silent here as before.
+        if record.issue is not None and record.issue.reason != "package_invalid":
+            _record_skipped_tracked_row(record.package_entry, record.issue.message)
     return [
         (record.repo, record.package_entry, record.selector_kind or "package", list(record.package_ids))
         for record in valid_records
@@ -855,8 +929,9 @@ def resolve_persisted_tracked_package_entry(
 
     The one validity rule for persisted rows: list, doctor, untrack, planning and
     writes all use it, so they agree on which rows are invalid. Only stale state
-    (a profile, package, or dependency that no longer exists) makes a row invalid;
-    a broken package manifest is a repo error and propagates as a plain ValueError.
+    (a profile, package, dependency, or `extends` parent that no longer exists) makes a
+    row invalid; malformed package content (bad TOML, an extends cycle) is a repo error
+    and propagates as a plain ValueError.
     """
     if binding.profile not in repo.profiles:
         raise PersistedTrackedPackageEntryResolutionError(reason="unknown_profile", message="unknown profile")
@@ -869,6 +944,9 @@ def resolve_persisted_tracked_package_entry(
         raise PersistedTrackedPackageEntryResolutionError(reason="unknown_selector", message="unknown selector")
     try:
         return tuple(resolve_package_ids(repo, binding.selector, "package"))
+    except MissingExtendsParentError as exc:
+        # Same kind of dangling reference as a missing dependency: stale, not a broken manifest.
+        raise PersistedTrackedPackageEntryResolutionError(reason="extends_parent_missing", message=str(exc)) from exc
     except UnresolvedSelectorError as exc:
         raise PersistedTrackedPackageEntryResolutionError(
             reason="dependency_resolution_failed",

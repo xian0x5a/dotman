@@ -1106,6 +1106,22 @@ def _structured_error_fields(error: Any, *, use_color: bool) -> list[tuple[str, 
     return fields
 
 
+def emit_skipped_tracked_row_warnings(skipped_rows: Sequence[Any], *, use_color: bool) -> None:
+    """Tell the user which stale tracked rows a command skipped, one line per row."""
+    warning = cli_style.render_sync_term("warning", use_color=use_color)
+    for skipped in skipped_rows:
+        row = cli_style.render_full_spec_selector_reference(skipped.binding, use_color=use_color)
+        # Plain text for the untrack hint so it stays copy-pasteable.
+        untrack_hint = cli_style.full_spec_selector_label_text(
+            repo_name=skipped.binding.repo, selector=skipped.binding.selector, profile=skipped.binding.profile
+        )
+        print(
+            f"{warning}: skipped stale tracked row {row} ({skipped.message}); "
+            f"see 'dotman list tracked' or remove it with 'dotman untrack {untrack_hint}'",
+            file=sys.stderr,
+        )
+
+
 def emit_error(error: Exception, *, use_color: bool) -> None:
     _emit_error_block(
         header_text=error.__class__.__name__,
