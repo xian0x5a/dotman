@@ -38,8 +38,8 @@ def test_push_cli_reports_missing_default_config_with_hint(
 
     exit_code = main(["--no-confirm", "push", "--dry-run"])
 
-    # The CLI reports --no-confirm configuration failures with exit 1.
-    assert exit_code == 1
+    # A missing config is a usage/config error (2), with or without --no-confirm.
+    assert exit_code == 2
     error_output = capsys.readouterr().err
     assert "Traceback" not in error_output
     assert "manager config file does not exist" in error_output
@@ -66,7 +66,7 @@ def test_doctor_cli_reports_missing_repo_path(tmp_path: Path, capsys) -> None:
 
     exit_code = main(["--config", str(config_path), "--json", "doctor"])
 
-    assert exit_code == 2
+    assert exit_code == 1
     payload = json.loads(capsys.readouterr().out)
     assert payload["ok"] is False
     assert payload["invalid_package_entries"] == []
@@ -104,7 +104,7 @@ def test_doctor_cli_reports_required_and_optional_dependencies(
 
     exit_code = main(["--config", str(config_path), "--json", "doctor"])
 
-    assert exit_code == 2
+    assert exit_code == 1
     payload = json.loads(capsys.readouterr().out)
     assert payload["ok"] is False
     assert any(
@@ -150,7 +150,7 @@ def test_doctor_cli_groups_human_output_by_category(
 
     exit_code = main(["--config", str(config_path), "doctor"])
 
-    assert exit_code == 2
+    assert exit_code == 1
     output = capsys.readouterr().out
     assert "failed checks:" in output
     assert "warnings:" in output
@@ -189,8 +189,8 @@ def test_doctor_cli_reports_corrupt_tracked_state_as_failed_check(
 
     captured = capsys.readouterr()
     assert "Traceback" not in captured.err
-    # Doctor exits 2 for failed checks too, so the report itself is the contract.
-    assert exit_code == 2
+    # Failed checks exit 1; the report itself is still the main contract.
+    assert exit_code == 1
     assert captured.out, f"doctor printed no report; stderr: {captured.err}"
     payload = json.loads(captured.out)
     assert payload["ok"] is False
