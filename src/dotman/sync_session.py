@@ -11,6 +11,7 @@ import stat
 
 from dotman.interaction_policy import no_confirm_enabled
 from dotman.command_runtime import CommandOperation, command_operation, command_runtime_session
+from dotman.file_access import sudo_session
 from dotman.execution import ExecutionStep, ExecutionStepResult, StepFinished, StepStarted, directory_synced_file_mode
 from dotman.atomic_files import default_created_file_mode
 from dotman.capture import CaptureError
@@ -1340,9 +1341,13 @@ class ProposalSession:
 
     def _result(self, *, preview: bool = False, aborted: bool = False) -> SyncResult:
         rows = {row.row_id: row for row in self.view.rows}
-        published, operation_diagnostics, steps = (
-            ({}, (), ()) if preview or aborted else self._publish()
-        )
+        # One sudo scope for the whole execution: protected writes and root
+        # hooks share one authentication notice, and the keepalive stops a
+        # long run from prompting again once sudo's ticket would expire.
+        with sudo_session():
+            published, operation_diagnostics, steps = (
+                ({}, (), ()) if preview or aborted else self._publish()
+            )
         units = []
         for observation in self.view.observations:
             identity = observation.identity.canonical

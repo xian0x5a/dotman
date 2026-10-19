@@ -142,3 +142,35 @@ def test_target_input_runs_no_dependency_hooks(tmp_path, monkeypatch):
         assert [row.row_id for row in session.view.rows] == ["main:app.own"]
     with engine.open_push_session(engine.resolve_sync_scope(["main:app"]), preview=True) as session:
         assert "main:base (push-hooks)" in [row.row_id for row in session.view.rows]
+
+
+def test_push_authenticates_sudo_once_for_all_protected_writes(tmp_path, monkeypatch, capsys):
+    # A fake `sudo` that accepts ticket probes and runs the privileged helper
+    # as the current user, so protected writes go through the real sudo path.
+    import os
+    import stat
+
+    from dotman import file_access
+
+    if os.geteuid() == 0:
+        pytest.skip("root never requests sudo")
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_sudo = fake_bin / "sudo"
+    fake_sudo.write_text('#!/bin/sh\nwhile [ "${1#-}" != "$1" ]; do shift; done\n[ "$#" -eq 0 ] || exec "$@"\n')
+    fake_sudo.chmod(fake_sudo.stat().st_mode | stat.S_IXUSR)
+    monkeypatch.setenv("PATH", f"{fake_bin}{os.pathsep}{os.environ['PATH']}")
+    live_root = tmp_path / "live"
+    monkeypatch.setattr(file_access, "needs_sudo_for_write", lambda path: live_root in path.parents)
+    engine = make_engine(tmp_path, monkeypatch, [
+        ("first", "push-only", b"repo-first", b"live", ""),
+        ("second", "push-only", b"repo-second", b"live", ""),
+    ])
+
+    with engine.open_push_session(engine.resolve_sync_scope()) as session:
+        assert session.execute().result.status == "completed"
+
+    assert (live_root / "first").read_bytes() == b"repo-first"
+    assert (live_root / "second").read_bytes() == b"repo-second"
+    sudo_notices = [line for line in capsys.readouterr().err.splitlines() if "[sudo]" in line]
+    assert len(sudo_notices) == 1, sudo_notices
