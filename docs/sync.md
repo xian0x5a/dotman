@@ -105,9 +105,12 @@ Under `both`, exact chmod does not replace executable-state comparison. Target
 chmod belongs to the root.
 
 Repository symlinks and unsupported nodes yield typed path-specific Observation
-failures unless excluded. Repository directory links are never descended or used
-as ancestors for child endpoint reads. Live directory links fail locally in
-`fail` mode; `follow` mode retains lexical child identities and detects loops.
+failures unless excluded. So does a child path that cannot form a canonical
+identity (trailing whitespace, a backslash, or bytes that are not UTF-8); its
+row shows an escaped stand-in (`Icon\u000d`, `caf\xe9.txt`) and it never has a
+Sync Base. Rename such a file or exclude it with an ignore pattern.
+Repository directory links are never descended or used as ancestors for child
+endpoint reads. Live directory links fail locally in `fail` mode; `follow` mode retains lexical child identities and detects loops.
 Rejected traversal or unknown controls/discovery at an ancestor block every
 affected descendant before either payload endpoint is read, including children
 already found on the opposite side and exact child selections. Failures do not

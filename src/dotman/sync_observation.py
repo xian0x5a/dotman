@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Literal
 
 from dotman.sync_path_policy import SyncPathError
+from dotman.sync_scope import sync_unit_identity_bytes
 from dotman import planning, projection
 from dotman.command_runtime import run_ordered
 from dotman.file_access import read_bytes
@@ -17,7 +18,7 @@ from dotman.manifest import resolve_sync_policy, sync_policy_allows_operation
 from dotman.models import GuardSkip, ResolvedSyncScope, ResolvedSyncTarget, resolved_package_selection_key
 from dotman.planning_guards import evaluate_directional_guards, evaluate_directory_path_rule_guards
 from dotman.progress import ProgressSink
-from dotman.sync_directory import census_directory, child_metadata, validate_planned_child
+from dotman.sync_directory import CensusFailure, census_directory, printable_text, child_metadata, validate_planned_child
 from dotman.sync_base_lifecycle import (
     BaseUnit,
     FrozenBaseUnit,
@@ -193,6 +194,14 @@ def _resolve_inputs(
                 targets.append(replace(metadata, command_env={**metadata.command_env, "DOTMAN_OPERATION": direction}))
             candidates[index] = replace(candidate, target_metadata=targets)
     return ordered, directional
+
+
+def _has_canonical_identity(identity: ResolvedSyncTarget) -> bool:
+    try:
+        sync_unit_identity_bytes(identity)
+    except ValueError:  # includes UnicodeEncodeError for non-UTF-8 names
+        return False
+    return True
 
 
 def _base_unit(identity: ResolvedSyncTarget, metadata: projection.TargetMetadata) -> BaseUnit:
@@ -453,7 +462,7 @@ def observe_scope(
         identity: value for identity, value in directory_inputs.items()
         if any(identity in survivors for survivors in admitted.values())
     }
-    resolved_directories = {}
+    resolved_directories, unrepresentable = {}, set()
     for identity, (item, metadata) in directory_inputs.items():
         selected_paths = selected_children[identity]
         census = census_directory(
@@ -468,7 +477,16 @@ def observe_scope(
             child = child_metadata(metadata, relative)
             if participates(child):
                 validate_planned_child(metadata, relative, child)
-                children[relative] = (replace(identity, child_path=relative or None), child, failures)
+                child_identity = replace(identity, child_path=relative or None)
+                if not _has_canonical_identity(child_identity):
+                    # A name that cannot key a Base fails alone instead of blocking the session.
+                    escaped = printable_text(relative)
+                    child_identity = replace(identity, child_path=escaped)
+                    unrepresentable.add(child_identity)
+                    failures = (*failures, CensusFailure("unsupported-name", (
+                        f"'{escaped}': name has no canonical Sync identity; "
+                        "rename it or exclude it with an ignore pattern")))
+                children[relative] = (child_identity, child, failures)
         resolved_directories[identity] = (selected_paths, census, children)
 
     child_policies, child_failures, child_topology = {}, {}, {}
@@ -499,11 +517,14 @@ def observe_scope(
                 bound_profile=identity.bound_profile, target_name=identity.target_name,
             )
             guard_skips.extend((direction, skip) for skip in child_skips)
+        # A child without a canonical identity can never be approved, so it is not a managed blocker.
+        managed_children = tuple(path for path, failures in census.entries
+                                 if not failures and _has_canonical_identity(replace(identity, child_path=path)))
         for relative, (child_identity, child, failures) in children.items():
-            child_topology[child_identity] = (census.blockers(relative, repository=True), census.blockers(relative, repository=False), tuple(path for path, failures in census.entries if not failures))
+            child_topology[child_identity] = (census.blockers(relative, repository=True), census.blockers(relative, repository=False), managed_children)
             expanded_inputs[child_identity] = (item, child)
-            unit = _base_unit(child_identity, child)
-            child_policies[child_identity] = _effective_policy(unit.configured_policy, relative in child_admitted["push"], relative in child_admitted["pull"])
+            configured = resolve_sync_policy(package=child.package, target=child.target)
+            child_policies[child_identity] = _effective_policy(configured, relative in child_admitted["push"], relative in child_admitted["pull"])
             child_failures[child_identity] = failures
 
     inputs = {identity: value for identity, value in expanded_inputs.items() if identity not in probe_inputs}
@@ -517,7 +538,7 @@ def observe_scope(
         }
     units = {
         identity: _base_unit(identity, metadata)
-        for identity, (item, metadata) in inputs.items()
+        for identity, (item, metadata) in inputs.items() if identity not in unrepresentable
     }
     if sink is not None:
         # Probe targets are not observed here; auxiliary planning ticks them.
@@ -558,17 +579,20 @@ def observe_scope(
         # user commands, overlap.
         pending, tasks = [], []
         for identity, (item, metadata) in inputs.items():
-            unit = units[identity]
+            unit = units.get(identity)
+            configured = resolve_sync_policy(package=metadata.package, target=metadata.target)
+            eligible = configured in ("pull-only", "both")
             push, pull = identity in admitted["push"], identity in admitted["pull"]
-            effective = child_policies.get(identity, _effective_policy(unit.configured_policy, push, pull))
-            lifecycle = lifecycles.get(identity.repo)
+            effective = child_policies.get(identity, _effective_policy(configured, push, pull))
+            # An unrepresentable child has no Base to read, so its Base stays absent.
+            lifecycle = lifecycles.get(identity.repo) if unit is not None else None
             # Store failures only matter to units that keep a Sync Base.
-            store_failure = store_warnings.get(identity.repo) if unit.eligible else None
+            store_failure = store_warnings.get(identity.repo) if eligible and unit is not None else None
             warning = checkpoint_warnings.get(identity) or store_failure
             base = BaseEvidence(
-                "unavailable" if unit.eligible else "not-applicable",
+                "unavailable" if eligible else "not-applicable",
                 # A Base that could not be read may still exist; never call it absent.
-                ("unreadable" if identity.repo in unreadable_repos else "absent") if unit.eligible else "ineligible",
+                ("unreadable" if identity.repo in unreadable_repos and unit is not None else "absent") if eligible else "ineligible",
                 deleted=maintenance.get(identity, False),
             )
             if lifecycle is not None:
@@ -585,7 +609,7 @@ def observe_scope(
                     base = replace(base, reason="unreadable")
             if child_failures.get(identity):
                 failed = Observation(
-                    identity, "observation-failed", unit.configured_policy, effective,
+                    identity, "observation-failed", configured, effective,
                     context.config.file_symlink_mode, metadata.compare_repo, metadata.compare_live, base,
                     chmod=metadata.chmod, repository_path=metadata.repo_path, live_path=metadata.live_path,
                     diagnostics=tuple(Diagnostic(failure.code, failure.message) for failure in child_failures[identity]),

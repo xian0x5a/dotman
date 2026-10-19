@@ -1,3 +1,5 @@
+import os
+
 import pytest
 
 from dotman.engine import DotmanEngine
@@ -103,6 +105,42 @@ def test_unsupported_repository_nodes_are_path_local_and_exclusions_win(tmp_path
             assert name in units[name].diagnostics[0].message
     with open_directory(engine, ['main:app.tree/good']) as session:
         assert [unit.identity.child_path for unit in session.view.observations] == ['good']
+
+
+@pytest.mark.parametrize('name,shown', [
+    ('back\\slash.txt', 'back\\\\slash.txt'),
+    ('trailing.txt ', 'trailing.txt '),
+    ('Icon\r', 'Icon\\u000d'),
+    (os.fsdecode(b'caf\xe9.txt'), 'caf\\xe9.txt'),
+])
+def test_child_name_without_canonical_identity_fails_only_that_child(tmp_path, monkeypatch, name, shown):
+    engine = directory_engine(tmp_path, monkeypatch)
+    repo, live = tmp_path / 'repo/packages/app/tree', tmp_path / 'live/tree'
+    put(repo, 'good', b'repo'); put(live, 'good', b'live')
+    put(live, name)
+    # A real session also plans obsolete Base reclamation over the census.
+    with open_directory(engine, preview=False) as session:
+        units = {unit.identity.child_path: unit for unit in session.view.observations}
+        # The failed child keeps a printable stand-in identity.
+        assert set(units) == {'good', shown}
+        assert units['good'].state == 'drifted'
+        assert units[shown].state == 'observation-failed'
+        assert units[shown].diagnostics[0].code == 'unsupported-name'
+        assert units[shown].base.status == 'unavailable'
+
+
+def test_path_failure_on_undecodable_name_stays_printable(tmp_path, monkeypatch):
+    engine = directory_engine(tmp_path, monkeypatch)
+    live = tmp_path / 'live/tree'
+    live.mkdir(parents=True)
+    os.mkfifo(live / os.fsdecode(b'f\xe9fo'))
+    with open_directory(engine) as session:
+        unit, = session.view.observations
+        assert unit.identity.child_path == 'f\\xe9fo'
+        assert [diagnostic.message for diagnostic in unit.diagnostics] == [
+            'f\\xe9fo: endpoint must be a regular file',
+            "'f\\xe9fo': name has no canonical Sync identity; rename it or exclude it with an ignore pattern",
+        ]
 
 
 def test_child_rules_resolve_on_missing_endpoints_and_guards_run_once(tmp_path, monkeypatch):
