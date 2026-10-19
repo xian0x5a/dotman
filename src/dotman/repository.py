@@ -239,6 +239,7 @@ class Repository:
                 package_root=manifest_path.parent,
                 description=payload.get("description"),
                 binding_mode=binding_mode,
+                binding_mode_explicit="binding_mode" in payload,
                 sync_policy=normalize_sync_policy(payload.get("sync_policy")),
                 depends=normalize_string_list(payload.get("depends")),
                 extends=normalize_string_list(payload.get("extends")),
