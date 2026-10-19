@@ -66,14 +66,26 @@ def terminal_safe_text(text: str) -> str:
     )
 
 
-def validate_printable(text: str, *, kind: str, context: str | None = None) -> None:
+class UnprintableTextError(UsageError):
+    """Authored text failed the printable rule; `detail` and `hint` are what the CLI prints as labelled lines."""
+
+    def __init__(self, detail: str, hint: str | None) -> None:
+        self.detail = detail
+        self.hint = hint
+        super().__init__(detail)
+
+
+def validate_printable(text: str, *, kind: str, context: str | None = None, hint: str | None = None) -> None:
     """Reject authored identity (a name or a path) that a terminal could show as something else.
 
     Control characters, bidi overrides, zero-width joiners, non-ASCII spaces and
     private-use glyphs (such as Nerd Font icons) pass for ordinary text, so they
     are refused up front. The error echoes the value escaped on one line and,
     given a `context` such as the file or entry being loaded, starts with it.
+    A `hint` tells the user how to get past the refusal.
     """
     if not text.isprintable():
         prefix = "" if context is None else f"{context}: "
-        raise UsageError(f"{prefix}invalid {kind} '{terminal_safe_line(text)}': must contain only printable characters")
+        raise UnprintableTextError(
+            f"{prefix}invalid {kind} '{terminal_safe_line(text)}': must contain only printable characters", hint
+        )

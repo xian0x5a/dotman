@@ -111,7 +111,11 @@ def resolve_live_path_spec(live_path_text: str, *, cwd: Path | None = None, home
     # The manifest `add` writes holds this path, and a manifest with an unprintable path
     # fails to load, so refuse before anything is written. The source path derives from
     # the same components, so one check covers both.
-    validate_printable(config_path, kind="live path")
+    validate_printable(
+        config_path,
+        kind="live path",
+        hint="Rename the file so its path is printable, or track a directory above it instead.",
+    )
     return LivePathSpec(
         raw_input=live_path_text,
         resolved_path=resolved_path,
