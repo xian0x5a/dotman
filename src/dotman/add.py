@@ -13,6 +13,7 @@ import tomlkit
 from dotman.atomic_files import write_text_atomic
 from dotman.collisions import paths_conflict
 from dotman.command_runtime import ArgvCommand, CommandRequest, current_command_runtime
+from dotman.config import expand_path
 from dotman.manifest import PACKAGE_MANIFEST_FILE_NAME, discover_package_manifests, validate_package_id, validate_target_name
 from dotman.toml_utils import load_toml_text
 
@@ -343,12 +344,13 @@ def ensure_source_does_not_nest_unrelated_source(
         if existing not in new_source.parents and new_source not in existing.parents:
             continue
         if isinstance(existing_config_path, str) and paths_conflict(
-            Path(os.path.expanduser(config_path)), Path(os.path.expanduser(existing_config_path))
+            expand_path(config_path, dereference=False), expand_path(existing_config_path, dereference=False)
         ):
             continue
+        existing_path_text = f"unrelated path '{existing_config_path}'" if existing_config_path else "a target"
         raise ValueError(
             f"cannot add '{config_path}': its source '{source_path}' would nest with the source "
-            f"'{existing_source}' of unrelated path '{existing_config_path}', which push and pull "
+            f"'{existing_source}' of {existing_path_text}, which push and pull "
             "reject; give one of the targets a different source in the package manifest"
         )
 
