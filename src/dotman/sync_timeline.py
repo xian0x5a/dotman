@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 from dotman.diff_review import display_review_path
-from dotman.cli_style import MENU_REPO_STYLE, render_execution_action, render_execution_status, render_package_label, style_text
+from dotman.cli_style import MENU_REPO_STYLE, render_execution_action_column, render_execution_status, render_package_label, style_text
 from dotman.execution import ExecutionStep, StepFinished, StepStarted, step_group_key
 from dotman.ui_context import current_ui_config
-
-ACTION_COLUMN_WIDTH = 11
 
 
 class SyncTimelineRenderer:
@@ -43,10 +41,8 @@ class SyncTimelineRenderer:
         print(f"  {label}")
 
     def _step_line(self, stage: str, step: ExecutionStep) -> str:
-        # Pad the plain action so color codes do not break column alignment.
-        action = render_execution_action(step.action, use_color=self._use_color)
-        padding = " " * max(ACTION_COLUMN_WIDTH - len(step.action), 0)
-        return f"{action}{padding} {step_target_display(stage, step)}".rstrip()
+        action = render_execution_action_column(step.action, use_color=self._use_color)
+        return f"{action} {step_target_display(stage, step)}".rstrip()
 
     def _print_status(self, result) -> None:
         step = result.step

@@ -1039,7 +1039,7 @@ def _print_restore_header(title: str, *, snapshot: Any, action_count: int, use_c
 def _print_restore_execution_step(index: int, total: int, action: Any, *, full_paths: bool, use_color: bool) -> None:
     print(
         f"    [{index}/{total}] "
-        f"{cli_style.render_execution_action(action.action, use_color=use_color):<11} "
+        f"{cli_style.render_execution_action_column(action.action, use_color=use_color)} "
         f"{display_cli_path(action.live_path, full_paths=full_paths)}"
     )
 

@@ -438,12 +438,21 @@ def render_key_hint_chip(key: str, action: str, *, use_color: bool, hovered: boo
             f"{style_text(action, *action_style)}{style_text(']', *bracket_style)}")
 
 
+EXECUTION_ACTION_COLUMN_WIDTH = 11
+
+
 def render_execution_action(action: str, *, use_color: bool) -> str:
     display_action = action.replace("_repo", " repo") if action.endswith("_repo") else action
     if not use_color:
         return display_action
     style_key = action.removesuffix("_repo")
     return style_text(display_action, *MENU_ACTION_STYLE_BY_NAME.get(style_key, ("1",)))
+
+
+def render_execution_action_column(action: str, *, use_color: bool) -> str:
+    """Execution action padded to its column; pads the plain text so color codes do not count."""
+    padding = " " * max(EXECUTION_ACTION_COLUMN_WIDTH - len(render_execution_action(action, use_color=False)), 0)
+    return render_execution_action(action, use_color=use_color) + padding
 
 
 def render_execution_status(status: str, *, use_color: bool) -> str:
