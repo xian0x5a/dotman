@@ -251,3 +251,28 @@ def test_push_creates_missing_directory_target_under_protected_parent_through_su
     assert [unit.status for unit in result.units] == ["converged"]
     assert (live_parent / "tree" / "child").read_bytes() == b"repo"
     assert _helper_calls_naming(runtime, live_parent / "tree")
+
+
+def test_restore_replaces_empty_directory_with_file_under_protected_parent_through_sudo(
+    tmp_path: Path, read_only_directory: Path,
+) -> None:
+    live_path = read_only_directory / "conf"
+    live_path.mkdir()
+    read_only_directory.chmod(0o555)
+    snapshot = _restore_snapshot(tmp_path)
+    action = RestoreAction(
+        live_path=live_path,
+        snapshot_path=snapshot.root / "restore" / "conf",
+        action="create",
+        before_bytes=b"",
+        after_bytes=b"restored value\n",
+        desired_mode=0o644,
+    )
+    runtime = _granting_sudo_runtime()
+
+    with command_runtime_session(runtime):
+        result = run_restore_operation(snapshot=snapshot, actions=[action])
+
+    assert [(action_result.status, action_result.error) for action_result in result.actions] == [("ok", None)]
+    [removal_call] = _privileged_helper_calls(runtime, "remove-empty-directory-tree")
+    assert str(live_path) in removal_call.command.arguments

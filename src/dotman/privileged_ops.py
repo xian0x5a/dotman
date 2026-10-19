@@ -4,7 +4,12 @@ import os
 import sys
 from pathlib import Path
 
-from dotman.atomic_files import create_directories_durably, write_bytes_atomic, write_symlink_atomic
+from dotman.atomic_files import (
+    create_directories_durably,
+    remove_empty_directory_tree,
+    write_bytes_atomic,
+    write_symlink_atomic,
+)
 
 
 class PrivilegedOperationError(RuntimeError):
@@ -72,6 +77,11 @@ def main(argv: list[str] | None = None) -> int:
             if len(args) != 1:
                 raise PrivilegedOperationError("make-directories requires: PATH")
             create_directories_durably(Path(args[0]))
+            return 0
+        if command == "remove-empty-directory-tree":
+            if len(args) != 1:
+                raise PrivilegedOperationError("remove-empty-directory-tree requires: PATH")
+            remove_empty_directory_tree(Path(args[0]))
             return 0
         if command == "chmod":
             if len(args) != 2:
