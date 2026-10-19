@@ -13,13 +13,15 @@ from dotman.interaction_policy import InteractionRequiredError, interaction_scop
 from dotman.printable import terminal_safe_line, terminal_safe_text
 from dotman.progress import make_planning_sink
 from dotman.sync_timeline import SyncTimelineRenderer
-from dotman.cli_style import SYNC_TERM_STYLE_BY_NAME, render_annotation_parentheses, render_sync_term, render_package_label, render_summary_stat, style_text, MENU_REPO_STYLE
+from dotman.cli_emit import stale_row_untrack_command
+from dotman.cli_style import SYNC_TERM_STYLE_BY_NAME, full_spec_selector_label_text, render_annotation_parentheses, render_sync_term, render_package_label, render_summary_stat, style_text, MENU_REPO_STYLE
 from dotman.sync_scope import _parse_scope_selector, split_scope_child_path
 from dotman.sync_base_store import DirectoryChildPresent, FilePresent, Missing
 from dotman.sync_session import (
     AdditionalRow, BatchSetApproval, PrepareSourceReview, AuxiliaryRow, CommandRejected, EditProposal, PrepareProposalReview, Preview, SessionOpenFailed,
     SessionRow, SetApproval, SetCommit, SetIncluded, SetResolutionIntent, RetryMaterialization, SyncSession, has_errors,
 )
+from dotman.tracking import SkippedTrackedRow, take_unreported_skipped_entries
 from dotman.ui_context import ui_config_scope
 
 
@@ -278,12 +280,15 @@ class SyncDeckCommandRunner:
                     if timeline is not None:
                         self._print_header(args)
                         # Guard skips are planning results shown where work is reviewed:
-                        # the Deck when it opened, otherwise above the timeline.
+                        # the Deck when it opened, otherwise above the timeline. Stale
+                        # tracked rows never reach the Deck, so they always print here.
                         # A report carries them itself.
-                        if not deck_review and not getattr(args, "report", False):
-                            self._print_planning_skips(
-                                guard_skip_summaries(row for row in session.view.rows if isinstance(row, AuxiliaryRow)),
-                                no_base_skip_summaries(args, session.view.rows))
+                        if not getattr(args, "report", False):
+                            self._print_stale_rows()
+                            if not deck_review:
+                                self._print_planning_skips(
+                                    guard_skip_summaries(row for row in session.view.rows if isinstance(row, AuxiliaryRow)),
+                                    no_base_skip_summaries(args, session.view.rows))
                     dispatched = session.execute()
                 if isinstance(dispatched, CommandRejected):
                     self._emit(args, session, None, diagnostic={
@@ -293,6 +298,16 @@ class SyncDeckCommandRunner:
                     return 1
                 self._emit(args, session, dispatched.result, timeline=timeline)
                 return dispatched.result.exit_code
+
+    def _print_stale_rows(self) -> None:
+        # Planning leaves stale tracked rows out of the workset. Taking them marks them
+        # shown, so the end-of-command stderr warning does not repeat them.
+        for stale in take_unreported_skipped_entries(SkippedTrackedRow):
+            binding = stale.binding
+            row = terminal_safe_line(full_spec_selector_label_text(
+                repo_name=binding.repo, selector=binding.selector, profile=binding.profile))
+            print(f"  [{render_sync_term('skipped', use_color=self._use_color)}] {row} ({terminal_safe_line(stale.message)})")
+            print(f"      stale tracked row; remove it with: {stale_row_untrack_command(binding)}")
 
     def _print_planning_skips(self, guard_skips, no_base_skips) -> None:
         for skip in guard_skips:
@@ -403,6 +418,10 @@ class SyncDeckCommandRunner:
         shown = timeline_errors | {item["message"] for entry in (*payload["sync_units"], *payload["additional_source_changes"])
                                    for item in entry["diagnostics"]}
         if not recap:
+            # Without a session nothing was planned, e.g. the scope named a stale row;
+            # the error explains that row, and any other falls back to the stderr warning.
+            if session is not None:
+                self._print_stale_rows()
             self._print_planning_skips(payload["guard_skips"], payload["no_base_skips"])
         summary = payload["summary"]
         stats = summary_stats(

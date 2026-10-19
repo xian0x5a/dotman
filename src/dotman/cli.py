@@ -88,17 +88,18 @@ def _warn_about_skipped_entries() -> Iterator[None]:
     """Warn once per command, after it finishes, about the stale tracked rows and catalog packages it skipped.
 
     Reporting at the end keeps the warning out of the Command Deck and one command
-    to one report, however many times the command walked the tracked state.
+    to one report, however many times the command walked the tracked state. Entries
+    the command's own output already showed (sync's `[skipped]` entries) are left out.
     """
     from dotman.cli_emit import emit_skipped_entry_warnings
-    from dotman.tracking import collecting_skipped_entries
+    from dotman.tracking import collecting_skipped_entries, take_unreported_skipped_entries
 
-    with collecting_skipped_entries() as skipped_entries:
+    with collecting_skipped_entries():
         try:
             yield
         finally:
             emit_skipped_entry_warnings(
-                list(skipped_entries.values()), use_color=colors_enabled(sys.stderr)
+                take_unreported_skipped_entries(), use_color=colors_enabled(sys.stderr)
             )
 
 

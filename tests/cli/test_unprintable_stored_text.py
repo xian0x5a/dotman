@@ -151,13 +151,13 @@ def test_untrack_result_line_shows_the_removed_legacy_profile_escaped(
     assert_shown_escaped(stdout, stderr, raw_character=raw_character, escaped_profile=escaped_profile)
 
 
-def advertised_untrack_arguments(warning_text: str) -> list[str]:
-    """The arguments of the `dotman untrack ...` command a stale-row warning ends with, split as a shell splits them."""
-    stale_row_lines = [line for line in warning_text.splitlines() if "skipped stale tracked row" in line]
-    assert len(stale_row_lines) == 1, warning_text
+def advertised_untrack_arguments(output: str) -> list[str]:
+    """The arguments of the `dotman untrack ...` command a stale-row warning or `[skipped]` entry ends with, split as a shell splits them."""
+    stale_row_lines = [line for line in output.splitlines() if "remove it with: dotman untrack " in line]
+    assert len(stale_row_lines) == 1, output
     # The command is the last thing on its line, so a user can copy from `dotman` to the end.
     advertised = re.search(r"dotman untrack .*$", stale_row_lines[0])
-    assert advertised, f"the stale-row warning must advertise 'dotman untrack <selector>': {warning_text!r}"
+    assert advertised, f"the stale-row report must advertise 'dotman untrack <selector>': {output!r}"
     try:
         words = shlex.split(advertised.group(0))
     except ValueError as shell_error:  # e.g. an unbalanced quote
@@ -176,15 +176,26 @@ def advertised_untrack_arguments(warning_text: str) -> list[str]:
         pytest.param("it's mine", id="apostrophe"),
     ],
 )
-def test_the_untrack_command_the_warning_advertises_removes_the_legacy_row_when_pasted_into_a_shell(
-    legacy_profile: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+@pytest.mark.parametrize(
+    "advertising_argv",
+    [
+        # `list vars` reports the stale row as a stderr warning.
+        pytest.param(["list", "vars"], id="warning"),
+        # Push, pull and sync list it as a `[skipped]` entry on stdout instead.
+        pytest.param(["push", "--dry-run", f"{REPO_NAME}:{OTHER_PACKAGE}"], id="skipped-entry"),
+    ],
+)
+def test_the_untrack_command_the_stale_row_report_advertises_removes_the_legacy_row_when_pasted_into_a_shell(
+    legacy_profile: str, advertising_argv: list[str], tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Escaping the warning must not leave the user a command that matches nothing, or splits into two arguments."""
+    """Escaping the report must not leave the user a command that matches nothing, or splits into two arguments."""
     config_path = write_repo_with_legacy_row(tmp_path, legacy_profile)
-    _code, _stdout, warning_text = run_cli(config_path, capsys, "list", "vars")
+    _code, advertising_stdout, advertising_stderr = run_cli(config_path, capsys, *advertising_argv)
 
     # A shell hands the program what `shlex.split` yields, so the advertised text must survive that.
-    code, stdout, stderr = run_cli(config_path, capsys, "untrack", *advertised_untrack_arguments(warning_text))
+    code, stdout, stderr = run_cli(
+        config_path, capsys, "untrack", *advertised_untrack_arguments(advertising_stdout + advertising_stderr)
+    )
 
     assert code == 0, stdout + stderr
     assert read_tracked_rows(tmp_path) == [(OTHER_PACKAGE, OTHER_PROFILE)]
@@ -211,6 +222,8 @@ def test_untracking_by_the_escaped_spelling_leaves_look_alike_sibling_rows(
         pytest.param(["list", "tracked"], id="list-tracked"),
         # Any command that walks tracked state skips the stale row with a warning; `list vars` only reads.
         pytest.param(["list", "vars"], id="stale-row-warning"),
+        # Push, pull and sync list the stale row as a `[skipped]` entry instead.
+        pytest.param(["push", "--dry-run", f"{REPO_NAME}:{OTHER_PACKAGE}"], id="stale-row-entry"),
     ],
 )
 def test_a_legacy_profile_with_a_line_break_and_a_tab_cannot_forge_an_output_line(

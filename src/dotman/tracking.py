@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
 from typing import Mapping, TYPE_CHECKING
@@ -525,21 +525,31 @@ class SkippedCatalogPackage:
 
 SkippedEntry = SkippedTrackedRow | SkippedCatalogPackage
 
+SkippedEntryKey = tuple[str, str, str | None]
+
+
+@dataclass
+class _SkippedEntryLog:
+    entries: dict[SkippedEntryKey, SkippedEntry] = field(default_factory=dict)
+    # Keys some output already showed, so the end-of-command warning skips them
+    # even when a later walk records the same entry again.
+    reported: set[SkippedEntryKey] = field(default_factory=set)
+
+
 # Entries skipped as stale during the running command, keyed by identity so repeated
 # walks report each one once. Scoped to one command by `collecting_skipped_entries`.
 # Tracked rows are keyed (repo, package, profile); catalog packages (repo, package, None).
-_SKIPPED_ENTRIES: ContextVar[dict[tuple[str, str, str | None], SkippedEntry] | None] = ContextVar(
+_SKIPPED_ENTRIES: ContextVar[_SkippedEntryLog | None] = ContextVar(
     "dotman_skipped_entries", default=None,
 )
 
 
 @contextmanager
-def collecting_skipped_entries() -> Iterator[dict[tuple[str, str, str | None], SkippedEntry]]:
+def collecting_skipped_entries() -> Iterator[None]:
     """Collect the stale entries that tracked-state and catalog walks skip while a command runs."""
-    skipped_entries: dict[tuple[str, str, str | None], SkippedEntry] = {}
-    token = _SKIPPED_ENTRIES.set(skipped_entries)
+    token = _SKIPPED_ENTRIES.set(_SkippedEntryLog())
     try:
-        yield skipped_entries
+        yield
     finally:
         _SKIPPED_ENTRIES.reset(token)
 
@@ -554,10 +564,25 @@ def silencing_skipped_entries() -> Iterator[None]:
         _SKIPPED_ENTRIES.reset(token)
 
 
-def _record_skipped_entry(key: tuple[str, str, str | None], entry: SkippedEntry) -> None:
-    skipped_entries = _SKIPPED_ENTRIES.get()
-    if skipped_entries is not None:
-        skipped_entries.setdefault(key, entry)
+def take_unreported_skipped_entries(
+    entry_type: type | None = None,
+) -> list[SkippedEntry]:
+    """Return the skipped entries (of `entry_type`, if given) no output has shown yet, marking them shown."""
+    log = _SKIPPED_ENTRIES.get()
+    if log is None:
+        return []
+    taken = {
+        key: entry for key, entry in log.entries.items()
+        if key not in log.reported and (entry_type is None or isinstance(entry, entry_type))
+    }
+    log.reported.update(taken)
+    return list(taken.values())
+
+
+def _record_skipped_entry(key: SkippedEntryKey, entry: SkippedEntry) -> None:
+    log = _SKIPPED_ENTRIES.get()
+    if log is not None:
+        log.entries.setdefault(key, entry)
 
 
 def _record_skipped_tracked_row(binding: FullSpecSelector, message: str) -> None:
@@ -569,10 +594,10 @@ def _record_skipped_tracked_row(binding: FullSpecSelector, message: str) -> None
 
 def find_skipped_tracked_row(repo_name: str | None, package_id: str) -> SkippedTrackedRow | None:
     """Return the stale row this command skipped for a package, so a miss on it can say why."""
-    skipped_entries = _SKIPPED_ENTRIES.get() or {}
+    log = _SKIPPED_ENTRIES.get()
     return next(
         (
-            skipped for skipped in skipped_entries.values()
+            skipped for skipped in (log.entries.values() if log is not None else ())
             if isinstance(skipped, SkippedTrackedRow)
             and skipped.binding.selector == package_id and repo_name in (None, skipped.binding.repo)
         ),
