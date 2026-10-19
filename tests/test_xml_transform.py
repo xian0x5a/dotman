@@ -848,3 +848,27 @@ def test_merge_that_keeps_an_entity_the_output_doctype_lacks_is_an_error(
     ]) == 2
     assert "brand" in capsys.readouterr().err
     assert not output_path.exists()
+
+
+@pytest.mark.parametrize(
+    ("input_text", "compare_text", "reused"),
+    [
+        ("<config>\n    <a>1</a>\n</config>", "<config><a>1</a></config>", True),
+        ("<config>\n  <!-- c -->\n  <a/>\n</config>", "<config><!-- c --><a/></config>", True),
+        ("<config><sep> </sep></config>", "<config><sep/></config>", False),
+        ("<config><sep/></config>", "<config><sep>\n</sep></config>", False),
+        ("<config><p>x <b>y</b> </p></config>", "<config><p>x <b>y</b></p></config>", False),
+    ],
+)
+def test_compare_file_ignores_only_layout_between_child_elements(
+    tmp_path: Path, input_text: str, compare_text: str, reused: bool
+) -> None:
+    input_path = tmp_path / "input.xml"
+    compare_path = tmp_path / "compare.xml"
+    output_path = tmp_path / "output.xml"
+    input_path.write_text(input_text, encoding="utf-8")
+    compare_path.write_text(compare_text, encoding="utf-8")
+
+    transform_xml(input_path, output_path, node_matchers=["config/drop"], compare_path=compare_path)
+
+    assert (output_path.read_text(encoding="utf-8") == compare_text) is reused

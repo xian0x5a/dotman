@@ -281,20 +281,12 @@ def sort_xml_attributes(root: XmlNode) -> None:
         elem.attrib.update(sorted_attributes)
 
 
-def strip_whitespace_text_nodes(root: XmlNode) -> None:
-    for node in root.iter():
-        # A comment's or instruction's text is its content, not layout.
-        if is_element(node) and node.text is not None and node.text.strip() == "":
-            node.text = None
-        if node.tail is not None and node.tail.strip() == "":
-            node.tail = None
-
-
 def canonical_xml_sort_key(element: XmlNode) -> str:
     normalized = copy.deepcopy(element)
-    strip_whitespace_text_nodes(normalized)
+    # Same layout rule as compare: only whitespace between child elements is layout.
+    indent_element_only_content(normalized)
     sort_xml_attributes(normalized)
-    return etree.tostring(normalized, encoding="unicode")
+    return etree.tostring(normalized, encoding="unicode", with_tail=False)
 
 
 def sort_selected_children(root: XmlNode, parent_matchers: list[str]) -> None:
@@ -321,10 +313,13 @@ def normalized_xml_for_compare(
     child_sort_parent_matchers: list[str] | None = None,
 ) -> str:
     normalized = copy_document(root)
-    strip_whitespace_text_nodes(normalized)
     sort_xml_attributes(normalized)
     if child_sort_parent_matchers:
         sort_selected_children(normalized, child_sort_parent_matchers)
+    # Re-indent after sorting, since sorted children carry their old tails. The
+    # writer keeps leaf and mixed-content text, so only whitespace between child
+    # elements is layout; `<sep> </sep>` and `<sep/>` hold different values.
+    indent_element_only_content(normalized)
     # The whole document, so the doctype and comments around the root count too.
     return etree.tostring(normalized.getroottree(), encoding="unicode")
 
