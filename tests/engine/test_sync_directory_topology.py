@@ -313,3 +313,6 @@ def test_directory_base_maintenance_failure_flags_only_that_directory(tmp_path, 
         assert "other:app.agree" not in rows
         other, = [unit for unit in session.view.observations if unit.identity.repo == "other"]
         assert other.diagnostics == ()
+        # The failing directory still reports it, once per unit.
+        child = rows["main:app.tree/same"].observation
+        assert [item.code for item in child.diagnostics].count("base-maintenance-failed") == 1
