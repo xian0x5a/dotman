@@ -24,6 +24,7 @@ from dotman.manifest import (
     validate_target_name,
 )
 from dotman.models import PackageSpec, TargetSpec, repo_qualified_target_text
+from dotman.printable import validate_printable
 from dotman.repository import Repository
 from dotman.toml_utils import dump_toml_text, load_toml_text
 
@@ -107,6 +108,10 @@ def resolve_live_path_spec(live_path_text: str, *, cwd: Path | None = None, home
     else:
         raise UsageError(f"unsupported live path type for add: {resolved_path}")
     config_path = _config_path_text(resolved_path, home_dir=home_dir)
+    # The manifest `add` writes holds this path, and a manifest with an unprintable path
+    # fails to load, so refuse before anything is written. The source path derives from
+    # the same components, so one check covers both.
+    validate_printable(config_path, kind="live path")
     return LivePathSpec(
         raw_input=live_path_text,
         resolved_path=resolved_path,
