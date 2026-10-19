@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
@@ -125,3 +126,27 @@ def test_fzf_exit_status_distinguishes_cancel_from_fzf_failure(
     message = str(raised.value)
     for pattern in expected_message_patterns:
         assert re.search(pattern, message), f"expected /{pattern}/ in error message {message!r}"
+
+
+@pytest.mark.skipif(shutil.which("fzf") is None, reason="needs a real fzf")
+@pytest.mark.parametrize("choose", ENTRY_POINTS)
+@pytest.mark.parametrize(
+    "output_shaping_option",
+    [
+        pytest.param("--print-query", id="print-query-adds-query-line"),
+        pytest.param("--read0", id="read0-merges-all-options-into-one"),
+    ],
+)
+def test_fzf_selection_ignores_output_shaping_user_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+    choose: SelectionEntryPoint,
+    output_shaping_option: str,
+) -> None:
+    # fzf merges FZF_DEFAULT_OPTS into dotman's command line (#241). `--filter`
+    # runs the real fzf without a terminal and picks the one matching option.
+    monkeypatch.delenv("FZF_DEFAULT_OPTS_FILE", raising=False)
+    monkeypatch.setenv("FZF_DEFAULT_OPTS", f"--exact --filter=pkg-{SELECTED_LINE_NUMBER} {output_shaping_option}")
+    monkeypatch.setenv("LINES", SHORT_TERMINAL_LINES)
+    options = _package_options()
+
+    assert choose(options) == options[SELECTED_LINE_NUMBER - 1][0]

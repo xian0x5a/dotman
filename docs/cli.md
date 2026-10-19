@@ -372,6 +372,7 @@ dotman --no-confirm sync main:app.settings
 - Selector labels in those menus should use canonical selector text, and include the repo only as disambiguation context.
 - For longer candidate lists, dotman should prefer `fzf` when available instead of dumping a tall numbered menu.
 - The fzf menus need fzf 0.54 or newer. Esc, Ctrl-C, or Enter with no match cancels like Ctrl-C at a prompt; any other fzf failure (for example an older fzf rejecting an option) is an error that shows fzf's own message.
+- The fzf menus keep the look set in `FZF_DEFAULT_OPTS` but reset the options there that change how fzf reads its list or prints the pick (`--multi`, `--print-query`, `--expect`, `--read0`, `--print0`). `--accept-nth` in `FZF_DEFAULT_OPTS` is not supported.
 - Interactive selector menus should render bottom-up by default.
 - Bottom-up selector menus should remain user-toggleable, but the default should favor bottom-up display.
 - Manager config may override the default under `[ui.menus]`, and `DOTMAN_MENU_BOTTOM_UP` should still act as a single-run override.
