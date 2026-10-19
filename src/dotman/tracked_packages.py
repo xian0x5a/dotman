@@ -332,6 +332,7 @@ def describe_tracked_package_entry(
         repo,
         package,
         context.context,
+        bound_profile=selection.identity.bound_profile,
         file_symlink_mode=planning_context.config.file_symlink_mode,
         dir_symlink_mode=planning_context.config.dir_symlink_mode,
     )
@@ -383,6 +384,7 @@ def summarize_targets(
     package: PackageSpec,
     context: dict[str, Any],
     *,
+    bound_profile: str | None = None,
     file_symlink_mode: str = "prompt",
     dir_symlink_mode: str = "fail",
 ) -> list[TrackedTargetSummary]:
@@ -390,7 +392,9 @@ def summarize_targets(
     for target in (package.targets or {}).values():
         if target.disabled:
             continue
-        target_label = repo_qualified_target_text(repo_name=repo.config.name, package_id=package.id, target_name=target.name)
+        target_label = repo_qualified_target_text(
+            repo_name=repo.config.name, package_id=package.id, target_name=target.name, bound_profile=bound_profile,
+        )
         if target.probe is not None:
             validate_probe_target_config(repo_name=repo.config.name, package=package, target=target)
             target_summaries.append(

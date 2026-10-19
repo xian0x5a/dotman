@@ -332,9 +332,15 @@ def test_record_binding_rejects_pull_only_same_repo_path_when_live_paths_do_not_
         engine.record_tracked_package_entry(selector)
 
 
+@pytest.mark.parametrize(
+    ("beta_binding_mode", "beta_label"),
+    [("singleton", r"fixture:beta\.beta"), ("multi_instance", r"fixture:beta<default>\.beta")],
+)
 def test_package_reserved_paths_conflict_with_other_package_target(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    beta_binding_mode: str,
+    beta_label: str,
 ) -> None:
     home = tmp_path / "home"
     home.mkdir()
@@ -363,7 +369,7 @@ def test_package_reserved_paths_conflict_with_other_package_target(
     (repo_root / "packages" / "beta" / "package.toml").write_text(
         "\n".join(
             [
-                "",
+                f'binding_mode = "{beta_binding_mode}"',
                 "[targets.beta]",
                 'source = "files/beta.conf"',
                 'path = "~/.config/shared/beta.conf"',
@@ -379,7 +385,7 @@ def test_package_reserved_paths_conflict_with_other_package_target(
 
     with pytest.raises(
         ValueError,
-        match=r"reserved path conflict: fixture:alpha reserves .+shared and fixture:beta\.beta maps to .+shared/beta\.conf",
+        match=rf"reserved path conflict: fixture:alpha reserves .+shared and {beta_label} maps to .+shared/beta\.conf",
     ):
         engine.resolve_sync_scope()
 

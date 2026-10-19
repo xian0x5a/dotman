@@ -408,6 +408,30 @@ def test_probe_target_rejects_file_payload_fields(tmp_path: Path) -> None:
         DotmanEngine.from_config_path(write_single_repo_config(tmp_path, repo_name="fixture", repo_path=repo_root))
 
 
+@pytest.mark.parametrize(
+    ("package_policy", "target_policy", "message"),
+    [
+        # Manifest parsing knows only the file, so it names the target by its location.
+        ("", 'sync_policy = "push-only-delete"', r"package manifest .+package\.toml target 'version' uses probe and cannot use push-only-delete"),
+        # A package-level policy only reaches the probe once resolved, where the canonical identity is known.
+        ('sync_policy = "push-only-delete"', "", r"target 'fixture:app\.version' uses probe and cannot use push-only-delete"),
+    ],
+)
+def test_probe_rejects_push_only_delete_policy(tmp_path: Path, package_policy: str, target_policy: str, message: str) -> None:
+    repo_root = tmp_path / "repo"
+    (repo_root / "profiles").mkdir(parents=True)
+    (repo_root / "packages" / "app").mkdir(parents=True)
+    (repo_root / "profiles" / "default.toml").write_text("", encoding="utf-8")
+    (repo_root / "packages" / "app" / "package.toml").write_text(
+        f'{package_policy}\n[targets.version]\nprobe = "exit 0"\n{target_policy}\n', encoding="utf-8",
+    )
+    write_tracked_packages_state(tmp_path / "state", repo_name="fixture", entries=[("app", "default")])
+
+    with pytest.raises(ValueError, match=message):
+        engine = DotmanEngine.from_config_path(write_single_repo_config(tmp_path, repo_name="fixture", repo_path=repo_root))
+        engine.resolve_sync_scope()
+
+
 def test_probe_target_does_not_create_direct_collision_candidate(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
