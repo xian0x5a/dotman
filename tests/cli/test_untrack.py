@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 import dotman.cli_interaction as cli
 from dotman.cli import main
 from dotman.interaction import ScriptedInteraction
@@ -91,6 +93,37 @@ def test_untrack_cli_updates_state(
             "",
         ]
     )
+
+@pytest.mark.parametrize(
+    "package_id",
+    [
+        pytest.param("git", id="resolvable"),
+        pytest.param("gone", id="invalid"),
+    ],
+)
+def test_untrack_cli_removes_every_duplicate_state_row(
+    tmp_path: Path,
+    monkeypatch,
+    package_id: str,
+) -> None:
+    # A hand-edited state file can repeat a row; untrack must leave none behind.
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    config_path = write_manager_config(tmp_path)
+    state_root = tmp_path / "state"
+    write_tracked_packages_state(
+        state_root,
+        repo_name="example",
+        entries=[(package_id, "basic"), (package_id, "basic"), ("nvim", "basic")],
+    )
+
+    exit_code = main(["--config", str(config_path), "--json", "untrack", f"example:{package_id}@basic"])
+
+    assert exit_code == 0
+    state_path = state_root / "dotman" / "repos" / "example" / "tracked-packages.toml"
+    assert f'package_id = "{package_id}"' not in state_path.read_text(encoding="utf-8")
+
 
 def test_untrack_cli_allows_selector_only_when_unique(
     tmp_path: Path,

@@ -759,7 +759,7 @@ Dotman should persist explicit package entries only.
 - no persisted target ownership yet
 - no persisted resolved package graph yet
 
-Tracked package state now uses `tracked-packages.toml` and `[[packages]]`, and each row represents one explicit tracked package entry.
+Tracked package state now uses `tracked-packages.toml` and `[[packages]]`, and each row represents one explicit tracked package entry. Repeated identical rows count as one entry, so `untrack` removes them all.
 
 For example:
 
