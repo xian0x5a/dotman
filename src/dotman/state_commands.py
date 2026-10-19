@@ -70,6 +70,11 @@ class StateCommandRunner:
 
         engine = self._engine_factory(args.config)
         with ui_config_scope(engine.config.ui):
+            if args.command == "reset" and args.unusable_repo is not None:
+                return cli_emit.emit_unusable_sync_bases_reset(
+                    result=engine.reset_unusable_sync_bases(args.unusable_repo or None),
+                    json_output=args.json_output, use_color=self._use_color,
+                )
             if args.command == "reset":
                 return cli_emit.emit_sync_base(
                     detail=engine.reset_sync_base(args.sync_unit), operation="reset-sync-base",

@@ -1141,6 +1141,17 @@ def emit_sync_base(*, detail, operation: str, json_output: bool, use_color: bool
     return 0
 
 
+def emit_unusable_sync_bases_reset(*, result, json_output: bool, use_color: bool) -> int:
+    if json_output:
+        print(json.dumps({"operation": "reset-sync-base", **result}, indent=2, sort_keys=True))
+        return 0
+    # Identities may hold control characters, so only the count is reported.
+    count = result["dropped"]
+    noun = "unusable Sync Base" if count == 1 else "unusable Sync Bases"
+    print(f'{count} {noun} {cli_style.render_sync_term(result["status"], use_color=use_color)}')
+    return 0
+
+
 def emit_sync_bases(*, entries, json_output: bool, use_color: bool) -> int:
     if json_output:
         print(json.dumps({"operation": "list-sync-bases", "sync_bases": entries}, indent=2, sort_keys=True))

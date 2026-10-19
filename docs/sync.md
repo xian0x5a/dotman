@@ -574,7 +574,8 @@ Changing between eligible policies preserves the checkpoint.
 
 Base inspection reports metadata and applicability without Observation,
 projections, or Verification Records. Exact reset discards one Base under the
-manager lock; doctor reports aggregate corrupt/orphaned counts without repair.
+manager lock; doctor reports aggregate corrupt/orphaned counts, and
+`reset sync-base --unusable` discards exactly those records.
 See [public workflows](sync-base-storage.md#public-inspection-and-reset).
 
 ### Applicability

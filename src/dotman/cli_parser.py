@@ -442,8 +442,15 @@ def build_parser() -> argparse.ArgumentParser:
     list_subparsers.add_parser("sync-bases", help="List currently usable Sync Bases")
     reset_parser = subparsers.add_parser("reset", help="Discard exact Sync Base ancestry")
     reset_subparsers = reset_parser.add_subparsers(dest="reset_command", required=True)
-    reset_base_parser = reset_subparsers.add_parser("sync-base", help="Immediately reset one exact Sync Base")
-    reset_base_parser.add_argument("sync_unit", metavar="<sync-unit>", help="Exact repo-qualified file target or directory child")
+    reset_base_parser = reset_subparsers.add_parser("sync-base", help="Immediately reset one exact Sync Base, or every unusable one")
+    reset_base_target = reset_base_parser.add_mutually_exclusive_group(required=True)
+    reset_base_target.add_argument(
+        "sync_unit", metavar="<sync-unit>", nargs="?", help="Exact repo-qualified file target or directory child",
+    )
+    reset_base_target.add_argument(
+        "--unusable", dest="unusable_repo", metavar="[repo]", nargs="?", const="",
+        help="Discard every Sync Base that doctor flags as corrupt or orphaned, in one repo or all",
+    )
     info_parser = subparsers.add_parser(
         "info",
         help="Show detailed information about tracked package state items",

@@ -130,3 +130,27 @@ def test_identity_together_with_unusable_is_a_usage_error_and_changes_nothing(tm
         main(["--config", str(engine.config.config_path), "reset", "sync-base", USABLE, "--unusable"])
     assert caught.value.code == 2
     assert stored_identities(engine) == {USABLE, ORPHAN_UNTRACKED_TARGET}
+
+
+def test_unusable_drops_record_files_that_fail_validation(tmp_path, monkeypatch, capsys):
+    # A corrupt file has no recoverable identity, so only the file location can name it.
+    engine = fixture_engine(tmp_path, monkeypatch)
+    store_record(engine, identity=USABLE)
+    store_record(engine, identity=ORPHAN_UNTRACKED_TARGET).write_bytes(b"not a record")
+    assert doctor_counts(engine) == (1, 0)
+
+    code, result = call(engine, capsys, "reset", "sync-base", "--unusable")
+
+    assert code == 0 and result["dropped"] == 1
+    assert doctor_counts(engine) == (0, 0)
+    assert stored_identities(engine) == {USABLE}
+
+
+def test_unusable_human_output_reports_only_the_count(tmp_path, monkeypatch, capsys):
+    engine = fixture_engine(tmp_path, monkeypatch)
+    store_record(engine, identity=LEGACY_NON_CANONICAL)
+
+    code = main(["--config", str(engine.config.config_path), "reset", "sync-base", "--unusable"])
+
+    assert code == 0
+    assert capsys.readouterr().out == "1 unusable Sync Base reset\n"

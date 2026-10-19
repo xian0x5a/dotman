@@ -395,6 +395,7 @@ dotman --no-confirm sync main:app.settings
 - `dotman list sync-bases` lists only currently usable Sync Bases.
 - `dotman info sync-base <sync-unit>` shows metadata and applicability for one exact repo-qualified file target or directory child; unavailable and ineligible results succeed.
 - `dotman reset sync-base <sync-unit>` immediately and idempotently discards one exact Base under the manager operation lock. It has no confirmation, dry-run, fuzzy selection, or scope expansion.
+- `dotman reset sync-base --unusable [repo]` replaces `<sync-unit>` to discard every Sync Base that `doctor` counts as corrupt or orphaned, in the named repo or all repos, under the same lock and without confirmation. Give exactly one of `<sync-unit>` or `--unusable`. Output is the dropped count only: `N unusable Sync Bases reset` (JSON `{"status": "reset", "dropped": N}`).
 - Sync Base inspection never observes drift, runs projections, or accesses Verification Records. See [Sync Base workflows and output](sync-base-storage.md#public-inspection-and-reset).
 - `dotman list repo` lists configured repos in configured order.
 - `dotman list trackables` lists every package and group available across configured repos.
