@@ -6,7 +6,7 @@ import shlex
 import stat
 import tempfile
 from dataclasses import dataclass, replace
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import tomlkit
 
@@ -59,6 +59,13 @@ class AddOperationResult:
         if self.chmod is not None:
             payload["target"]["chmod"] = self.chmod
         return payload
+
+
+@dataclass(frozen=True)
+class ExistingTargetMetadata:
+    names: set[str]
+    paths: set[str]
+    sources: set[str]
 
 
 @dataclass(frozen=True)
@@ -178,20 +185,21 @@ def prepare_add_to_package(*, repo_root: Path, repo_name: str, package_id: str, 
     if not manifest_path.exists():
         ensure_new_package_holds_no_packages(repo_root=repo_root, repo_name=repo_name, package_id=package_id)
     before_text = manifest_path.read_text(encoding="utf-8") if manifest_path.exists() else ""
-    existing_target_names, existing_target_paths = read_existing_target_metadata(
+    existing_targets = read_existing_target_metadata(
         before_text,
         manifest_path=manifest_path,
         repo_name=repo_name,
         package_id=package_id,
     )
-    if live_spec.config_path in existing_target_paths:
+    if live_spec.config_path in existing_targets.paths:
         raise ValueError(
             f"package '{repo_name}:{package_id}' already declares target path '{live_spec.config_path}'"
         )
-    target_name = next_available_target_name(live_spec.target_name_base, existing_target_names)
+    target_name = next_available_target_name(live_spec.target_name_base, existing_targets.names)
+    source_path = next_available_source_path(live_spec.source_path, existing_targets.sources)
     target_block = render_target_block(
         target_name=target_name,
-        source_path=live_spec.source_path,
+        source_path=source_path,
         config_path=live_spec.config_path,
         chmod=live_spec.chmod,
     )
@@ -203,7 +211,7 @@ def prepare_add_to_package(*, repo_root: Path, repo_name: str, package_id: str, 
         manifest_path=manifest_path,
         target_name=target_name,
         target_kind=live_spec.target_kind,
-        source_path=live_spec.source_path,
+        source_path=source_path,
         config_path=live_spec.config_path,
         chmod=live_spec.chmod,
         created_package=created_package,
@@ -250,9 +258,9 @@ def read_existing_target_metadata(
     manifest_path: Path | None = None,
     repo_name: str | None = None,
     package_id: str | None = None,
-) -> tuple[set[str], set[str]]:
+) -> ExistingTargetMetadata:
     if not manifest_text.strip():
-        return set(), set()
+        return ExistingTargetMetadata(names=set(), paths=set(), sources=set())
     payload = load_toml_text(
         manifest_text,
         context=_manifest_context(manifest_path=manifest_path, repo_name=repo_name, package_id=package_id),
@@ -260,16 +268,21 @@ def read_existing_target_metadata(
     )
     targets_payload = payload.get("targets")
     if not isinstance(targets_payload, dict):
-        return set(), set()
+        return ExistingTargetMetadata(names=set(), paths=set(), sources=set())
     target_names = set(targets_payload)
     for target_name in target_names:
         validate_target_name(target_name)
-    target_paths = {
-        target_payload["path"]
-        for target_payload in targets_payload.values()
-        if isinstance(target_payload, dict) and isinstance(target_payload.get("path"), str)
-    }
-    return target_names, target_paths
+    target_payloads = [target_payload for target_payload in targets_payload.values() if isinstance(target_payload, dict)]
+    return ExistingTargetMetadata(
+        names=target_names,
+        paths={target_payload["path"] for target_payload in target_payloads if isinstance(target_payload.get("path"), str)},
+        # Normalized so `./files/x` and `files/x/` count as the source `add` derives as `files/x`.
+        sources={
+            PurePosixPath(target_payload["source"]).as_posix()
+            for target_payload in target_payloads
+            if isinstance(target_payload.get("source"), str)
+        },
+    )
 
 
 def _manifest_context(*, manifest_path: Path | None = None, repo_name: str | None = None, package_id: str | None = None) -> str:
@@ -293,6 +306,19 @@ def next_available_target_name(base_name: str, existing_names: set[str]) -> str:
     while f"{base_name}_{suffix}" in existing_names:
         suffix += 1
     return f"{base_name}_{suffix}"
+
+
+def next_available_source_path(base_source: str, existing_sources: set[str]) -> str:
+    # Distinct live files can derive one source (`~/.zshrc` and `~/zshrc` both give
+    # `files/zshrc`), and two targets sharing a repo file cannot be tracked together.
+    # The suffix goes before the extension so the repo file keeps its file type.
+    if base_source not in existing_sources:
+        return base_source
+    base_path = PurePosixPath(base_source)
+    suffix = 2
+    while (candidate := base_path.with_stem(f"{base_path.stem}_{suffix}").as_posix()) in existing_sources:
+        suffix += 1
+    return candidate
 
 
 def render_target_block(*, target_name: str, source_path: str, config_path: str, chmod: str | None) -> str:

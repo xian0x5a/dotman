@@ -217,6 +217,32 @@ def test_add_cli_fails_when_package_already_declares_same_live_path(
     assert "already declares target path '~/.gitconfig'" in capsys.readouterr().err
 
 
+def test_add_cli_keeps_package_trackable_when_live_files_derive_the_same_source(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    # `~/.zshrc` and `~/zshrc` both derive `files/zshrc` once leading dots are stripped.
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    for name in (".zshrc", "zshrc"):
+        (home / name).write_text(f"{name}\n", encoding="utf-8")
+
+    repo_root = tmp_path / "repo"
+    (repo_root / "profiles").mkdir(parents=True)
+    (repo_root / "profiles" / "default.toml").write_text("", encoding="utf-8")
+    config_path = write_named_manager_config(tmp_path, {"fixture": repo_root})
+
+    sources = []
+    for name in (".zshrc", "zshrc"):
+        assert main(["--config", str(config_path), "--json", "--no-confirm", "add", str(home / name), "fixture:shell"]) == 0
+        sources.append(json.loads(capsys.readouterr().out)["target"]["source"])
+
+    assert len(set(sources)) == 2
+    assert main(["--config", str(config_path), "--no-confirm", "track", "fixture:shell@default"]) == 0
+
+
 def test_add_cli_strips_leading_dots_from_source_components_outside_home(
     tmp_path: Path,
     monkeypatch,
