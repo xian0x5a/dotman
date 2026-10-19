@@ -36,6 +36,7 @@ Repository Apply; repository sources are never included. See
 - The default snapshot root is `$XDG_DATA_HOME/dotman/snapshots/`.
 - If `XDG_DATA_HOME` is unset, dotman falls back to `~/.local/share/dotman/snapshots/`.
 - Each snapshot lives in its own directory under that root.
+- Snapshots copy live bytes that may be secrets, so each snapshot directory is owner-only (`0700`) and stored file contents are `0600`, whatever the live file's mode. The live mode is recorded in the manifest and applied on restore.
 - Snapshot storage is independent from repo tracked package state under `$XDG_STATE_HOME`.
 - Snapshot restore does not depend on the current repo contents or the current tracked package set.
 
