@@ -652,6 +652,7 @@ Examples: `dotman pull main:git.config`,
   - `~/.gitconfig` -> `files/gitconfig`
   - `~/.config/nvim/init.lua` -> `files/config/nvim/init.lua`
   - `/etc/.ssh/ssh_config` -> `files/etc/ssh/ssh_config`
+- If another target in the same package already uses the derived `source`, `add` should append a numeric suffix such as `_2`, `_3` to the source name, before any extension, until it is unique. For example, adding `~/zshrc` after `~/.zshrc` gives `files/zshrc_2`, and `files/config/app.toml` becomes `files/config/app_2.toml`.
 - `add` should inspect the actual live file mode and include `chmod` only when the mode is unusual.
 - The usual default modes are:
   - regular file: `644`
