@@ -11,10 +11,9 @@ from typing import Sequence
 
 import tomlkit
 
-from dotman.file_access import remove_empty_directory_tree
-from dotman.atomic_files import write_text_atomic
+from dotman import file_access
+from dotman.atomic_files import write_bytes_atomic, write_text_atomic
 from dotman.toml_utils import load_toml_file
-from dotman.execution import delete_path_and_prune_empty_parents, write_bytes_atomic, write_symlink_atomic
 from dotman.models import PackagePlan, SnapshotConfig
 
 
@@ -188,7 +187,7 @@ def create_push_snapshot(plans: Sequence[PackagePlan], snapshot_config: Snapshot
                 mode = stat.S_IMODE(managed_path.stat().st_mode)
             elif existed_before and not preserve_symlink_identity:
                 content_path = Path("entries") / f"{index:04d}.bin"
-                write_bytes_atomic(snapshot_root / content_path, managed_path.read_bytes(), mode=_PRIVATE_BLOB_MODE)
+                write_bytes_atomic(snapshot_root / content_path, file_access.read_bytes(managed_path), mode=_PRIVATE_BLOB_MODE)
                 mode = stat.S_IMODE(managed_path.stat().st_mode)
             entries.append(
                 SnapshotEntry(
@@ -392,7 +391,7 @@ def build_restore_actions(snapshot: SnapshotRecord) -> list[RestoreAction]:
             )
             continue
 
-        current_bytes = restore_path.read_bytes() if current_exists and not current_directory else b""
+        current_bytes = file_access.read_bytes(restore_path) if current_exists and not current_directory else b""
         current_mode = stat.S_IMODE(restore_path.stat().st_mode) if current_exists else None
 
         if entry.existed_before:
@@ -465,23 +464,23 @@ def execute_restore_action(action: RestoreAction) -> RestoreActionResult:
             if target_path.is_symlink():
                 raise ValueError(f"Restore directory must not be a symlink: {target_path}")
             if target_path.exists() and not target_path.is_dir():
-                target_path.unlink()
+                file_access.delete_path_and_prune_empty_parents(target_path, root=target_path.parent)
             target_path.mkdir(parents=True, exist_ok=True)
             if action.desired_mode is not None:
-                target_path.chmod(action.desired_mode)
+                file_access.chmod(target_path, action.desired_mode)
         elif action.after_link_target is not None:
             if action.action in {"create", "update"}:
-                write_symlink_atomic(target_path, action.after_link_target)
+                file_access.write_symlink_atomic(target_path, action.after_link_target)
             elif action.action == "delete":
-                delete_path_and_prune_empty_parents(target_path, root=action.prune_root or target_path.parent)
+                file_access.delete_path_and_prune_empty_parents(target_path, root=action.prune_root or target_path.parent)
             else:
                 raise ValueError(f"unsupported restore action '{action.action}'")
         elif action.action in {"create", "update"}:
             if target_path.is_dir() and not target_path.is_symlink():
-                remove_empty_directory_tree(target_path)
-            write_bytes_atomic(target_path, action.after_bytes, mode=action.desired_mode)
+                file_access.remove_empty_directory_tree(target_path)
+            file_access.write_bytes_atomic(target_path, action.after_bytes, mode=action.desired_mode)
         elif action.action == "delete":
-            delete_path_and_prune_empty_parents(target_path, root=action.prune_root or target_path.parent)
+            file_access.delete_path_and_prune_empty_parents(target_path, root=action.prune_root or target_path.parent)
         else:
             raise ValueError(f"unsupported restore action '{action.action}'")
         return RestoreActionResult(action=action, status="ok")

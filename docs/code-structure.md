@@ -88,7 +88,7 @@ Current responsibility split:
 - `sync_session.py` — shared Proposal workset, immutable views, semantic commands, transactional Approval and Sync convergence orchestration
 - `pull_session.py` — fixed live-to-repository Observation, opt-out Proposal/Additional Approval and repository-only completion over the shared workset
 - `push_session.py` — fixed repository-to-live Observation, opt-out Use repository Approval and inherited Live Publication over the shared workset
-- `execution.py` — the shared command-hook execution boundary, plus live-file write/delete helpers for snapshot restore and directory file-mode sync
+- `execution.py` — the shared command-hook execution boundary, plus directory file-mode sync
 - `sync_editor.py` — isolated configured/default Editor invocation and permitted source staging
 - `sync_observation.py` — file endpoint evidence, policy comparisons, frozen Guards/Base facts and opening-time Base lifecycle
 - `sync_auxiliary.py` — immutable Probe/hook rows, one-shot Probe activity and Guard-admitted directional hook retention

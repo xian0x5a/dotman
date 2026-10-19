@@ -7,8 +7,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Sequence
 
-from dotman.atomic_files import write_bytes_atomic as atomic_write_bytes_atomic
-from dotman.atomic_files import write_symlink_atomic as atomic_write_symlink_atomic
 from dotman.command_runtime import (
     INTERRUPTED_EXIT_CODE,
     CommandRequest,
@@ -170,27 +168,6 @@ def directory_synced_file_mode(*, destination_mode: int, source_mode: int) -> in
     if source_mode & exec_bits:
         return destination_mode | exec_bits
     return destination_mode & ~exec_bits
-
-
-def write_bytes_atomic(path: Path, content: bytes, *, mode: int | None = None) -> None:
-    atomic_write_bytes_atomic(path, content, mode=mode)
-
-
-def write_symlink_atomic(path: Path, target: str | Path) -> None:
-    atomic_write_symlink_atomic(path, target)
-
-
-def delete_path_and_prune_empty_parents(path: Path, *, root: Path) -> None:
-    if path.exists() or path.is_symlink():
-        path.unlink()
-    prune_root = root if root.is_dir() else root.parent
-    current = path.parent
-    while current.exists() and current != prune_root and current != current.parent:
-        try:
-            current.rmdir()
-        except OSError:
-            break
-        current = current.parent
 
 
 def _is_interrupt_exit_code(exit_code: int) -> bool:

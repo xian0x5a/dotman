@@ -78,6 +78,7 @@ $XDG_DATA_HOME/dotman/snapshots/
 - If a recorded path was a symlink before publication, restore should either recreate the link target or restore the resolved target path, depending on the snapshot entry's recorded symlink handling mode.
 - If a recorded path did not exist before publication, restore should remove it.
 - Restore may prune empty parent directories left behind by deleting snapshot-created paths.
+- Snapshot capture and restore read and write protected live paths through the same sudo-backed file access as push, so a target that push can update can also be captured and restored.
 - Restore planning and diff review compare current live content against the snapshot-recorded desired restore state.
 - Restore does not run package hooks.
 - Restore fails fast if the snapshot manifest is invalid or required stored content is missing.
