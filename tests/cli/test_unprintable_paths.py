@@ -97,8 +97,9 @@ def test_an_authored_path_with_line_breaks_cannot_forge_a_row(
 
     assert code == 0, stdout + stderr
     assert SHOWN_FORGED_ROW_PATH in stdout
+    # A real push step prints its own `      ok` status line, so only the forged
+    # summary line, which no real run prints, proves the path stayed on its row.
     lines = stdout.splitlines()
-    assert "      ok" not in lines
     assert [line for line in lines if line.startswith(":: completed \u2014 approved: 0")] == []
 
 
