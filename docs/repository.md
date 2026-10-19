@@ -65,6 +65,7 @@ under `examples/repo/`.
 - The composed/effective profile is runtime resolution context, not package identity.
 - Packages with no file payload may still be useful as meta packages when they only declare `depends`.
 - Any string value may contain template expressions and is rendered during resolution.
+- Var strings, including those nested in tables and lists, may reference other vars. Each is rendered once, after the vars it references, so `{% raw %}` output stays literal; a reference cycle, including a var that references itself, is an error.
 - Template vars are available both at top level and under `vars`, so `{{ greeting }}` and `{{ vars.greeting }}` resolve to the same value.
 - A package may define `extends = [...]` to inherit from one or more parent packages before profile and local values are applied.
 - Parent packages resolve in declaration order.

@@ -129,7 +129,7 @@ def test_capture_patch_rejects_clean_merge_that_changes_template_syntax(tmp_path
     # The expression renders to its own source text, so Git sees an unchanged
     # line and cleanly takes the live replacement, deleting the expression.
     source = b"{{ vars.payload }}\n"
-    variables = {"payload": "{{ vars.payload }}"}
+    variables = {"payload": "{% raw %}{{ vars.payload }}{% endraw %}"}
 
     with pytest.raises(CaptureError, match="template syntax"):
         _capture_template_edit(
