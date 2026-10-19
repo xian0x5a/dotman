@@ -10,7 +10,7 @@ from typing import Any
 from dotman.errors import UsageError
 from dotman.models import AdditionalSource, DefaultCommandElevationMode, EditorSpec, HookCommandSpec, HookSpec, PackageSpec, RepoIgnoreDefaults, TargetPathRule, TargetSpec, repo_qualified_target_text
 from dotman.presets import BUILTIN_TARGET_PRESETS, get_builtin_target_preset
-from dotman.printable import SELECTOR_ID_RESERVED_CHARACTERS, validate_printable_name
+from dotman.printable import PROFILE_ID_RESERVED_CHARACTERS, SELECTOR_ID_RESERVED_CHARACTERS, validate_printable_name
 
 
 VALID_COMMAND_IO_VALUES = ("pipe", "tty")
@@ -55,11 +55,6 @@ def _validate_namespaced_id(selector_id: str, *, kind: str) -> None:
     parts = selector_id.split("/")
     if any(not part or part in {".", ".."} or any(character.isspace() for character in part) for part in parts):
         raise UsageError(f"invalid {kind} id '{selector_id}'")
-
-
-# Profile IDs sit inside `@profile` and `<profile>`, where dots, spaces and
-# other punctuation are allowed; only the characters that delimit them are reserved.
-PROFILE_ID_RESERVED_CHARACTERS = ("@", "<", ">")
 
 
 def validate_package_id(package_id: str) -> None:

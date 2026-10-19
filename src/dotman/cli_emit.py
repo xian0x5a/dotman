@@ -16,7 +16,7 @@ from dotman.operation_runner import (
     RestoreOperationFinished,
     RestoreOperationStarted,
 )
-from dotman.printable import terminal_safe_name, terminal_safe_text
+from dotman.printable import terminal_safe_line, terminal_safe_text
 from dotman.tracking import SkippedCatalogPackage
 
 
@@ -84,7 +84,7 @@ class HumanExecutionRenderer:
                 print(f"      {cli_style.render_execution_status('ok', use_color=self.use_color)}")
             else:
                 if action_result.error:
-                    print(f"      {action_result.error}")
+                    print(f"      {terminal_safe_text(action_result.error)}")
                 print(f"      {cli_style.render_execution_status(action_result.status, use_color=self.use_color)}")
         elif isinstance(event, RestoreOperationFinished):
             return
@@ -192,7 +192,7 @@ def emit_trackables(*, trackables: Sequence[Any], json_output: bool, use_color: 
             member_count=trackable.member_count,
             use_color=use_color,
         )
-        description = cli_style.render_annotation_parentheses(terminal_safe_text(trackable.description or ""), use_color=use_color)
+        description = cli_style.render_annotation_parentheses(terminal_safe_line(trackable.description or ""), use_color=use_color)
         print(f"{cli_style.join_menu_display_fields(selector_label, kind_badge, meta_badge)}{description}")
     return 0
 
@@ -223,7 +223,7 @@ def emit_repos(*, repos: Sequence[Any], json_output: bool, use_color: bool) -> i
         order_badge = cli_style.render_menu_badge(f"[order {repo.order}]", use_color=use_color)
         state_annotation = "" if repo.state_key == repo.name else f"state_key: {repo.state_key}"
         print(
-            f"{cli_style.join_menu_display_fields(repo_name, order_badge, str(repo.path))}"
+            f"{cli_style.join_menu_display_fields(repo_name, order_badge, terminal_safe_line(str(repo.path)))}"
             f"{cli_style.render_annotation_parentheses(state_annotation, use_color=use_color)}"
         )
     return 0
@@ -265,11 +265,11 @@ def _print_doctor_check_list(*, checks: Sequence[Any], use_color: bool) -> None:
         print(f"    {cli_style.render_payload_section_label(f'{category}:', use_color=use_color)}")
         for check in category_checks:
             owner_label = f"[{check.repo_name}] " if check.repo_name is not None else ""
-            print(f"    - {owner_label}{check.detail}")
+            print(f"    - {owner_label}{terminal_safe_line(check.detail)}")
             if check.path is not None:
-                print(f"        {cli_style.render_error_metadata_label('path:', use_color=use_color)} {check.path}")
+                print(f"        {cli_style.render_error_metadata_label('path:', use_color=use_color)} {terminal_safe_line(str(check.path))}")
             if check.hint is not None:
-                print(f"        {cli_style.render_error_metadata_label('hint:', use_color=use_color)} {check.hint}")
+                print(f"        {cli_style.render_error_metadata_label('hint:', use_color=use_color)} {terminal_safe_line(check.hint)}")
 
 
 def emit_doctor_summary(*, engine: Any, summary: Any, json_output: bool, use_color: bool) -> int:
@@ -280,7 +280,7 @@ def emit_doctor_summary(*, engine: Any, summary: Any, json_output: bool, use_col
 
     _print_payload_header("Doctor", use_color=use_color)
     print(f"  {cli_style.render_error_metadata_label('status:', use_color=use_color)} {'ok' if summary.ok else 'failed'}")
-    print(f"  {cli_style.render_error_metadata_label('config:', use_color=use_color)} {summary.config_path}")
+    print(f"  {cli_style.render_error_metadata_label('config:', use_color=use_color)} {terminal_safe_line(str(summary.config_path))}")
     print(f"  {cli_style.render_error_metadata_label('repos:', use_color=use_color)} {summary.repo_count}")
     print(f"  {cli_style.render_error_metadata_label('checks:', use_color=use_color)} {len(summary.checks)}")
     if summary.failed_checks:
@@ -304,7 +304,7 @@ def emit_doctor_summary(*, engine: Any, summary: Any, json_output: bool, use_col
             print(
                 "  - "
                 f"{_render_tracked_issue_label(engine, issue, use_color=use_color)} "
-                f"{cli_style.render_tracked_state(issue.state, use_color=use_color)} — {terminal_safe_text(issue.message)}"
+                f"{cli_style.render_tracked_state(issue.state, use_color=use_color)} — {terminal_safe_line(issue.message)}"
             )
     if summary.ok:
         print("  no issues found")
@@ -322,7 +322,7 @@ def emit_search_matches(*, matches: Sequence[Any], query: str, json_output: bool
         return 0
 
     if not matches:
-        print(f"no packages or groups matched '{query}'")
+        print(f"no packages or groups matched '{terminal_safe_line(query)}'")
         return 0
 
     for match in matches:
@@ -333,7 +333,7 @@ def emit_search_matches(*, matches: Sequence[Any], query: str, json_output: bool
             member_count=match.member_count,
             use_color=use_color,
         )
-        description = cli_style.render_annotation_parentheses(terminal_safe_text(match.description or ""), use_color=use_color)
+        description = cli_style.render_annotation_parentheses(terminal_safe_line(match.description or ""), use_color=use_color)
         package_label = cli_style.render_package_label(
             repo_name=match.repo,
             package_id=match.selector,
@@ -382,11 +382,7 @@ def emit_variable_detail(*, variable_detail: Any, json_output: bool, use_color: 
         print(json.dumps(payload, indent=2, sort_keys=True))
         return 0
 
-    header_text = variable_detail.variable
-    if use_color:
-        print(cli_style.style_text(header_text, "1"))
-    else:
-        print(header_text)
+    print(cli_style.render_variable_name(variable_detail.variable, use_color=use_color))
 
     for index, occurrence in enumerate(variable_detail.occurrences):
         if index > 0:
@@ -402,15 +398,15 @@ def emit_variable_detail(*, variable_detail: Any, json_output: bool, use_color: 
         print(f"      {binding_label}")
         print()
         print(cli_style.render_info_section_header("resolved value", use_color=use_color))
-        print(f"      {_format_variable_value(occurrence.value)}")
+        print(f"      {terminal_safe_line(_format_variable_value(occurrence.value))}")
         print()
         print(cli_style.render_info_section_header("provenance", use_color=use_color))
-        provenance_label = occurrence.provenance.source_label
+        provenance_label = terminal_safe_line(occurrence.provenance.source_label)
         if occurrence.provenance.source_kind in {"package", "profile"}:
             provenance_label = f"{occurrence.provenance.source_kind} {provenance_label}"
         print(
             f"      {cli_style.render_payload_section_label(provenance_label, use_color=use_color)}: "
-            f"{occurrence.provenance.source_path}"
+            f"{terminal_safe_line(str(occurrence.provenance.source_path))}"
         )
     return 0
 
@@ -572,10 +568,10 @@ def emit_add_result(*, result: Any, json_output: bool, use_color: bool) -> int:
     action = "created" if result.created_package else "updated"
     print(f"{action} package config {package_label}")
     # The source and path come from a live file name or an authored manifest, so they may hold unprintable characters.
-    print(f"  manifest: {terminal_safe_text(str(result.manifest_path))}")
-    print(f"  target:   {terminal_safe_name(result.target_name)} [{result.target_kind}]")
-    print(f"  source:   {terminal_safe_text(str(result.source_path))}")
-    print(f"  path:     {terminal_safe_text(str(result.config_path))}")
+    print(f"  manifest: {terminal_safe_line(str(result.manifest_path))}")
+    print(f"  target:   {terminal_safe_line(result.target_name)} [{result.target_kind}]")
+    print(f"  source:   {terminal_safe_line(str(result.source_path))}")
+    print(f"  path:     {terminal_safe_line(str(result.config_path))}")
     if result.chmod is not None:
         print(f"  chmod:    {result.chmod}")
     manifest_only_note = "manifest only; repo source files were not copied"
@@ -669,7 +665,8 @@ def render_hook_command_lines(
     io: str = "pipe",
     elevation: str = "none",
 ) -> list[str]:
-    command_lines = command.splitlines() or [""]
+    # A hook command is a script that may span lines and use tabs; its unprintable characters are still escaped.
+    command_lines = terminal_safe_text(command).splitlines() or [""]
     # Number multi-command hooks so users can tell distinct commands apart without cluttering single-command hooks.
     first_prefix = f"      [{index}] " if command_count > 1 else "      "
     continuation_prefix = " " * len(first_prefix)
@@ -779,7 +776,7 @@ def emit_trackable_detail(*, trackable_detail: Any, json_output: bool, use_color
             if target.path is None:
                 print(f"    {target_name}")
                 continue
-            print(f"    {target_name} -> {terminal_safe_text(str(target.path))}")
+            print(f"    {target_name} -> {terminal_safe_line(str(target.path))}")
         return 0
 
     tracked_state = trackable_detail.tracked_state.replace("_", " ")
@@ -857,7 +854,7 @@ def emit_tracked_package_detail(*, package_detail: Any, json_output: bool, use_c
         print(cli_style.render_info_section_header("owned targets", use_color=use_color))
     for target in package_detail.owned_targets:
         target_name = cli_style.style_text(target.target.target_name, '1') if use_color else target.target.target_name
-        print(f"    {target_name} -> {terminal_safe_text(str(target.target.live_path))}")
+        print(f"    {target_name} -> {terminal_safe_line(str(target.target.live_path))}")
     return 0
 
 
@@ -1057,12 +1054,9 @@ def _emit_error_block(*, header_text: str, fields: Sequence[tuple[str, str]], us
 
 
 def _error_attribute(error: Any, name: str) -> str | None:
-    """An error field, escaped for the terminal: errors echo user-written names and file paths.
-
-    Fields are escaped here, before any styling, so color codes survive.
-    """
+    """An error field as written. Errors echo user-written names and file paths, so the caller escapes it."""
     value = getattr(error, name, None)
-    return None if value is None else terminal_safe_text(str(value))
+    return None if value is None else str(value)
 
 
 def _structured_error_fields(error: Any, *, use_color: bool) -> list[tuple[str, str]]:
@@ -1074,7 +1068,7 @@ def _structured_error_fields(error: Any, *, use_color: bool) -> list[tuple[str, 
     target_name = _error_attribute(error, "target_name")
     path_rule_pattern = _error_attribute(error, "path_rule_pattern")
     if scope_kind == "repo" and repo_name is not None:
-        fields.append(("repo:", repo_name))
+        fields.append(("repo:", terminal_safe_line(repo_name)))
     elif scope_kind in {"package", "target", "path_rule"} and repo_name is not None and package_id is not None:
         fields.append(
             (
@@ -1089,7 +1083,7 @@ def _structured_error_fields(error: Any, *, use_color: bool) -> list[tuple[str, 
             )
         )
         if path_rule_pattern is not None:
-            fields.append(("path rule:", path_rule_pattern))
+            fields.append(("path rule:", terminal_safe_line(path_rule_pattern)))
     else:
         package_repo = _error_attribute(error, "package_repo")
         if package_repo is not None and package_id is not None:
@@ -1105,18 +1099,19 @@ def _structured_error_fields(error: Any, *, use_color: bool) -> list[tuple[str, 
             )
     path = _error_attribute(error, "path")
     if path is not None:
-        fields.append(("path:", path))
+        fields.append(("path:", terminal_safe_line(path)))
     detail = _error_attribute(error, "detail")
-    if detail is None:
-        if hasattr(error, "package_identity") and hasattr(error, "conflict_kind") and hasattr(error, "contenders"):
-            # Styled and built from loaded identities, whose names already passed validation.
-            detail = cli_style.render_profile_conflict_detail(error, use_color=use_color)
-        else:
-            detail = terminal_safe_text(str(error) or error.__class__.__name__)
+    if detail is not None:
+        detail = terminal_safe_text(detail)  # free text: it may span lines on purpose
+    elif hasattr(error, "package_identity") and hasattr(error, "conflict_kind") and hasattr(error, "contenders"):
+        # Styled and built from loaded identities, whose names already passed validation.
+        detail = cli_style.render_profile_conflict_detail(error, use_color=use_color)
+    else:
+        detail = terminal_safe_text(str(error) or error.__class__.__name__)
     fields.append(("detail:", detail))
     hint = _error_attribute(error, "hint")
     if hint is not None:
-        fields.append(("hint:", hint))
+        fields.append(("hint:", terminal_safe_line(hint)))
     return fields
 
 
@@ -1129,20 +1124,20 @@ def emit_skipped_entry_warnings(skipped_entries: Sequence[Any], *, use_color: bo
                 repo_name=skipped.repo, package_id=skipped.package_id, use_color=use_color
             )
             # Not tracked, so there is no row to untrack; the fix is in the repo.
-            print(f"{warning}: skipped package {package} ({terminal_safe_text(skipped.message)})", file=sys.stderr)
+            print(f"{warning}: skipped package {package} ({terminal_safe_line(skipped.message)})", file=sys.stderr)
             continue
         row = cli_style.render_full_spec_selector_reference(skipped.binding, use_color=use_color)
         # The hint stays plain text a shell can run. The row may hold unprintable
         # characters, so the selector is the escaped name, which untrack accepts for
         # exactly that row (tracking._is_named_by); shlex.quote keeps a space, a quote
         # or a backslash in it from splitting or changing the argument.
-        untrack_selector = terminal_safe_name(
+        untrack_selector = terminal_safe_line(
             cli_style.full_spec_selector_label_text(
                 repo_name=skipped.binding.repo, selector=skipped.binding.selector, profile=skipped.binding.profile
             )
         )
         print(
-            f"{warning}: skipped stale tracked row {row} ({terminal_safe_text(skipped.message)}); "
+            f"{warning}: skipped stale tracked row {row} ({terminal_safe_line(skipped.message)}); "
             f"see 'dotman list tracked', or remove it with: dotman untrack {shlex.quote(untrack_selector)}",
             file=sys.stderr,
         )

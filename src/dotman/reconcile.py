@@ -16,6 +16,7 @@ from dotman.errors import UsageError
 from dotman.models import AdditionalSource, EditorSpec
 from dotman.command_runtime import ArgvCommand, CommandRequest, CommandResult, current_command_runtime
 from dotman.file_access import chmod, read_bytes, write_bytes_atomic as sudo_write_bytes_atomic
+from dotman.printable import terminal_safe_line
 from dotman.terminal import colors_enabled, read_prompt_line
 
 
@@ -231,7 +232,7 @@ def _confirm_reconcile_write(*, changed_sources: list[EditableSourceCopy], appro
     if not quiet:
         print("Reconciled repo source changes:")
         for changed_source in changed_sources:
-            print(f"  - {changed_source.destination_path}")
+            print(f"  - {terminal_safe_line(str(changed_source.destination_path))}")
     if approve_write:
         return True
     while True:

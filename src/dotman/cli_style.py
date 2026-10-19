@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import NamedTuple, Sequence
 
 from dotman.package_resolution import parse_full_spec_selector_text
-from dotman.printable import terminal_safe_name
+from dotman.printable import terminal_safe_line
 from dotman.models import FullSpecSelector, ResolvedPackageIdentity, package_ref_text, repo_qualified_target_text, target_ref_text
 
 
@@ -107,9 +107,9 @@ def render_package_label(
 ) -> str:
     # Tracked state can hold rows an older dotman wrote with names that fail
     # `isprintable`; every rendered label shows them escaped (#295).
-    repo_name, package_id = terminal_safe_name(repo_name), terminal_safe_name(package_id)
-    bound_profile = None if bound_profile is None else terminal_safe_name(bound_profile)
-    target_name = None if target_name is None else terminal_safe_name(target_name)
+    repo_name, package_id = terminal_safe_line(repo_name), terminal_safe_line(package_id)
+    bound_profile = None if bound_profile is None else terminal_safe_line(bound_profile)
+    target_name = None if target_name is None else terminal_safe_line(target_name)
     package_ref = package_ref_text(package_id=package_id, bound_profile=bound_profile)
     if not use_color:
         return package_label_text(
@@ -166,7 +166,7 @@ def package_profile_label_text(*, repo_name: str, package_id: str, profile: str)
 
 
 def render_package_profile_label(*, repo_name: str, package_id: str, profile: str, use_color: bool) -> str:
-    repo_name, package_id, profile = map(terminal_safe_name, (repo_name, package_id, profile))
+    repo_name, package_id, profile = map(terminal_safe_line, (repo_name, package_id, profile))
     if not use_color:
         return package_profile_label_text(repo_name=repo_name, package_id=package_id, profile=profile)
     return (
@@ -182,7 +182,7 @@ def full_spec_selector_label_text(*, repo_name: str, selector: str, profile: str
 
 
 def render_full_spec_selector_label(*, repo_name: str, selector: str, profile: str, selector_first: bool = False, use_color: bool) -> str:
-    repo_name, selector, profile = map(terminal_safe_name, (repo_name, selector, profile))
+    repo_name, selector, profile = map(terminal_safe_line, (repo_name, selector, profile))
     if not use_color:
         return full_spec_selector_label_text(
             repo_name=repo_name,
@@ -264,6 +264,8 @@ def render_profile_conflict_detail(error: object, *, use_color: bool) -> str:
 
 
 def render_variable_name(variable_name: str, *, use_color: bool) -> str:
+    # Authored in a manifest and never checked at load, so it is escaped here.
+    variable_name = terminal_safe_line(variable_name)
     if not use_color:
         return variable_name
     return style_text(variable_name, "1")

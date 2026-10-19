@@ -10,6 +10,7 @@ from dotman.edit_resolution import EditResolver
 from dotman.errors import UsageError
 from dotman.interaction import Interaction
 from dotman.interaction_policy import InteractionRequiredError, interaction_scope
+from dotman.printable import terminal_safe_line, terminal_safe_text
 from dotman.progress import make_planning_sink
 from dotman.sync_timeline import SyncTimelineRenderer
 from dotman.cli_style import SYNC_TERM_STYLE_BY_NAME, render_annotation_parentheses, render_sync_term, render_package_label, render_summary_stat, style_text, MENU_REPO_STYLE
@@ -294,7 +295,7 @@ class SyncDeckCommandRunner:
     def _print_planning_skips(self, guard_skips, no_base_skips) -> None:
         for skip in guard_skips:
             label = guard_skip_label(skip["identity"], skip["direction"], skip["path_rule_pattern"], use_color=False)
-            reason = f": {skip['reason']}" if skip["reason"] else ""
+            reason = f": {terminal_safe_line(skip['reason'])}" if skip["reason"] else ""
             print(f"  {dim_when(f'[skipped] {label}', use_color=self._use_color)}")
             print(f"      {dim_when(f'Guard skipped{reason}', use_color=self._use_color)}")
         # Unlike Guard skips these need action, so they stay undimmed.
@@ -320,7 +321,7 @@ class SyncDeckCommandRunner:
         if deck_dismissed and not report:
             # Nothing ran; every entry would only echo a dismissed Deck row as pending.
             print(f":: {term(payload['status'])} — no changes made")
-            print(diagnostic["message"], file=sys.stderr)
+            print(terminal_safe_text(diagnostic["message"]), file=sys.stderr)
             return
         recap = timeline is not None and not report
         timeline_errors = timeline.shown_errors if recap else set()
@@ -336,7 +337,7 @@ class SyncDeckCommandRunner:
                 return None
             # A no-op offers no Approval, so "unselected" would misreport a user choice.
             lead = outcome if selected or diagnostics or outcome == "noop" else "unselected"
-            messages = [item["message"] for item in diagnostics if item["message"] not in timeline_errors]
+            messages = [terminal_safe_text(item["message"]) for item in diagnostics if item["message"] not in timeline_errors]
             if recap and not messages and outcome == "skipped":
                 skipped_count += 1
                 return None
@@ -371,8 +372,8 @@ class SyncDeckCommandRunner:
                 continue
             outcome = entry_outcome(change["result"], change["diagnostics"])
             lead = outcome if change["approved"] or change["diagnostics"] else "unselected"
-            messages = [item["message"] for item in change["diagnostics"]]
-            print(f"  [{term(lead)}] {change['repo']}:{change['path']}")
+            messages = [terminal_safe_text(item["message"]) for item in change["diagnostics"]]
+            print(f"  [{term(lead)}] {change['repo']}:{terminal_safe_line(change['path'])}")
             print(f"      {term('Additional Source Change')}: {change['kind']}")
             for message in messages:
                 print(f"      {message}")
@@ -395,7 +396,7 @@ class SyncDeckCommandRunner:
         for work in payload["commit_work"]:
             if work["result"] == "skipped" or work["result"] in ("failed", "interrupted") and work["error"] not in timeline_errors:
                 reason = "earlier work failed" if work["result"] == "skipped" else work["error"]
-                print(f"  [{term(work['result'])}] {work['repo']} commit ({reason})")
+                print(f"  [{term(work['result'])}] {work['repo']} commit ({terminal_safe_line(reason)})")
         # Execution diagnostics copy their failed step's error; print each failure once.
         shown = timeline_errors | {item["message"] for entry in (*payload["sync_units"], *payload["additional_source_changes"])
                                    for item in entry["diagnostics"]}
@@ -415,7 +416,7 @@ class SyncDeckCommandRunner:
                 continue
             # Command output belongs to the session-open diagnostic and stays out of JSON.
             reason = f": {output_line}" if output_line and item is diagnostic else ""
-            print(f"{item['message']}{reason}", file=sys.stderr)
+            print(terminal_safe_text(f"{item['message']}{reason}"), file=sys.stderr)
 
 
 # Collapse detailed Sync statuses into the execution log vocabulary

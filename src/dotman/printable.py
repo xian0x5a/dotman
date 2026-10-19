@@ -12,6 +12,10 @@ from dotman.errors import UsageError
 # `repo:package<profile>.target`, so they can't hold any of that syntax.
 SELECTOR_ID_RESERVED_CHARACTERS = ("\\", ":", "@", "<", ">", ".")
 
+# Profile IDs sit inside `@profile` and `<profile>`, where dots, spaces and
+# other punctuation are allowed; only the characters that delimit them are reserved.
+PROFILE_ID_RESERVED_CHARACTERS = ("@", "<", ">")
+
 KEPT_LAYOUT_CHARACTERS = "\n\t"
 
 
@@ -35,21 +39,23 @@ def printable_text(text: str) -> str:
     return "".join("\\\\" if character == "\\" else _shown(character) for character in text)
 
 
-def terminal_safe_name(name: str) -> str:
-    """A name for a person to read: every unprintable character is escaped, tab and newline included.
+def terminal_safe_line(text: str) -> str:
+    """Text for a person to read inside one line: every unprintable character is escaped, tab and newline included.
 
-    A name never carries layout, so it cannot start a new line or shift a column.
-    Not injective: a backslash stays a backslash. Use it for names; use
-    `terminal_safe_text` for free text and `printable_text` for identities.
+    Use it for names, paths and any other field of a row or a labelled line, so
+    the text cannot start a new line or shift a column. Not injective: a
+    backslash stays a backslash. Free text that may span lines uses
+    `terminal_safe_text`; identities use `printable_text`.
     """
-    return "".join(_shown(character) for character in name)
+    return "".join(_shown(character) for character in text)
 
 
 def terminal_safe_text(text: str) -> str:
-    """Free text for a person to read: unprintable characters are escaped, but newline and tab stay.
+    """Free text for a person to read as a block: unprintable characters are escaped, but newline and tab stay.
 
-    Descriptions and error details are written to be read and may span lines.
-    Names and other fields that must stay on one line use `terminal_safe_name`.
+    Only a block of free text that may span lines keeps its layout: the `info`
+    description, an error's detail, a Sync diagnostic or failure message, and a
+    hook command. Anything inside a one-line row or field uses `terminal_safe_line`.
     """
     return "".join(
         character if character in KEPT_LAYOUT_CHARACTERS else _shown(character) for character in text
@@ -64,4 +70,4 @@ def validate_printable_name(name: str, *, kind: str) -> None:
     are refused up front. The name is echoed escaped.
     """
     if not name.isprintable():
-        raise UsageError(f"invalid {kind} '{terminal_safe_name(name)}': names must be printable characters")
+        raise UsageError(f"invalid {kind} '{terminal_safe_line(name)}': names must be printable characters")

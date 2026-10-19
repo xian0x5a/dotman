@@ -5,6 +5,7 @@ from __future__ import annotations
 from dotman.diff_review import display_review_path
 from dotman.cli_style import MENU_REPO_STYLE, render_execution_action_column, render_execution_status, render_package_label, style_text
 from dotman.execution import ExecutionStep, StepFinished, StepStarted, step_group_key
+from dotman.printable import terminal_safe_text
 from dotman.ui_context import current_ui_config
 
 
@@ -53,7 +54,8 @@ class SyncTimelineRenderer:
             self.shown_errors.add(result.error)
             # Hook output was streamed live, so only the exit status is new.
             detail = f"exit {result.exit_code}" if step.kind == "hook" and result.exit_code is not None else result.error
-            print(f"      {detail}")
+            # A failure is free text and may span lines; its unprintable characters are still escaped.
+            print(f"      {terminal_safe_text(detail)}")
         print(f"      {render_execution_status(result.status, use_color=self._use_color)}", flush=True)
 
 
