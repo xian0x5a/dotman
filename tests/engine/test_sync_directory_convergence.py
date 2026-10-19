@@ -354,3 +354,28 @@ def test_child_merge_conflict_clears_only_affected_standing_approval(tmp_path, m
         assert isinstance(a.diagnostics[0].conflict, DirectoryChildPresent)
         assert a.diagnostics[0].conflict.content.startswith(b"<<<<<<< repository\n")
         assert b.approved and b.proposal is not None
+
+
+@pytest.mark.parametrize("repo_exec,live_exec", [(True, False), (False, True)])
+def test_child_add_add_since_missing_base_keeps_repository_executable(tmp_path, monkeypatch, repo_exec, live_exec):
+    engine = directory_engine(tmp_path, monkeypatch)
+    repo = put(tmp_path / "repo/packages/app/tree", "child", b"old\n")
+    live = put(tmp_path / "live/tree", "child", b"old\n")
+    commit(tmp_path)
+    with open_directory(engine, preview=False):
+        pass
+    live.unlink()
+    with open_directory(engine, preview=False) as session:
+        command(session, SetApproval, "main:app.tree/child", True)
+        assert session.execute().result.units[0].status == "converged"
+    assert not repo.exists()
+    # The child's Base now records Missing; both sides add the same bytes with different executable state.
+    put(repo.parent, "child", b"new\n").chmod(0o755 if repo_exec else 0o644)
+    put(live.parent, "child", b"new\n").chmod(0o755 if live_exec else 0o644)
+    with open_directory(engine, preview=False) as session:
+        row, = session.view.rows
+        assert row.intent == "merge"
+        command(session, SetApproval, row.row_id, True)
+        row, = session.view.rows
+        assert row.diagnostics == ()
+        assert row.proposal.repository == DirectoryChildPresent(b"new\n", repo_exec)

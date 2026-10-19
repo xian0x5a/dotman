@@ -1,7 +1,7 @@
 """Three-way reconciliation of frozen repository representations."""
 
 from dotman.command_runtime import CommandRuntime
-from dotman.sync_base_store import FilePresent, DirectoryChildPresent, SyncBasePayload
+from dotman.sync_base_store import FilePresent, DirectoryChildPresent, Missing, SyncBasePayload
 from dotman.text_merge import TextMergeFailed, merge_text
 
 
@@ -50,6 +50,18 @@ class ReconciliationFailed(ValueError):
     """The reconciliation provider failed; its frozen operands remain retryable."""
 
 
+def _empty_ancestor(captured: FilePresent | DirectoryChildPresent) -> FilePresent | DirectoryChildPresent:
+    """Ancestor for add/add: both sides created the file since the Base recorded it Missing.
+
+    Like Git, merge against empty content so differing additions yield conflict
+    blocks for the Editor. With no recorded executable state, the ancestor takes
+    Capture's, so a disagreement keeps the repository's declared state.
+    """
+    if isinstance(captured, DirectoryChildPresent):
+        return DirectoryChildPresent(b"", captured.executable)
+    return FilePresent(b"")
+
+
 def reconcile(
     base: SyncBasePayload,
     repository: SyncBasePayload,
@@ -63,6 +75,8 @@ def reconcile(
         return captured
     if captured == base:
         return repository
+    if isinstance(base, Missing) and type(repository) is type(captured) is not Missing:
+        base = _empty_ancestor(captured)
     if not all(isinstance(value, (FilePresent, DirectoryChildPresent)) for value in (base, repository, captured)):
         raise ReconciliationConflict("Repository and Capture disagree on file presence")
     if isinstance(repository, DirectoryChildPresent):
