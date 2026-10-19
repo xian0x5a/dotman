@@ -1885,7 +1885,10 @@ def run_command_deck(session: SyncSession, *, use_color: bool) -> bool:
     previous = signal.getsignal(signal.SIGINT)
 
     def abort_on_sigint(signum: int, frame: object) -> None:
-        record_sigint()
+        # While editing, SIGINT cancels only the Editor attempt and the Deck goes
+        # on, so only a SIGINT that ends the Deck may end dotman by SIGINT.
+        if not app._editing:
+            record_sigint()
         app.action_abort()
 
     signal.signal(signal.SIGINT, abort_on_sigint)

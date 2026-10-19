@@ -201,7 +201,8 @@ def test_tty_editor_returns_terminal_and_cancel_preserves_selected_proposal(tmp_
         wait_until(lambda: b"approved:" in output, process, read_output)
         os.write(master, b"\x03")
         wait_until(lambda: process.poll() is not None, process, read_output)
-        assert process.returncode == -signal.SIGINT
+        # The SIGINT only cancelled the Editor; the Deck's key abort ended the run.
+        assert process.returncode == 130
         assert termios.tcgetattr(slave) == terminal_before
         assert b"Traceback" not in output
     except AssertionError as exc:

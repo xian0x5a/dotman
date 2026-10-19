@@ -427,7 +427,9 @@ class ProductionCommandRuntime(_CancellationLatch):
                 return_code = self._wait(process)
                 # The child shares the terminal's process group, so a Ctrl-C it died
                 # from also reached this process, which was ignoring SIGINT meanwhile.
-                if return_code == -signal.SIGINT:
+                # Off the main thread SIGINT was not ignored, so dotman's own
+                # handler already saw any SIGINT meant for it.
+                if main_thread and return_code == -signal.SIGINT:
                     record_sigint()
             except (KeyboardInterrupt, InterruptedError):
                 self.request_cancel()

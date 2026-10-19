@@ -205,7 +205,7 @@ import os
 import socket
 import sys
 
-from dotman.command_runtime import INTERRUPTED_EXIT_CODE, ArgvCommand, CommandRequest, ProductionCommandRuntime, exit_from_interrupt
+from dotman.command_runtime import INTERRUPTED_EXIT_CODE, ArgvCommand, CommandRequest, ProductionCommandRuntime, exit_from_interrupt, sigint_received
 
 broker = os.environ.get("DOTMAN_ELEVATION_BROKER")
 real_sudo = os.environ.get("DOTMAN_REAL_SUDO")
@@ -268,7 +268,8 @@ result = ProductionCommandRuntime().run(
         io="tty",
     )
 )
-if result.exit_code == INTERRUPTED_EXIT_CODE:
+# sudo dying from SIGINT is passed on as one; a command that chose to exit 130 is not.
+if result.exit_code == INTERRUPTED_EXIT_CODE and sigint_received():
     exit_from_interrupt()
 raise SystemExit(result.exit_code)
 """
