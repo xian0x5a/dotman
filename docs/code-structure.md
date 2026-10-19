@@ -81,11 +81,13 @@ Current responsibility split:
 - `collisions.py` — tracked-target winner resolution and conflict checks
 - `printable.py` — the `str.isprintable()` rule in one place. `validate_printable` rejects authored identity at load
   (names, target `source` and `path`, path rule `pattern`s, `additional_sources` entries, a repo `path`), and that
-  identity prints as written afterwards. It takes an optional `hint` for the refusal (`add` uses it). Three escapes
+  identity prints as written afterwards. It takes an optional `hint` for the refusal (`add` uses it). Four escapes
   show text from outside dotman, where it enters output. `printable_text` is injective (backslash doubled) for Sync
   identity stand-ins; `terminal_safe_line` escapes every unprintable character, tab and newline included, for outside
   text inside a one-line row or field (live paths, OS messages, legacy tracked rows); `terminal_safe_text` keeps
-  newline and tab for outside messages that span lines (error details, Sync diagnostics). It also holds the
+  newline and tab for outside messages that span lines (error details, Sync diagnostics). `terminal_safe_content`
+  escapes only control characters other than tab and bidi controls, for file content lines in Sync Deck review diffs
+  and conflict blocks, where icons and emoji must stay readable. It also holds the
   reserved characters of selector and profile IDs, which package, group, profile and repo names share
 - `sync_directory.py` — symmetric control-aware census and identity-derived child metadata; no aggregate payload or publication
 - `projection.py` — shared Render, Capture and comparison providers over real endpoints or staged Proposals through `ProjectionContext`

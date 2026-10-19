@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import unicodedata
 
 import pytest
 from textual import events
@@ -1664,4 +1665,93 @@ def test_detail_shows_a_guard_reason_from_the_command_output_escaped(tmp_path, m
                 facts = detail_facts(app)
                 assert "Guard skipped: guard_pull exited 100 (off\\u001b[31m)" in facts
                 assert all("\x1b" not in fact for fact in facts)
+        run(interact())
+
+
+# Characters that can disturb the terminal or misrepresent the review: control
+# characters (Cc) and bidi formatting controls. Tab is layout and newline separates lines.
+BIDI_CONTROLS = {"\u061c", "\u200e", "\u200f", *map(chr, range(0x202A, 0x202F)), *map(chr, range(0x2066, 0x206A))}
+
+
+def is_escaped_in_review(character):
+    return character not in "\t\n" and (unicodedata.category(character) == "Cc" or character in BIDI_CONTROLS)
+
+
+def assert_shown_escaped(text, expected):
+    assert expected in text
+    assert not any(map(is_escaped_in_review, text)), repr(text)
+
+
+@pytest.mark.parametrize(("content", "shown"), [
+    pytest.param(b"pre\x01\x0e\x0fpost\n", "pre\\u0001\\u000e\\u000fpost", id="c0"),
+    pytest.param(b"pre\x7fpost\n", "pre\\u007fpost", id="del"),
+    pytest.param("pre\u009bpost\n".encode(), "pre\\u009bpost", id="c1"),
+    # rich's ANSI decoder would swallow the sequence and show only "xy".
+    pytest.param(b"x\x1b[31my\n", "x\\u001b[31my", id="csi-shown-not-swallowed"),
+    # rich's ANSI decoder keeps only the text after the last carriage return, blanking the line.
+    pytest.param(b"crlf-line\r\n", "crlf-line\\u000d", id="crlf"),
+    # Trojan Source: a right-to-left override would reorder how the rest of the line reads.
+    pytest.param("pre\u202epost\n".encode(), "pre\\u202epost", id="bidi-override"),
+    # Other text shows as written next to an escaped control, even where str.isprintable() is False:
+    # a backslash, non-ASCII, a Nerd Font private-use glyph, NBSP and a ZWJ emoji sequence.
+    pytest.param("as\\written café \ue0b6\u00a0👨\u200d💻\x01\n".encode(),
+                 "as\\written café \ue0b6\u00a0👨\u200d💻\\u0001", id="other-text-kept"),
+])
+def test_review_shows_file_content_control_characters_escaped(tmp_path, monkeypatch, content, shown):
+    """Diff lines are a tracked file's content, so a control character in it is shown, never sent to the terminal."""
+    engine = make_engine(tmp_path, monkeypatch, [("one", "push-only", content, b"live\n", "")])
+    with engine.open_sync_session(engine.resolve_sync_scope([]), preview=True) as session:
+        app = SyncDeckApp(CommandDeck(session, use_color=False))
+
+        async def interact():
+            async with app.run_test(size=(120, 40)) as pilot:
+                await pilot.press("enter")
+                await pilot.pause()
+                assert_shown_escaped(review_text(app), f"+{shown}")
+                # Copy and search work on the same lines as the pane.
+                assert_shown_escaped(app.deck.review_text(), f"+{shown}")
+        run(interact())
+
+
+def test_review_keeps_tab_in_file_content_as_layout(tmp_path, monkeypatch):
+    engine = make_engine(tmp_path, monkeypatch, [("one", "push-only", b"tab\there\x01\n", b"live\n", "")])
+    with engine.open_sync_session(engine.resolve_sync_scope([]), preview=True) as session:
+        app = SyncDeckApp(CommandDeck(session, use_color=False))
+
+        async def interact():
+            async with app.run_test(size=(120, 40)) as pilot:
+                await pilot.press("enter")
+                await pilot.pause()
+                assert_shown_escaped(app.deck.review_text(), "+tab\there\\u0001")
+                pane = review_text(app)
+                # Only that the tab is not escaped: rich wraps a grid cell holding a tab early (#307).
+                assert "\\u0009" not in pane and "+tab" in pane
+                assert_shown_escaped(pane, "here\\u0001")
+        run(interact())
+
+
+def conflict_block(text):
+    lines = text.splitlines()
+    start = next(index for index, line in enumerate(lines) if "<<<<<<< repository" in line)
+    end = next(index for index, line in enumerate(lines) if ">>>>>>> " in line)
+    return "\n".join(lines[start:end + 1])
+
+
+def test_merge_conflict_excerpt_shows_control_characters_escaped(tmp_path, monkeypatch):
+    from tests.engine.test_sync_both_convergence import established
+
+    engine = established(tmp_path, monkeypatch)
+    (tmp_path / "repo/packages/app/unit").write_bytes(b"repo\x01\x1b[31mside\n")
+    (tmp_path / "live/unit").write_bytes("live\x7f\u009bside\n".encode())
+    with engine.open_sync_session(engine.resolve_sync_scope([]), preview=True) as session:
+        app = SyncDeckApp(CommandDeck(session, use_color=False))
+
+        async def interact():
+            async with app.run_test(size=(120, 40)) as pilot:
+                await pilot.press("enter")
+                await pilot.pause()
+                # Only the excerpt, since the Drift diff below repeats the same content.
+                for block in (conflict_block(review_text(app)), conflict_block(app.deck.review_text())):
+                    assert_shown_escaped(block, "repo\\u0001\\u001b[31mside")
+                    assert_shown_escaped(block, "live\\u007f\\u009bside")
         run(interact())
