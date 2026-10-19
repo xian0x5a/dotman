@@ -133,6 +133,7 @@ def test_terminal_interaction_uses_fzf_for_menu_taller_than_terminal() -> None:
         "--no-expect",
         "--no-read0",
         "--no-print0",
+        "--header-lines=0",
     )
     assert command_request.input == (
         b"1 sandbox/sunshine [package]\n"

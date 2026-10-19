@@ -76,6 +76,7 @@ _FZF_PINNED_RECORD_OPTIONS = (
     "--no-expect",
     "--no-read0",
     "--no-print0",
+    "--header-lines=0",
 )
 
 
