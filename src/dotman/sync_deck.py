@@ -360,7 +360,7 @@ class CommandDeck:
             if not isinstance(row, (AuxiliaryRow, AdditionalRow))
         )
         if view.topology_diagnostics:
-            self.notice = view.topology_diagnostics[0].message
+            self.notice = view.topology_diagnostics[0].display_message
             return
         if command not in view.allowed_commands or invalid_approved:
             self.notice = "Selected Proposals must be ready before confirmation."
@@ -411,7 +411,7 @@ class CommandDeck:
         elif result.result.status == "unchanged":
             self.notice = "Editor closed without changes; Resolution kept."
         else:
-            self.notice = "\n".join(item.message for item in result.result.diagnostics)
+            self.notice = "\n".join(item.display_message for item in result.result.diagnostics)
 
     def commit_choices(self) -> tuple[tuple[CommitOption, str], ...]:
         """Repos the selection writes, with the message Commit Work would use; preview never commits."""
@@ -530,7 +530,7 @@ class CommandDeck:
         if "authorize-symlink-replacement" in row.allowed_commands:
             link = "Link replacement authorized" if row.symlink_authorized else "Link replacement requires authorization"
             decision.append(ReviewNote(f"{term(link)} (L)"))
-        decision.extend(ReviewNote(f"{term(item.severity)}: {item.message}") for item in row_diagnostics(row))
+        decision.extend(ReviewNote(f"{term(item.severity)}: {item.display_message}") for item in row_diagnostics(row))
         sections = [
             ReviewSection("Decision", tuple(decision)),
             ReviewSection("Paths", (
@@ -1384,7 +1384,7 @@ class SyncDeckApp(App[bool]):
             empty = "No Target matches the filter." if self.deck.filter else "No drifted work."
             body.update(Text.from_ansi(render_payload_section_label(empty, use_color=use_color)))
             return
-        facts = [(render_sync_term(item.severity, use_color=use_color), item.message) for item in row_diagnostics(row)]
+        facts = [(render_sync_term(item.severity, use_color=use_color), item.display_message) for item in row_diagnostics(row)]
         if isinstance(row, AdditionalRow):
             identity = additional_label(row, use_color=use_color)
         elif isinstance(row, AuxiliaryRow):

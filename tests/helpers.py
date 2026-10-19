@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 
 import pytest
@@ -37,9 +38,11 @@ def write_tracked_packages_state(
         lines.extend(
             [
                 "[[packages]]",
-                f'repo = "{repo_name}"',
-                f'package_id = "{package_id}"',
-                f'profile = "{profile}"',
+                # Quoted by `json.dumps`, whose escapes TOML reads back, so a row may hold a
+                # control character that an older dotman stored.
+                f"repo = {json.dumps(repo_name, ensure_ascii=False)}",
+                f"package_id = {json.dumps(package_id, ensure_ascii=False)}",
+                f"profile = {json.dumps(profile, ensure_ascii=False)}",
                 "",
             ]
         )

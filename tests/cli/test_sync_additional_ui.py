@@ -4,6 +4,8 @@ import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from dotman.cli_style import render_sync_term
 from dotman.sync_deck import CommandDeck, SyncDeckApp, WorksetTable
 from dotman.sync_deck_command import sync_document
@@ -97,6 +99,51 @@ def test_plain_output_reports_source_approval_and_result(capsys):
     assert "[would-apply] r:shared" in output
     assert "Additional Source Change: write" in output
     assert "before" not in output and "after" not in output
+
+
+def test_plain_output_lists_an_additional_source_path_on_one_line_escaped(capsys):
+    from dataclasses import replace
+    from dotman.sync_deck_command import SyncDeckCommandRunner
+
+    row = replace(additional_row(), path=Path("shared\nforged: line\x1b[31m"))
+    session = SimpleNamespace(view=SimpleNamespace(rows=(row,), observations=(), commit_options=()))
+    result = SimpleNamespace(
+        units=(), status="previewed", diagnostics=(), steps=(), commits=(),
+        additional_changes=(SimpleNamespace(row_id=row.row_id, status="would-apply", diagnostics=()),),
+    )
+    runner = SyncDeckCommandRunner(engine_factory=None, use_color=False)
+    runner._emit(SimpleNamespace(dry_run=True, scopes=[], json_output=False), session, result)
+    output = capsys.readouterr().out
+    assert "[would-apply] r:shared\\u000aforged: line\\u001b[31m\n" in output
+    assert [line for line in output.splitlines() if line.startswith("forged:")] == []
+
+
+def _emit_with_diagnostic(runner, kind, message):
+    """Emit one plain Sync result in which `message` is reported as `kind` of diagnostic."""
+    args = SimpleNamespace(dry_run=True, scopes=[], json_output=False)
+    row = additional_row()
+    session = SimpleNamespace(view=SimpleNamespace(rows=(row,), observations=(), commit_options=()))
+    additional_diagnostics = (SimpleNamespace(code="failed", message=message),) if kind == "entry" else ()
+    summary_diagnostics = (SimpleNamespace(code="failed", message=message, severity="error"),) if kind == "summary" else ()
+    result = SimpleNamespace(
+        units=(), status="failed", diagnostics=summary_diagnostics, steps=(), commits=(),
+        additional_changes=(SimpleNamespace(row_id=row.row_id, status="would-apply", diagnostics=additional_diagnostics),),
+    )
+    if kind == "dismissed":
+        runner._emit(args, None, None, diagnostic={"code": "interrupted", "message": message}, deck_dismissed=True)
+    else:
+        runner._emit(args, session, result)
+
+
+@pytest.mark.parametrize("kind", ["entry", "summary", "dismissed"])
+def test_plain_output_shows_a_diagnostic_message_with_unprintable_characters_escaped(kind, capsys):
+    from dotman.sync_deck_command import SyncDeckCommandRunner
+
+    _emit_with_diagnostic(SyncDeckCommandRunner(engine_factory=None, use_color=False), kind, "boom \x1b[31mred")
+
+    captured = capsys.readouterr()
+    assert "boom \\u001b[31mred" in captured.out + captured.err
+    assert "\x1b" not in captured.out + captured.err
 
 
 def test_unapproved_source_review_labels_bytes_as_candidate():

@@ -11,6 +11,7 @@ from dotman.interaction import ChoiceOption, ChoiceRequest, Interaction
 from dotman.interaction_policy import InteractionRequiredError
 from dotman.models import FullSpecSelector, TrackedPackageDetail, package_ref_text
 from dotman.package_resolution import parse_full_spec_selector_text
+from dotman.printable import terminal_safe_line
 from dotman.resolver import (
     ResolverOption,
     build_full_spec_selector_field_kinds,
@@ -396,7 +397,7 @@ class UntrackResolver:
                 ChoiceRequest(
                     header_text=f"Select a tracked profile for {repo_name}:{selector}:",
                     options=tuple(
-                        ChoiceOption(value=profile, label=profile)
+                        ChoiceOption(value=profile, label=terminal_safe_line(profile))
                         for profile in tracked_profiles
                     ),
                 )

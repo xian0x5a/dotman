@@ -7,8 +7,9 @@ from textual import events
 
 from textual.widgets import DataTable, Static
 
-from dotman import sync_deck
+from dotman import sync_deck, sync_observation
 from dotman.sync_deck import CommandDeck, SyncDeckApp, WorksetTable
+from dotman.sync_path_policy import SyncPathError
 
 SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 from tests.engine.test_sync_session import make_engine
@@ -1623,4 +1624,44 @@ def test_review_refresh_keeps_search_hints_true_to_the_search(tmp_path, monkeypa
                 await pilot.press("escape")
                 await pilot.pause()
                 assert title_text(app).startswith(":: Proposal Review") == advertises_search
+        run(interact())
+
+
+def test_detail_and_review_show_a_diagnostic_from_outside_escaped(tmp_path, monkeypatch):
+    """A diagnostic carries OS errors and file names, so a terminal control sequence in one is shown, never sent."""
+    engine = make_engine(tmp_path, monkeypatch, [("unit", "both", b"repo", b"live", "")])
+    original_read_endpoint = sync_observation._read_endpoint
+
+    def read_endpoint_failing_on_live(path, *, repository, **kwargs):
+        if not repository:
+            raise SyncPathError("unsupported-entry", "bad\x1b]0;PWN\x1b\\ \x1b[2Jend\nsecond line")
+        return original_read_endpoint(path, repository=repository, **kwargs)
+
+    monkeypatch.setattr(sync_observation, "_read_endpoint", read_endpoint_failing_on_live)
+    with engine.open_pull_session(engine.resolve_sync_scope(), preview=True) as session:
+        app = SyncDeckApp(CommandDeck(session, use_color=False))
+
+        async def interact():
+            async with app.run_test(size=(110, 30)):
+                detail = "\n".join(detail_lines(app))
+                assert "bad\\u001b]0;PWN\\u001b\\ \\u001b[2Jend" in detail
+                assert "\x1b" not in detail
+                # The Review text lists the same diagnostics as the detail pane.
+                review = app.deck.review_text()
+                assert "bad\\u001b]0;PWN\\u001b\\ \\u001b[2Jend" in review
+                assert "\x1b" not in review
+        run(interact())
+
+
+def test_detail_shows_a_guard_reason_from_the_command_output_escaped(tmp_path, monkeypatch):
+    guard = "[targets.unit.hooks]\nguard_pull = \"printf 'off\\\\033[31m' >&2; exit 100\""
+    engine = make_engine(tmp_path, monkeypatch, [("unit", "both", b"repo", b"live", guard)])
+    with engine.open_pull_session(engine.resolve_sync_scope(), preview=True) as session:
+        app = SyncDeckApp(CommandDeck(session, use_color=False))
+
+        async def interact():
+            async with app.run_test(size=(110, 24)):
+                facts = detail_facts(app)
+                assert "Guard skipped: guard_pull exited 100 (off\\u001b[31m)" in facts
+                assert all("\x1b" not in fact for fact in facts)
         run(interact())

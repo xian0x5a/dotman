@@ -139,6 +139,51 @@ def test_request_sudo_prompts_with_reason_when_sudo_ticket_is_missing_or_expired
     assert [request.io for request in runtime.requests] == ["pipe", "tty", "pipe", "tty"]
 
 
+@pytest.mark.parametrize(
+    ("notice_action", "operate", "file_mode", "parent_mode"),
+    [
+        # Each caller words its own notice, so each is a separate place a path could reach the terminal raw.
+        pytest.param("read protected path", lambda path: file_access.read_bytes(path), 0o000, 0o700, id="read"),
+        pytest.param("write protected path", lambda path: file_access.write_bytes_atomic(path, b"new"), None, 0o500, id="write"),
+        pytest.param(
+            "delete protected path",
+            lambda path: file_access.delete_path_and_prune_empty_parents(path, root=path.parent),
+            0o600,
+            0o500,
+            id="delete",
+        ),
+        pytest.param(
+            "create protected directory", lambda path: file_access.make_directories(path), None, 0o500, id="make-directory"
+        ),
+    ],
+)
+def test_sudo_notice_shows_the_protected_path_escaped(
+    notice_action: str, operate, file_mode: int | None, parent_mode: int, tmp_path: Path, monkeypatch, capsys,
+) -> None:
+    protected_directory = tmp_path / "protected"
+    protected_directory.mkdir()
+    target_path = protected_directory / "we\x1bird"
+    if file_mode is not None:
+        target_path.write_text("payload", encoding="utf-8")
+        target_path.chmod(file_mode)
+    protected_directory.chmod(parent_mode)
+    # A missing sudo ticket, then a successful authentication, then the privileged operation itself.
+    runtime = MemoryCommandRuntime(
+        [CommandResult(exit_code=1), CommandResult(exit_code=0), CommandResult(exit_code=0, stdout=b"payload")]
+    )
+    monkeypatch.setattr(file_access, "current_command_runtime", lambda: runtime)
+    try:
+        with file_access.sudo_session():
+            operate(target_path)
+    finally:
+        # Restore permissions so pytest can remove the directory.
+        protected_directory.chmod(0o700)
+        if target_path.exists():
+            target_path.chmod(0o600)
+
+    assert capsys.readouterr().err == f"[sudo] password required to {notice_action}: {protected_directory}/we\\u001bird\n"
+
+
 def test_request_sudo_preserves_authentication_interruption(monkeypatch) -> None:
     runtime = MemoryCommandRuntime([CommandResult(exit_code=130)])
     monkeypatch.setattr(file_access, "current_command_runtime", lambda: runtime)

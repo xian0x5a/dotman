@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 import tomllib
+
+import tomlkit
 
 from dotman.errors import UsageError
 
@@ -74,3 +77,21 @@ def format_toml_load_error(error: TomlLoadError) -> str:
     if error.path is not None:
         location = f"{location} {error.path}"
     return f"invalid TOML in {location}: {error.detail}"
+
+
+# Every backslash in tomlkit's output starts an escape (it writes basic strings
+# only), so matching `\\.` pairs left to right keeps `\\e`, an escaped backslash
+# then a literal `e`, intact.
+_TOML_ESCAPE = re.compile(r"\\(.)", re.DOTALL)
+
+
+def dump_toml_text(data: dict[str, Any]) -> str:
+    """TOML text for dotman state and manifests, which `load_toml_file` must read back.
+
+    tomlkit writes ESC as `\\e`, a TOML 1.1 escape that `tomllib` (TOML 1.0)
+    rejects (#304), so ESC is written as `\\u001b` instead.
+    """
+    return _TOML_ESCAPE.sub(
+        lambda match: "\\u001b" if match.group(1) == "e" else match.group(0),
+        tomlkit.dumps(data),
+    )

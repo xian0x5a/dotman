@@ -8,8 +8,6 @@ import tempfile
 from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 
-import tomlkit
-
 from dotman.atomic_files import write_text_atomic
 from dotman.collisions import TargetClaim, validate_target_collisions
 from dotman.command_runtime import ArgvCommand, CommandRequest, current_command_runtime
@@ -26,8 +24,9 @@ from dotman.manifest import (
     validate_target_name,
 )
 from dotman.models import PackageSpec, TargetSpec, repo_qualified_target_text
+from dotman.printable import validate_printable
 from dotman.repository import Repository
-from dotman.toml_utils import load_toml_text
+from dotman.toml_utils import dump_toml_text, load_toml_text
 
 
 @dataclass(frozen=True)
@@ -109,6 +108,14 @@ def resolve_live_path_spec(live_path_text: str, *, cwd: Path | None = None, home
     else:
         raise UsageError(f"unsupported live path type for add: {resolved_path}")
     config_path = _config_path_text(resolved_path, home_dir=home_dir)
+    # The manifest `add` writes holds this path, and a manifest with an unprintable path
+    # fails to load, so refuse before anything is written. The source path derives from
+    # the same components, so one check covers both.
+    validate_printable(
+        config_path,
+        kind="live path",
+        hint="Rename the file so its path is printable, or track a directory above it instead.",
+    )
     return LivePathSpec(
         raw_input=live_path_text,
         resolved_path=resolved_path,
@@ -414,7 +421,7 @@ def render_target_block(*, target_name: str, source_path: str, config_path: str,
     target = {"source": source_path, "path": config_path}
     if chmod is not None:
         target["chmod"] = chmod
-    return tomlkit.dumps({"targets": {target_name: target}})
+    return dump_toml_text({"targets": {target_name: target}})
 
 
 def append_target_block(*, before_text: str, target_block: str) -> str:

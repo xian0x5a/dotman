@@ -38,6 +38,7 @@ from dotman.package_resolution import (
     parse_full_spec_selector_text,
     parse_package_ref_text,
 )
+from dotman.printable import terminal_safe_line
 from dotman.resolver import (
     ResolverOption,
     build_package_field_kinds,
@@ -161,7 +162,7 @@ def render_full_spec_selector_reference(binding: FullSpecSelector) -> str:
 
 def open_editor_path(path: Path, *, missing_editor_label: str = "path") -> int:
     if not add_editor_available():
-        print(f"No editor configured. {missing_editor_label}: {path}")
+        print(f"No editor configured. {missing_editor_label}: {terminal_safe_line(str(path))}")
         return 0
 
     editor_command = _resolve_editor_command()

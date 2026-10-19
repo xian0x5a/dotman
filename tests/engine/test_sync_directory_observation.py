@@ -150,25 +150,6 @@ def test_printable_child_name_keeps_canonical_identity(tmp_path, monkeypatch, na
         assert not unit.diagnostics
 
 
-def test_manifest_authored_unprintable_profile_id_still_opens_session(tmp_path, monkeypatch):
-    # Only live child names are held to isprintable(); a profile ID authored in
-    # the manifest must not fail the whole session open.
-    from tests.helpers import write_tracked_packages_state
-    engine = directory_engine(tmp_path, monkeypatch)
-    manifest = tmp_path / 'repo/packages/app/package.toml'
-    manifest.write_text('binding_mode = "multi_instance"\n' + manifest.read_text())
-    profile = 'work\u00a0laptop'
-    (tmp_path / f'repo/profiles/{profile}.toml').write_text('')
-    write_tracked_packages_state(tmp_path / 'state', repo_name='main', entries=[('app', profile)])
-    engine = DotmanEngine.from_config_path(engine.config.config_path)
-    put(tmp_path / 'repo/packages/app/tree', 'good', b'repo'); put(tmp_path / 'live/tree', 'good', b'live')
-    with open_directory(engine, preview=False) as session:
-        unit, = session.view.observations
-        assert unit.identity.canonical == f'main:app<{profile}>.tree/good'
-        assert unit.state == 'drifted'
-        assert not unit.diagnostics
-
-
 def test_stored_base_under_name_without_canonical_identity_does_not_block_session(tmp_path, monkeypatch):
     # Bases stored before control characters lost canonical identity stay inert.
     engine = directory_engine(tmp_path, monkeypatch)

@@ -17,6 +17,7 @@ from dotman.command_runtime import (
     raise_for_command_interruption,
 )
 from dotman.models import AdditionalSource, EditorSpec
+from dotman.printable import terminal_safe_line
 from dotman.terminal import colors_enabled
 from dotman.ui_context import current_ui_config
 
@@ -164,10 +165,11 @@ def _review_materialized_display_path(reference_path: Path) -> Path:
 
 
 def display_review_path(reference_path: Path | str, *, compact: bool = True, tail_segments: int | None = None) -> str:
+    """A path for a person to read, in a row or a heading. A live path is outside text and can hold unprintable characters, so it is escaped."""
     path = Path(reference_path)
     if not compact:
-        return str(path)
-    return str(_review_display_path(path, tail_segments=tail_segments))
+        return terminal_safe_line(str(path))
+    return terminal_safe_line(str(_review_display_path(path, tail_segments=tail_segments)))
 
 
 def _review_display_path(reference_path: Path, *, tail_segments: int | None = None) -> Path:

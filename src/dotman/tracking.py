@@ -8,11 +8,10 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Mapping, TYPE_CHECKING
 
-import tomlkit
-
 from dotman.atomic_files import write_text_atomic
 from dotman.errors import UsageError
-from dotman.toml_utils import TomlLoadError, load_toml_file
+from dotman.printable import terminal_safe_line
+from dotman.toml_utils import TomlLoadError, dump_toml_text, load_toml_file
 from dotman.models import (
     FullSpecSelector,
     TrackableCatalogEntry,
@@ -683,6 +682,16 @@ def validate_tracked_package_entry(
 
 
 
+def _is_named_by(row_text: str, query: str) -> bool:
+    """A stored row's name is matched by what was stored or by the escaped text dotman shows for it.
+
+    Rows an older dotman wrote can hold unprintable characters, which every
+    listing shows escaped (#295). Accepting that text back lets the untrack hint
+    in the stale-row warning name the row without printing it raw.
+    """
+    return query in (row_text, terminal_safe_line(row_text))
+
+
 def find_persisted_tracked_package_entry_matches(
     context: TrackedStateContext,
     binding_text: str,
@@ -695,8 +704,8 @@ def find_persisted_tracked_package_entry_matches(
     if explicit_repo is not None:
         tracked_records = [record for record in tracked_records if record.package_entry.repo == explicit_repo]
     if profile is not None:
-        tracked_records = [record for record in tracked_records if record.package_entry.profile == profile]
-    exact_matches = [record for record in tracked_records if record.package_entry.selector == selector]
+        tracked_records = [record for record in tracked_records if _is_named_by(record.package_entry.profile, profile)]
+    exact_matches = [record for record in tracked_records if _is_named_by(record.package_entry.selector, selector)]
     partial_matches = [record for record in tracked_records if selector in record.package_entry.selector]
     unique_partials = {
         (
@@ -736,7 +745,7 @@ def write_tracked_package_entries_file(state_dir: Path, bindings: list[FullSpecS
             {"repo": entry.repo, "package_id": entry.package_id, "profile": entry.profile}
             for entry in tracked_packages
         ]
-    write_text_atomic(state_path, tomlkit.dumps(state))
+    write_text_atomic(state_path, dump_toml_text(state))
 
 
 

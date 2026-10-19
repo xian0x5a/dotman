@@ -20,6 +20,7 @@ under `examples/repo/`.
 - Human-facing target labels use `repo:package.target` and `repo:package<profile>.target`.
 - `.` is reserved for the package/target separator and must not appear inside package IDs or target names.
 - `/` is reserved for the target/child separator and must not appear inside target names. Package IDs may still use `/` for namespaces, and profile IDs may contain dots inside `<profile>`.
+- Package, group, profile and target names must pass Python's `str.isprintable()`, the same rule Sync applies to live file names (`docs/sync.md`). Control characters, bidi overrides, zero-width joiners and non-ASCII spaces such as NBSP fail to load with a usage error that names the file and shows the name with each unprintable character as `\uNNNN` (`work\u00a0laptop`). A plain ASCII space is printable, so profile IDs may still contain spaces.
 - Packages may declare `depends` for hard requirements.
 - `depends` entries may reference either package IDs or group selectors.
 - Group dependencies expand to their member packages during dependency resolution.
@@ -143,6 +144,7 @@ chmod = "600"
 - Target keys are arbitrary manifest identifiers.
 - Tools may still generate deterministic path-derived target keys for convenience, but that naming is a convention rather than a schema rule.
 - `path` may use `~/...` for home-relative destinations or an absolute path otherwise.
+- `source`, `path`, each path rule `pattern` and each editor `additional_sources` entry must pass `str.isprintable()` as written, before templates render and before `~` and `$VAR` expand. A value with a control character, bidi override or non-ASCII space such as NBSP fails to load with a usage error that names `package.toml`, the target and the field, and shows the value with each unprintable character as `\uNNNN`. Authored names and paths print as written everywhere else; a path after rendering and expansion is outside text and prints escaped.
 - Targets may define `type = "file" | "directory"` when filesystem inference is not enough, such as when both source and live paths are absent. An explicit type establishes the endpoint kind, not permission to Render a missing file source.
 - Targets may define `chmod` when the installed root path needs an explicit mode. Target and path-rule `chmod` values are strings of 3 or 4 octal digits such as `"600"` or `"0755"`.
 - `chmod` is optional and should usually be omitted unless the target needs a non-default live mode.

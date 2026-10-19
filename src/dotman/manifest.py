@@ -10,6 +10,7 @@ from typing import Any
 from dotman.errors import UsageError
 from dotman.models import AdditionalSource, DefaultCommandElevationMode, EditorSpec, HookCommandSpec, HookSpec, PackageSpec, RepoIgnoreDefaults, TargetPathRule, TargetSpec, repo_qualified_target_text
 from dotman.presets import BUILTIN_TARGET_PRESETS, get_builtin_target_preset
+from dotman.printable import PROFILE_ID_RESERVED_CHARACTERS, SELECTOR_ID_RESERVED_CHARACTERS, validate_printable
 
 
 VALID_COMMAND_IO_VALUES = ("pipe", "tty")
@@ -46,6 +47,7 @@ def validate_supported_keys(
 
 
 def _validate_namespaced_id(selector_id: str, *, kind: str) -> None:
+    validate_printable(selector_id, kind=f"{kind} id")
     if not selector_id.strip():
         raise UsageError(f"{kind} id must not be empty")
     if any(character in selector_id for character in SELECTOR_ID_RESERVED_CHARACTERS):
@@ -53,14 +55,6 @@ def _validate_namespaced_id(selector_id: str, *, kind: str) -> None:
     parts = selector_id.split("/")
     if any(not part or part in {".", ".."} or any(character.isspace() for character in part) for part in parts):
         raise UsageError(f"invalid {kind} id '{selector_id}'")
-
-
-# Package and group IDs are selectors in `repo:selector@profile` and
-# `repo:package<profile>.target`, so they can't hold any of that syntax.
-SELECTOR_ID_RESERVED_CHARACTERS = ("\\", ":", "@", "<", ">", ".")
-# Profile IDs sit inside `@profile` and `<profile>`, where dots, spaces and
-# other punctuation are allowed; only the characters that delimit them are reserved.
-PROFILE_ID_RESERVED_CHARACTERS = ("@", "<", ">")
 
 
 def validate_package_id(package_id: str) -> None:
@@ -72,6 +66,7 @@ def validate_group_id(group_id: str) -> None:
 
 
 def validate_profile_id(profile_id: str) -> None:
+    validate_printable(profile_id, kind="profile id")
     if any(character in profile_id for character in PROFILE_ID_RESERVED_CHARACTERS):
         raise UsageError(f"invalid profile id '{profile_id}'")
 
@@ -93,6 +88,7 @@ def discover_package_manifests(packages_root: Path) -> list[Path]:
 
 
 def validate_target_name(target_name: str) -> None:
+    validate_printable(target_name, kind="target name")
     if (
         not target_name.strip()
         or "." in target_name
@@ -329,6 +325,11 @@ def normalize_additional_sources(value: Any, *, manifest_path: Path, target_name
     ) or ()
     result: list[str] = []
     for source in values:
+        validate_printable(
+            source,
+            kind="additional_sources entry",
+            context=f"package manifest {manifest_path} target '{target_name}' editor",
+        )
         normalized = source.replace("\\", "/")
         path = Path(normalized)
         if path.is_absolute() or any(part in {"", ".", ".."} for part in normalized.split("/")):
@@ -549,6 +550,11 @@ def normalize_target_path_rules(
             raise UsageError(f"package manifest {manifest_path} target '{target_name}' path_rules.{name}.pattern must be a string")
         if not pattern.strip() and "pattern" in payload:
             raise UsageError(f"package manifest {manifest_path} target '{target_name}' path_rules.{name}.pattern must be a non-empty string")
+        validate_printable(
+            pattern,
+            kind=f"path_rules.{name}.pattern",
+            context=f"package manifest {manifest_path} target '{target_name}'",
+        )
         normalized_pattern = pattern.replace("\\", "/")
         if normalized_pattern.startswith("/") or any(part == ".." for part in normalized_pattern.split("/")):
             raise UsageError(f"package manifest {manifest_path} target '{target_name}' path_rules.{name}.pattern must be relative to the target root")
@@ -676,6 +682,11 @@ def build_target_spec(
         return target_payload[key] if key in target_payload else preset_payload.get(key, default)
     source = require_optional_string(value("source"), context=target_context, key="source")
     path = require_optional_string(value("path"), context=target_context, key="path")
+    # The path as written, so what a target prints is what the author typed. `~` and `$VAR`
+    # expand later from the user's environment, and live-path output escapes whatever they add.
+    for key, text in (("source", source), ("path", path)):
+        if text is not None:
+            validate_printable(text, kind=key, context=target_context)
     probe = normalize_target_command(value("probe"), field_name="probe", manifest_path=manifest_path, target_name=target_name)
     target_type = normalize_target_type(value("type"), context=target_context)
     sync_policy = normalize_sync_policy(value("sync_policy"), context=target_context)

@@ -23,6 +23,7 @@ from dotman.command_runtime import (
 )
 
 from dotman.interaction_policy import no_confirm_enabled
+from dotman.printable import terminal_safe_line
 from dotman.terminal import colors_enabled
 
 _SUDO_KEEPALIVE_INTERVAL_SECONDS = 30
@@ -159,7 +160,8 @@ def sudo_session() -> Iterator[None]:
 def _emit_sudo_notice(reason: str | None, *, password_required: bool) -> None:
     from dotman import cli_style
 
-    detail = reason or "perform privileged operation"
+    # Every caller words the reason around a path, so this is the one place it is escaped.
+    detail = terminal_safe_line(reason or "perform privileged operation")
     use_color = colors_enabled(sys.stderr)
     badge = cli_style.render_sudo_badge(use_color=use_color)
     print(f"{badge} {'password required to ' if password_required else ''}{detail}", file=sys.stderr)

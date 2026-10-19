@@ -564,6 +564,16 @@ def test_failed_write_is_reported_once_in_timeline(tmp_path, monkeypatch, capsys
     assert (out + err).count("disk full") == 1
 
 
+def test_failure_detail_with_unprintable_characters_is_escaped_in_timeline(tmp_path, monkeypatch, capsys):
+    from dotman import file_access
+    def fail(*args, **kwargs):
+        raise OSError("disk \x1b[31mfull")
+    out, err = _human_execution(tmp_path, monkeypatch, capsys,
+                                patch=lambda: monkeypatch.setattr(file_access, "write_bytes_atomic", fail))
+    assert "      disk \\u001b[31mfull\n" in out
+    assert "\x1b" not in out + err
+
+
 def test_step_failure_without_start_is_attributed_in_timeline(tmp_path, monkeypatch, capsys):
     from dotman import sync_publication
     def fail(*args, **kwargs):
