@@ -15,7 +15,7 @@ from dotman.command_runtime import (
     first_output_line,
     raise_for_command_interruption,
 )
-from dotman.collisions import validate_reserved_path_conflicts, validate_target_collisions
+from dotman.collisions import TargetClaim, validate_reserved_path_conflicts, validate_target_collisions
 from dotman.config import expand_path
 from dotman.file_access import needs_sudo_for_read, read_bytes
 from dotman.ignore import GitIgnoreChain, collect_gitignore_chain
@@ -80,16 +80,23 @@ class TargetMetadata:
     # Rendered but unresolved; observation runs it once per session.
     ignore_command: str | None = None
 
+    @property
+    def canonical(self) -> str:
+        return repo_qualified_target_text(
+            repo_name=self.repo_name,
+            package_id=self.package_id,
+            target_name=self.target_name,
+            bound_profile=self.bound_profile,
+        )
 
-def _metadata_collision_tuple(metadata: TargetMetadata):
-    return (
-        metadata.package,
-        metadata.target,
-        metadata.repo_path,
-        metadata.live_path,
-        metadata.ignore_patterns,
-        metadata.live_path_is_symlink,
-        metadata.live_path_symlink_target,
+
+def target_claim(metadata: TargetMetadata) -> TargetClaim:
+    return TargetClaim(
+        package_id=metadata.package_id,
+        label=metadata.canonical,
+        repo_path=metadata.repo_path,
+        live_path=metadata.live_path,
+        ignore_patterns=metadata.ignore_patterns,
     )
 
 
@@ -97,11 +104,12 @@ def target_claims_path(target: TargetSpec) -> bool:
     return target.probe is None
 
 
-def validate_probe_target_config(*, package: PackageSpec, target: TargetSpec) -> None:
+def validate_probe_target_config(*, repo_name: str, package: PackageSpec, target: TargetSpec) -> None:
     if target.probe is None:
         return
+    target_label = repo_qualified_target_text(repo_name=repo_name, package_id=package.id, target_name=target.name)
     if resolve_sync_policy(package=package, target=target) == "push-only-delete":
-        raise ValueError(f"Probe {package.id}.{target.name} cannot use push-only-delete; use push-only")
+        raise ValueError(f"Probe {target_label} cannot use push-only-delete; use push-only")
     forbidden_probe_fields = {
         "source": target.source,
         "path": target.path,
@@ -121,7 +129,7 @@ def validate_probe_target_config(*, package: PackageSpec, target: TargetSpec) ->
     forbidden = sorted(name for name, value in forbidden_probe_fields.items() if value is not None)
     if forbidden:
         raise ValueError(
-            f"target '{package.id}:{target.name}' uses probe and must not define: "
+            f"target '{target_label}' uses probe and must not define: "
             + ", ".join(forbidden)
         )
 
@@ -158,7 +166,7 @@ def build_target_metadata(
             if not sync_policy_allows_operation(sync_policy, operation=operation):
                 continue
             if target.probe is not None:
-                validate_probe_target_config(package=package, target=target)
+                validate_probe_target_config(repo_name=repo.config.name, package=package, target=target)
                 probe_command = render_template_string(
                     target.probe,
                     context,
@@ -207,9 +215,8 @@ def build_target_metadata(
                 )
                 continue
             if target.source is None or target.path is None:
-                raise ValueError(
-                    f"target '{package.id}:{target.name}' must define source and path"
-                )
+                target_label = repo_qualified_target_text(repo_name=repo.config.name, package_id=package.id, target_name=target.name)
+                raise ValueError(f"target '{target_label}' must define source and path")
             rendered_source = render_template_string(
                 target.source,
                 context,
@@ -300,12 +307,12 @@ def build_target_metadata(
             )
 
     if validate_declaration_conflicts:
-        rendered_targets = [_metadata_collision_tuple(metadata) for metadata in metadata_targets if target_claims_path(metadata.target)]
-        validate_target_collisions(rendered_targets, operation=operation, gitignore_chains={
+        claims = [target_claim(metadata) for metadata in metadata_targets if target_claims_path(metadata.target)]
+        validate_target_collisions(claims, operation=operation, gitignore_chains={
             (metadata.repo_path, metadata.live_path): metadata.gitignore for metadata in metadata_targets
         })
         if operation == "push":
-            validate_reserved_path_conflicts(packages, rendered_targets, context)
+            validate_reserved_path_conflicts(repo.config.name, packages, claims, context)
     return metadata_targets
 
 
@@ -512,7 +519,7 @@ class PlanningCommandError(ValueError):
 
 def run_probe_command(command_runtime: CommandRuntime, metadata: TargetMetadata) -> bool:
     if metadata.probe_command is None:
-        raise ValueError(f"missing probe command for {metadata.package_id}:{metadata.target_name}")
+        raise ValueError(f"missing probe command for {metadata.canonical}")
     result = command_runtime.run(
         CommandRequest(
             command=ShellCommand(metadata.probe_command),
@@ -526,7 +533,7 @@ def run_probe_command(command_runtime: CommandRuntime, metadata: TargetMetadata)
     if result.exit_code == 100:
         return False
     raise PlanningCommandError(
-        f"probe failed for {metadata.package_id}:{metadata.target_name} "
+        f"probe failed for {metadata.canonical} "
         f"with status {result.exit_code}",
         output_line=first_output_line(
             result.stderr.decode("utf-8", errors="replace"),

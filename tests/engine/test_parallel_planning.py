@@ -65,4 +65,4 @@ probe = "exit 4"
     opened = engine.open_sync_session(engine.resolve_sync_scope(), preview=True)
 
     assert isinstance(opened, SessionOpenFailed)
-    assert "app:first with status 3" in opened.diagnostic.message
+    assert "main:app.first with status 3" in opened.diagnostic.message

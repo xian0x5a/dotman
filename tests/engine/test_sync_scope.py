@@ -409,7 +409,7 @@ def test_resolved_sync_scope_rejects_shared_primary_source_across_policies(
     engine = _engine(tmp_path, {"main": repo_root}, monkeypatch)
 
     # Even a narrow selection cannot make conflicting tracked ownership valid.
-    with pytest.raises(ValueError, match="conflicting target ownership"):
+    with pytest.raises(ValueError, match=r"conflicting target ownership: main:app\.config and main:app\.other both map to"):
         engine.resolve_sync_scope(["main:app.config"])
 
 

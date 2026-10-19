@@ -410,7 +410,7 @@ def collect_tracked_ownership_candidates(
                         target_type=metadata.target.target_type,
                         repo_path=metadata.repo_path,
                         live_path=metadata.live_path,
-                        target_label=f"{metadata.package_id}:{metadata.target_name}",
+                        target_label=metadata.canonical,
                         file_symlink_mode=planning_context.config.file_symlink_mode,
                         dir_symlink_mode=planning_context.config.dir_symlink_mode,
                     ),

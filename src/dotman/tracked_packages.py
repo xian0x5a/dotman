@@ -18,6 +18,7 @@ from dotman.models import (
     TrackedTargetSummary,
     PackageSpec,
     package_ref_text,
+    repo_qualified_target_text,
 )
 from dotman.repository import Repository
 from dotman.resolver import build_target_match_fields
@@ -389,8 +390,9 @@ def summarize_targets(
     for target in (package.targets or {}).values():
         if target.disabled:
             continue
+        target_label = repo_qualified_target_text(repo_name=repo.config.name, package_id=package.id, target_name=target.name)
         if target.probe is not None:
-            validate_probe_target_config(package=package, target=target)
+            validate_probe_target_config(repo_name=repo.config.name, package=package, target=target)
             target_summaries.append(
                 TrackedTargetSummary(
                     target_name=target.name,
@@ -402,7 +404,7 @@ def summarize_targets(
             )
             continue
         if target.source is None or target.path is None:
-            raise ValueError(f"target '{package.id}:{target.name}' must define source and path")
+            raise ValueError(f"target '{target_label}' must define source and path")
         rendered_source = render_template_string(target.source, context, base_dir=target.declared_in, source_path=target.declared_in)
         rendered_path = render_template_string(target.path, context, base_dir=target.declared_in, source_path=target.declared_in)
         repo_path = (target.declared_in / rendered_source).resolve()
@@ -421,7 +423,7 @@ def summarize_targets(
                     target_type=target.target_type,
                     repo_path=repo_path,
                     live_path=live_path,
-                    target_label=f"{package.id}:{target.name}",
+                    target_label=target_label,
                     file_symlink_mode=file_symlink_mode,
                     dir_symlink_mode=dir_symlink_mode,
                 ),

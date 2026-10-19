@@ -66,7 +66,7 @@ guard_push = "{guard}"
     opened = engine.open_sync_session(engine.resolve_sync_scope(), preview=True)
     if failed:
         assert isinstance(opened, SessionOpenFailed)
-        assert 'probe failed' in opened.diagnostic.message
+        assert 'probe failed for main:app.check' in opened.diagnostic.message
     else:
         assert isinstance(opened, SyncSession)
         assert len(opened.view.rows) == expected_rows
