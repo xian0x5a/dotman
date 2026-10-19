@@ -819,7 +819,7 @@ class ProposalSession:
                 # Absent storage holds no obsolete Base; do not create it.
                 if not SyncBaseStore.exists(state_root, state_key):
                     continue
-                with SyncBaseStore.open(state_root, state_key) as store:
+                with SyncBaseStore.open(state_root, state_key, create=False) as store:
                     stored = store.target_records(identity.canonical.encode())
             except (SyncBaseStoreError, OSError) as exc:
                 failures[identity] = Diagnostic("base-maintenance-failed", str(exc), severity="warning")
