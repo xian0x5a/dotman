@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, replace
 from pathlib import Path
 from string import Formatter
@@ -108,12 +109,9 @@ def committable_paths(root: Path, paths: Sequence[Path], runtime: CommandRuntime
     are kept out of history on purpose. It also leaves out unchanged sources and
     deleted sources git never tracked, so the message can describe exactly these.
     """
-    status = _git(runtime, root, "status", "--porcelain", "-z", "--no-renames", "--untracked-files=all",
-                  "--", *map(str, paths))
-    # Each -z entry is "XY <path>", relative to the work tree root.
-    changed = {root / entry[3:] for entry in status.split("\0") if entry}
+    _staged, changed = _changes_to_record(root, paths, runtime)
     # A directory source covers the changed files below it.
-    covered = changed.union(*(name.parents for name in changed))
+    covered = set(changed).union(*(name.parents for name in changed))
     return tuple(path for path in dict.fromkeys(paths) if path in covered)
 
 
@@ -122,13 +120,42 @@ def commit_sources(root: Path, paths: Sequence[Path], message: str, runtime: Com
 
     Returns the short commit hash, or None when the paths match HEAD.
     """
-    pathspec = tuple(map(str, paths))
-    _git(runtime, root, "add", "-A", "--", *pathspec)
+    to_stage, recorded = _changes_to_record(root, paths, runtime)
+    # Each git call needs names: an empty pathspec means the whole work tree.
+    if not recorded:
+        return None
+    if to_stage:
+        # `git add` refuses any path under an ignored directory, even a file git
+        # tracks there; --force lets it through. The names come from git status,
+        # which leaves out ignored untracked files, so nothing ignored is added.
+        _git(runtime, root, "add", "-A", "--force", "--", *map(str, to_stage))
+    pathspec = tuple(map(str, recorded))
     if runtime.run(_git_request(root, "diff", "--cached", "--quiet", "--", *pathspec)).exit_code == 0:
         return None
     # Pathspec commit (`--only`) leaves other staged changes in the index.
     _git(runtime, root, "commit", "--quiet", "--file=-", "--", *pathspec, message=message)
     return _git(runtime, root, "rev-parse", "--short", "HEAD").strip()
+
+
+def _changes_to_record(
+    root: Path, paths: Sequence[Path], runtime: CommandRuntime,
+) -> tuple[tuple[Path, ...], tuple[Path, ...]]:
+    """The changed files under `paths` that need staging, and all the files a commit records.
+
+    git status leaves out ignored untracked files. A staged deletion whose file
+    is still on disk, with no untracked entry beside it, is one too: the user ran
+    `git rm --cached` on an ignored file. The commit names files, not `paths`,
+    because `git commit --only` would re-add that file from disk.
+    """
+    status = _git(runtime, root, "status", "--porcelain", "-z", "--no-renames", "--untracked-files=all",
+                  "--", *map(str, paths))
+    # Each -z entry is "XY <path>", relative to the work tree root.
+    entries = [(entry[0], root / entry[3:]) for entry in status.split("\0") if entry]
+    to_stage = tuple(dict.fromkeys(path for index_status, path in entries if index_status != "D"))
+    # A staged deletion is already in the index; it needs recording, not staging.
+    staged_deletions = tuple(path for index_status, path in entries
+                             if index_status == "D" and not os.path.lexists(path))
+    return to_stage, to_stage + staged_deletions
 
 
 def _git_request(cwd: Path, *args: str, message: str | None = None) -> CommandRequest:

@@ -5,11 +5,11 @@ import subprocess
 
 import pytest
 
-from dotman.command_runtime import INTERRUPTED_EXIT_CODE, CommandResult, MemoryCommandRuntime
+from dotman.command_runtime import INTERRUPTED_EXIT_CODE, CommandResult, MemoryCommandRuntime, ProductionCommandRuntime
 from dotman.config import load_manager_config
 from dotman.engine import DotmanEngine
 from dotman.models import DEFAULT_COMMIT_MESSAGE, ResolvedSyncTarget
-from dotman.sync_commit import probe_work_tree, render_commit_message
+from dotman.sync_commit import commit_sources, committable_paths, probe_work_tree, render_commit_message
 from dotman.sync_session import BatchSetApproval, Preview, SetApproval, SetCommit, SetResolutionIntent
 from tests.engine.test_sync_session import make_engine
 from tests.helpers import write_named_manager_config
@@ -250,11 +250,16 @@ def test_commit_leaves_out_ignored_untracked_sources(tmp_path, monkeypatch):
     assert git(repo, "status", "--porcelain").splitlines() == []
 
 
-def test_commit_keeps_tracked_sources_that_gitignore_matches(tmp_path, monkeypatch):
+@pytest.mark.parametrize("ignore_rule", [
+    pytest.param("/packages/app/first", id="source-file-ignored"),
+    # `git add` refuses any path under an ignored directory, tracked or not (#260).
+    pytest.param("/packages/app/", id="source-directory-ignored"),
+])
+def test_commit_keeps_tracked_sources_that_gitignore_matches(tmp_path, monkeypatch, ignore_rule):
     engine = make_engine(tmp_path, monkeypatch, TWO_DRIFTED)
     repo = tmp_path / "repo"
     # Git keeps tracking a file that .gitignore starts matching later.
-    (repo / ".gitignore").write_text("/packages/app/first\n")
+    (repo / ".gitignore").write_text(f"{ignore_rule}\n")
     git(repo, "add", ".gitignore")
     git(repo, "commit", "-qm", "ignore")
     with engine.open_pull_session(engine.resolve_sync_scope(), commit=True) as session:
@@ -276,3 +281,63 @@ def test_commit_reports_no_changes_when_every_written_source_is_ignored(tmp_path
     assert [(commit.repo, commit.status) for commit in result.commits] == [("main", "no-changes")]
     assert git(repo, "rev-parse", "HEAD") == head
     assert git(repo, "status", "--porcelain").splitlines() == []
+
+
+def staged_work_tree(tmp_path, files, *, gitignore=""):
+    """A git work tree whose HEAD holds `files` (force-added past `gitignore`)."""
+    root = tmp_path / "work"
+    root.mkdir()
+    git(root, "init", "-q")
+    git(root, "config", "user.email", "test@example.com")
+    git(root, "config", "user.name", "test")
+    (root / ".gitignore").write_text(gitignore)
+    for name, content in files.items():
+        (root / name).parent.mkdir(parents=True, exist_ok=True)
+        (root / name).write_text(content)
+    git(root, "add", "--force", ".gitignore", *files)
+    git(root, "commit", "-qm", "init")
+    return root
+
+
+def commit_written_sources(root, sources):
+    runtime = ProductionCommandRuntime()
+    paths = committable_paths(root, tuple(root / source for source in sources), runtime)
+    # Sync calls commit_sources only when committable_paths found changes.
+    return commit_sources(root, paths, "commit sources", runtime) if paths else None
+
+
+def test_commit_keeps_a_staged_deletion_inside_a_directory_source(tmp_path):
+    root = staged_work_tree(tmp_path, {"src/written": "old", "src/removed": "old"})
+    git(root, "rm", "-q", "src/removed")
+    (root / "src/written").write_text("new")
+
+    assert commit_written_sources(root, ["src"]) is not None
+    assert git(root, "show", "--name-status", "--format=", "HEAD").splitlines() == [
+        "D\tsrc/removed", "M\tsrc/written",
+    ]
+
+
+@pytest.mark.parametrize("gitignore,files,untracked,written,sources,committed", [
+    pytest.param("/cache/\n", {"cache/kept": "old"}, "cache/kept", "cache/kept", ["cache/kept"], None,
+                 id="file-source"),
+    pytest.param("*.log\n", {"src/a.log": "old", "src/b": "old"}, "src/a.log", "src/b", ["src"], ["M\tsrc/b"],
+                 id="directory-source"),
+])
+def test_commit_keeps_an_ignored_source_the_user_untracked_out_of_history(
+    tmp_path, gitignore, files, untracked, written, sources, committed,
+):
+    root = staged_work_tree(tmp_path, files, gitignore=gitignore)
+    # `git rm --cached` keeps the ignored file on disk but stops tracking it.
+    git(root, "rm", "-q", "--cached", untracked)
+    (root / written).write_text("new")
+    head = git(root, "rev-parse", "HEAD")
+
+    commit = commit_written_sources(root, sources)
+
+    if committed is None:
+        assert commit is None
+        assert git(root, "rev-parse", "HEAD") == head
+    else:
+        assert git(root, "show", "--name-status", "--format=", "HEAD").splitlines() == committed
+    # The user's staged deletion is left as it was.
+    assert git(root, "status", "--porcelain", "--", untracked).splitlines() == [f"D  {untracked}"]
