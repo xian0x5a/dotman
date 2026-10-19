@@ -10,6 +10,8 @@ rows an older dotman stored) is escaped by it where it enters output.
 
 from __future__ import annotations
 
+import unicodedata
+
 from dotman.errors import UsageError
 
 # Package, group and repo names are selectors in `repo:selector@profile` and
@@ -21,6 +23,11 @@ SELECTOR_ID_RESERVED_CHARACTERS = ("\\", ":", "@", "<", ">", ".")
 PROFILE_ID_RESERVED_CHARACTERS = ("@", "<", ">")
 
 KEPT_LAYOUT_CHARACTERS = "\n\t"
+
+# Bidi formatting controls (ALM, LRM, RLM, LRE..RLO, LRI..PDI): file content shown raw could
+# reorder what a review displays, the "Trojan Source" trick.
+BIDI_CONTROL_CHARACTERS = frozenset("\u061c\u200e\u200f" + "".join(map(chr, range(0x202A, 0x202F)))
+                                    + "".join(map(chr, range(0x2066, 0x206A))))
 
 
 def _shown(character: str) -> str:
@@ -65,6 +72,21 @@ def terminal_safe_text(text: str) -> str:
     """
     return "".join(
         character if character in KEPT_LAYOUT_CHARACTERS else _shown(character) for character in text
+    )
+
+
+def terminal_safe_content(line: str) -> str:
+    """One line of file content for review: control characters (but tab) and bidi controls are escaped.
+
+    Narrower than `str.isprintable`: dotfiles routinely hold Nerd Font glyphs, ZWJ emoji
+    and NBSP, which cannot disturb the terminal and read as intended, so they show as
+    written. Only what could act on the terminal or reorder the review is escaped.
+    """
+    return "".join(
+        _shown(character)
+        if character != "\t" and (unicodedata.category(character) == "Cc" or character in BIDI_CONTROL_CHARACTERS)
+        else character
+        for character in line
     )
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import unicodedata
 
 import pytest
 from textual import events
@@ -1667,10 +1668,18 @@ def test_detail_shows_a_guard_reason_from_the_command_output_escaped(tmp_path, m
         run(interact())
 
 
+# Characters that can disturb the terminal or misrepresent the review: control
+# characters (Cc) and bidi formatting controls. Tab is layout and newline separates lines.
+BIDI_CONTROLS = {"\u061c", "\u200e", "\u200f", *map(chr, range(0x202A, 0x202F)), *map(chr, range(0x2066, 0x206A))}
+
+
+def is_escaped_in_review(character):
+    return character not in "\t\n" and (unicodedata.category(character) == "Cc" or character in BIDI_CONTROLS)
+
+
 def assert_shown_escaped(text, expected):
     assert expected in text
-    # Tab is layout and newline separates lines; any other unprintable character is raw content.
-    assert all(character.isprintable() or character in "\t\n" for character in text), repr(text)
+    assert not any(map(is_escaped_in_review, text)), repr(text)
 
 
 @pytest.mark.parametrize(("content", "shown"), [
@@ -1681,8 +1690,12 @@ def assert_shown_escaped(text, expected):
     pytest.param(b"x\x1b[31my\n", "x\\u001b[31my", id="csi-shown-not-swallowed"),
     # rich's ANSI decoder keeps only the text after the last carriage return, blanking the line.
     pytest.param(b"crlf-line\r\n", "crlf-line\\u000d", id="crlf"),
-    # Printable text, backslashes and non-ASCII included, shows as written next to an escaped control.
-    pytest.param("as\\written café\x01\n".encode(), "as\\written café\\u0001", id="printable-kept"),
+    # Trojan Source: a right-to-left override would reorder how the rest of the line reads.
+    pytest.param("pre\u202epost\n".encode(), "pre\\u202epost", id="bidi-override"),
+    # Other text shows as written next to an escaped control, even where str.isprintable() is False:
+    # a backslash, non-ASCII, a Nerd Font private-use glyph, NBSP and a ZWJ emoji sequence.
+    pytest.param("as\\written café \ue0b6\u00a0👨\u200d💻\x01\n".encode(),
+                 "as\\written café \ue0b6\u00a0👨\u200d💻\\u0001", id="other-text-kept"),
 ])
 def test_review_shows_file_content_control_characters_escaped(tmp_path, monkeypatch, content, shown):
     """Diff lines are a tracked file's content, so a control character in it is shown, never sent to the terminal."""
@@ -1711,7 +1724,7 @@ def test_review_keeps_tab_in_file_content_as_layout(tmp_path, monkeypatch):
                 await pilot.pause()
                 assert_shown_escaped(app.deck.review_text(), "+tab\there\\u0001")
                 pane = review_text(app)
-                # Only that the tab is not escaped: rich wraps a grid cell holding a tab early (a separate issue).
+                # Only that the tab is not escaped: rich wraps a grid cell holding a tab early (#307).
                 assert "\\u0009" not in pane and "+tab" in pane
                 assert_shown_escaped(pane, "here\\u0001")
         run(interact())
