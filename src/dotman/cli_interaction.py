@@ -27,6 +27,7 @@ from dotman.diff_review import (
 )
 from dotman.engine import DotmanEngine
 from dotman.interaction import Interaction, choose_with_fzf
+from dotman.errors import UsageError
 from dotman.interaction_policy import InteractionRequiredError, no_confirm_enabled
 from dotman.models import (
     FullSpecSelector,
@@ -587,7 +588,7 @@ def resolve_candidate_match(
             option_display_fields=[option.display_fields or (option.display_label,) for option in resolved_options],
         )
         return ranked_partial_matches[selected_index]
-    raise ValueError(not_found_text)
+    raise UsageError(not_found_text)
 
 
 def resolve_tracked_package_text(
@@ -653,7 +654,7 @@ def resolve_trackable_selector_text(
 ) -> tuple[Repository, str, SelectorKind]:
     explicit_repo, selector, selector_profile = parse_full_spec_selector_text(query_text)
     if selector_profile is not None:
-        raise ValueError("trackable lookup does not accept selector@profile syntax")
+        raise UsageError("trackable lookup does not accept selector@profile syntax")
     exact_matches, partial_matches = engine.find_selector_matches(selector, explicit_repo)
     return resolve_candidate_match(
         exact_matches=exact_matches,
@@ -885,11 +886,11 @@ def resolve_snapshot_record(snapshot_root: Path, snapshot_ref: str | None, *, js
     if not matches:
         if snapshot_ref is None or snapshot_ref == "latest":
             raise ValueError("no snapshots are available")
-        raise ValueError(f"snapshot '{snapshot_ref}' did not match any available snapshot")
+        raise UsageError(f"snapshot '{snapshot_ref}' did not match any available snapshot")
     if len(matches) == 1:
         return matches[0]
     if not interactive_mode_enabled(json_output=json_output):
-        raise ValueError(
+        raise InteractionRequiredError(
             f"snapshot '{snapshot_ref}' is ambiguous: " + ", ".join(snapshot.snapshot_id for snapshot in matches)
         )
     selected_index = select_menu_option(

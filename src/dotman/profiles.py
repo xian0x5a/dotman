@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dotman.errors import UsageError
 from collections.abc import Mapping, Sequence
 
 
@@ -11,7 +12,7 @@ def compute_profile_heights(profiles: Mapping[str, Sequence[str]]) -> dict[str, 
             return cache[profile_name]
         if profile_name in stack:
             cycle = " -> ".join([*stack, profile_name])
-            raise ValueError(f"profile include cycle detected: {cycle}")
+            raise UsageError(f"profile include cycle detected: {cycle}")
         includes = tuple(profiles.get(profile_name, ()))
         if not includes:
             cache[profile_name] = 0

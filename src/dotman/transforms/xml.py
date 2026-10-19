@@ -9,6 +9,7 @@ import re
 
 from lxml import etree
 
+from dotman.errors import UsageError
 from dotman.transforms.cli import run_engine_cli
 from dotman.transforms.framework import (
     STDIN_PATH,
@@ -408,14 +409,14 @@ def ensure_well_formed_output(document_text: str) -> None:
     try:
         etree.fromstring(document_text.encode("utf-8"), XML_PARSER)
     except etree.XMLSyntaxError as error:
-        raise ValueError(f"XML output would not be well-formed: {error.msg}") from error
+        raise UsageError(f"XML output would not be well-formed: {error.msg}") from error
 
 
 def parse_xml_bytes(content: bytes, source: str) -> XmlNode:
     try:
         return etree.fromstring(content, XML_PARSER)
     except etree.XMLSyntaxError as error:
-        raise ValueError(f"{source} is not valid XML: {error.msg}") from error
+        raise UsageError(f"{source} is not valid XML: {error.msg}") from error
 
 
 def read_xml_root(path: Path, stdin_bytes: bytes | None) -> XmlNode | None:
@@ -457,7 +458,7 @@ def render_xml_output(
 
     if base_root is None:
         if overlay_root is None:
-            raise ValueError(f"base XML file not found: {base_path}")
+            raise UsageError(f"base XML file not found: {base_path}")
         root = etree.Element(overlay_root.tag)
     else:
         root = build_tree_with_selector_action(
@@ -558,7 +559,7 @@ class XmlTransformEngine(BaseTransformEngine):
             not parse_node_matchers(request.selector_values("node_matcher"))
             and not request.selector_values("node_regex")
         ):
-            raise ValueError("node matchers must not be empty")
+            raise UsageError("node matchers must not be empty")
 
     def transform(self, request: TransformRequest) -> TransformOutput:
         self.validate_request(request)

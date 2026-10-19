@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dotman.errors import UsageError
 from dotman.models import (
     PackageSelectionSourceKind,
     ResolvedPackageIdentity,
@@ -9,7 +10,7 @@ from dotman.models import (
 from dotman.repository import Repository
 
 
-class UnresolvedSelectorError(ValueError):
+class UnresolvedSelectorError(UsageError):
     """A selector, dependency, or group member names nothing in the repo."""
 
 
@@ -23,23 +24,23 @@ def parse_full_spec_selector_text(selector_text: str) -> tuple[str | None, str, 
             selector_and_profile = remainder
     selector, _, profile = selector_and_profile.partition("@")
     if not selector:
-        raise ValueError("selector must not be empty")
+        raise UsageError("selector must not be empty")
     return repo_name, selector, profile or None
 
 
 def parse_package_ref_text(package_text: str) -> tuple[str | None, str, str | None]:
     repo_name, selector, profile = parse_full_spec_selector_text(package_text)
     if profile is not None:
-        raise ValueError("tracked package lookup expects a package selector, not a binding")
+        raise UsageError("tracked package lookup expects a package selector, not a binding")
     bound_profile: str | None = None
     if selector.endswith(">"):
         open_index = selector.rfind("<")
         if open_index == -1:
-            raise ValueError(f"invalid tracked package selector '{selector}'")
+            raise UsageError(f"invalid tracked package selector '{selector}'")
         bound_profile = selector[open_index + 1 : -1]
         selector = selector[:open_index]
         if not selector or not bound_profile:
-            raise ValueError(f"invalid tracked package selector '{package_text}'")
+            raise UsageError(f"invalid tracked package selector '{package_text}'")
     return repo_name, selector, bound_profile
 
 

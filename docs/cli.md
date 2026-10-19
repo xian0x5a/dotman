@@ -33,7 +33,7 @@ See [Sync lifecycle](sync.md) for convergence semantics and
 - Global options must be spelled in full; dotman rejects abbreviations such as `--conf` for `--config`.
 - Global `--no-confirm` suppresses every menu, Editor, pager, and prompt throughout command behavior. It uses configured defaults and fails safely when a required decision cannot be resolved.
 - `--no-confirm` does not suppress sudo authentication: when elevation needs a password, sudo authenticates however it is configured: NOPASSWD, a terminal prompt, or the `SUDO_ASKPASS` helper when no terminal is present. Dotman's own sudo login passes `-A` then, so a helper that needs no display also works headless; `sudo` calls inside hooks choose their own flags. A terminal nobody watches waits at the prompt until sudo times out. Dotman never substitutes its own prompt.
-- Run dotman as yourself, not under `sudo`. Dotman asks for sudo itself only for protected paths and elevated hooks, so the repo, Sync Base and state stay owned by you. Repo commands exit 2 (1 under `--no-confirm`) when they run as root with `SUDO_USER` naming another user, including a `sudo -i` or `sudo -s` shell. A root login without sudo (or `su -`) and root calling sudo are unaffected. Standalone helpers (`transform`, `rewrite`, `render`, `capture`, `reconcile`) still run under sudo, so elevated hooks can call them.
+- Run dotman as yourself, not under `sudo`. Dotman asks for sudo itself only for protected paths and elevated hooks, so the repo, Sync Base and state stay owned by you. Repo commands exit 2 when they run as root with `SUDO_USER` naming another user, including a `sudo -i` or `sudo -s` shell. A root login without sudo (or `su -`) and root calling sudo are unaffected. Standalone helpers (`transform`, `rewrite`, `render`, `capture`, `reconcile`) still run under sudo, so elevated hooks can call them.
 - A missing terminal never implies consent. Without `--no-confirm`, an unavailable required interactive decision fails; `--json` selects output only and never authorizes execution.
 - Interruption exits 130. When a real SIGINT ended the run, dotman instead ends by SIGINT after cleanup, so the shell script or command line that ran it stops too; shells still report status 130. A real SIGINT is Ctrl-C at a terminal no menu or Deck holds in raw mode, or `kill -INT` while dotman itself holds the terminal. While a hook, Editor, or sudo prompt runs in the terminal, that child owns Ctrl-C, and dotman ends by SIGINT only if the child did. Key-driven aborts (Esc, `q`, or `Ctrl+C` pressed inside the Deck or an fzf menu) stay a plain exit 130, as with fzf itself.
 - Execution hooks receive `DOTMAN_NO_CONFIRM=1` under `--no-confirm`, otherwise `0`; planning Guards do not receive it.
@@ -57,6 +57,19 @@ See [Sync lifecycle](sync.md) for convergence semantics and
   No-confirm Sync rejects a no-route blocker before
   mutation; interactive execution may retain unrelated approved work but still
   reports failure. Configured policy continues to determine Base eligibility.
+
+## Exit status
+
+Exit codes do not depend on `--no-confirm` or `--json`.
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Success. |
+| `1` | Runtime failure: a command, hook, render, or Sync Base store failed; `doctor` found failed checks; or dotman needed a decision it could not ask for (no terminal, or `--no-confirm`), including choosing among ambiguous matches. |
+| `2` | Usage or configuration error: invalid command-line syntax or option combination, an unknown or invalid selector or Sync scope, an invalid or conflicting manifest or config (including a missing config file), or running as root under `sudo`. |
+| `130` | Interruption or explicit abort. |
+
+Code `2` means the input is wrong and no prompt would fix it; code `1` covers everything else.
 
 ## Sync scope resolution
 
@@ -337,8 +350,8 @@ otherwise **Use repository** is the visible fallback and Merge is unavailable.
   covers Observation, materialization, blocking,
   decision-required, execution, or incomplete-convergence failure, and a
   Command Deck that stops on an unexpected error (status `failed`, code `deck-failed`). Partial
-  convergence with any failure exits `1`. Exit `2` means invalid syntax;
-  exit `130` means interruption or explicit abort.
+  convergence with any failure exits `1`. Exit `2` means a usage or configuration error,
+  such as an invalid Sync scope; exit `130` means interruption or explicit abort.
 
 Examples:
 
@@ -392,7 +405,7 @@ dotman --no-confirm sync main:app.settings
 ## Diagnostics And Catalog Inspection
 
 - `dotman --version` shows the installed build: a release tag such as `0.10.1`, or a development build past it such as `0.10.2.dev3+g1a2b3c4`. The version is fixed at install time, so reinstall to refresh it.
-- `dotman doctor` checks manager configuration, configured repo paths, tracked state, required external tools, and aggregate corrupt/orphaned Sync Base counts. Store failures include repository, path, and cause; no repair is performed.
+- `dotman doctor` exits 1 when any check fails. It checks manager configuration, configured repo paths, tracked state, required external tools, and aggregate corrupt/orphaned Sync Base counts. Store failures include repository, path, and cause; no repair is performed.
 - `dotman list sync-bases` lists only currently usable Sync Bases.
 - `dotman info sync-base <sync-unit>` shows metadata and applicability for one exact repo-qualified file target or directory child; unavailable and ineligible results succeed.
 - `dotman reset sync-base <sync-unit>` immediately and idempotently discards one exact Base under the manager operation lock. It has no confirmation, dry-run, fuzzy selection, or scope expansion.

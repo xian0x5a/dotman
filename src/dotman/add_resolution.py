@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from dotman import cli_style
 from dotman.engine import DotmanEngine
+from dotman.errors import UsageError
 from dotman.interaction import (
     ChoiceOption,
     ChoiceRequest,
@@ -143,7 +144,7 @@ class AddResolver:
     def _parse_package_query(self, package_query: str) -> tuple[str | None, str]:
         explicit_repo, selector, profile = parse_full_spec_selector_text(package_query)
         if profile is not None:
-            raise ValueError("add package query expects a package selector, not a binding")
+            raise UsageError("add package query expects a package selector, not a binding")
         return explicit_repo, selector
 
     def _find_package_matches(

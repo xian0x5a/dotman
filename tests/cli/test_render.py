@@ -68,8 +68,8 @@ def test_render_jinja_cli_accepts_explicit_profile_os_cpu_arch_and_vars(tmp_path
 @pytest.mark.parametrize(
     ("args", "expected_header", "expected_error"),
     [
-        (["render", "jinja", "--var", "missing_equals", "template.txt"], "ValueError", "invalid --var assignment"),
-        (["render", "jinja", "missing.txt"], "JinjaRenderError", "source path does not exist"),
+        (["render", "jinja", "--var", "missing_equals", "template.txt"], "UsageError", "invalid --var assignment"),
+        (["render", "jinja", "missing.txt"], "UsageError", "source path does not exist"),
     ],
 )
 def test_render_jinja_cli_reports_invalid_input(

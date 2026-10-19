@@ -7,6 +7,7 @@ from typing import Literal, TypeVar
 from dotman import cli_style
 from dotman.collisions import TrackedTargetConflictError
 from dotman.engine import DotmanEngine
+from dotman.errors import UsageError
 from dotman.interaction import (
     ChoiceOption,
     ChoiceRequest,
@@ -433,7 +434,7 @@ class TrackResolver:
     ) -> str:
         available_profiles = self._engine.list_profiles(repo_name)
         if not available_profiles:
-            raise ValueError(f"repo '{repo_name}' does not define any profiles")
+            raise UsageError(f"repo '{repo_name}' does not define any profiles")
         if requested_profile is None:
             if len(available_profiles) == 1:
                 return available_profiles[0]
@@ -534,7 +535,7 @@ class TrackResolver:
                 value_resolver=value_resolver,
                 noninteractive_error=partial_error_text,
             )
-        raise ValueError(not_found_text)
+        raise UsageError(not_found_text)
 
     def _choose(
         self,

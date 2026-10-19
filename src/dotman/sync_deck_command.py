@@ -7,6 +7,7 @@ from dataclasses import replace
 import sys
 
 from dotman.edit_resolution import EditResolver
+from dotman.errors import UsageError
 from dotman.interaction import Interaction
 from dotman.interaction_policy import InteractionRequiredError, interaction_scope
 from dotman.progress import make_planning_sink
@@ -184,7 +185,7 @@ class SyncDeckCommandRunner:
         except InteractionRequiredError as exc:
             self._emit(args, None, None, diagnostic={"code": "decision-required", "message": str(exc)})
             return 1
-        except ValueError as exc:
+        except UsageError as exc:
             self._emit(args, None, None, diagnostic={
                 "code": "invalid-input", "message": str(exc),
             })

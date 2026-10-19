@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from dotman.errors import UsageError
 from dotman.toml_utils import load_toml_file
 
 from dotman.manifest import (
@@ -54,13 +55,13 @@ def normalize_skip_markers(value: Any, *, repo_config_path: Path) -> tuple[str, 
     if value is None:
         return ()
     if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
-        raise ValueError(f"repo config {repo_config_path} [ignore].skip_markers must be a list[str]")
+        raise UsageError(f"repo config {repo_config_path} [ignore].skip_markers must be a list[str]")
     markers: list[str] = []
     for marker in value:
         if not marker:
-            raise ValueError(f"repo config {repo_config_path} [ignore].skip_markers entries must not be empty")
+            raise UsageError(f"repo config {repo_config_path} [ignore].skip_markers entries must not be empty")
         if marker in {".", ".."} or "/" in marker or "\\" in marker:
-            raise ValueError(
+            raise UsageError(
                 f"repo config {repo_config_path} [ignore].skip_markers entries must be basenames: {marker!r}"
             )
         markers.append(marker)
@@ -138,7 +139,7 @@ class Repository:
         if ignore_payload is None:
             return RepoIgnoreDefaults()
         if not isinstance(ignore_payload, dict):
-            raise ValueError(f"repo config {repo_config_path} [ignore] must be a table")
+            raise UsageError(f"repo config {repo_config_path} [ignore] must be a table")
         validate_supported_keys(
             ignore_payload,
             supported_keys=REPO_IGNORE_KEYS,
@@ -161,11 +162,11 @@ class Repository:
         if hooks_payload is None:
             return None
         if not isinstance(hooks_payload, dict):
-            raise ValueError(f"repo config {repo_config_path} [hooks] must be a table")
+            raise UsageError(f"repo config {repo_config_path} [hooks] must be a table")
         unknown_hook_names = [hook_name for hook_name in hooks_payload if hook_name not in VALID_HOOK_NAMES]
         if unknown_hook_names:
             unknown_text = ", ".join(sorted(unknown_hook_names))
-            raise ValueError(
+            raise UsageError(
                 f"repo config {repo_config_path} uses unsupported hook names: {unknown_text}"
             )
         return {
@@ -192,23 +193,23 @@ class Repository:
                 package_id=package_id,
             )
             if "id" in payload:
-                raise ValueError(
+                raise UsageError(
                     f"package manifest {manifest_path} must not define id: "
                     f"the package id '{package_id}' comes from its folder; remove the id line"
                 )
             try:
                 validate_package_id(package_id)
             except ValueError as exc:
-                raise ValueError(f"package manifest {manifest_path}: {exc}") from None
+                raise UsageError(f"package manifest {manifest_path}: {exc}") from None
             binding_mode = str(payload.get("binding_mode", "singleton"))
             if binding_mode not in {"singleton", "multi_instance"}:
-                raise ValueError(
+                raise UsageError(
                     f"package manifest {manifest_path} has unsupported binding_mode '{binding_mode}'"
                 )
             unknown_top_level_keys = sorted(key for key in payload if key not in PACKAGE_MANIFEST_TOP_LEVEL_KEYS)
             if unknown_top_level_keys:
                 unknown_text = ", ".join(unknown_top_level_keys)
-                raise ValueError(f"package manifest {manifest_path} has unknown top-level keys: {unknown_text}")
+                raise UsageError(f"package manifest {manifest_path} has unknown top-level keys: {unknown_text}")
             context = f"package manifest {manifest_path}"
             targets_payload = require_optional_table(payload.get("targets"), context=context, key="targets")
             hooks_payload = require_optional_table(payload.get("hooks"), context=context, key="hooks")
@@ -232,7 +233,7 @@ class Repository:
                 unknown_hook_names = [hook_name for hook_name in hooks_payload if hook_name not in VALID_HOOK_NAMES]
                 if unknown_hook_names:
                     unknown_text = ", ".join(sorted(unknown_hook_names))
-                    raise ValueError(
+                    raise UsageError(
                         f"package manifest {manifest_path} uses unsupported hook names: {unknown_text}"
                     )
                 hooks = {
@@ -247,7 +248,7 @@ class Repository:
             package_ignore_payload = payload.get("ignore")
             if package_ignore_payload is not None:
                 if not isinstance(package_ignore_payload, dict):
-                    raise ValueError(f"package manifest {manifest_path} ignore must be a table")
+                    raise UsageError(f"package manifest {manifest_path} ignore must be a table")
                 validate_supported_keys(package_ignore_payload, supported_keys={"gitignore", "patterns"},
                                         context=f"package manifest {manifest_path} ignore")
                 package_ignore_patterns = normalize_string_list(
@@ -292,7 +293,7 @@ class Repository:
             try:
                 validate_group_id(group_id)
             except ValueError as exc:
-                raise ValueError(f"{context}: {exc}") from None
+                raise UsageError(f"{context}: {exc}") from None
             validate_supported_keys(payload, supported_keys=GROUP_FILE_KEYS, context=context)
             groups[group_id] = GroupSpec(
                 id=group_id,
@@ -314,7 +315,7 @@ class Repository:
             try:
                 validate_profile_id(profile_id)
             except ValueError as exc:
-                raise ValueError(f"{context}: {exc}") from None
+                raise UsageError(f"{context}: {exc}") from None
             validate_supported_keys(payload, supported_keys=PROFILE_FILE_KEYS, context=context)
             vars_payload = require_optional_table(payload.get("vars"), context=context, key="vars")
             profiles[profile_id] = ProfileSpec(
@@ -333,24 +334,24 @@ class Repository:
         unknown_top_level_keys = sorted(key for key in payload if key != "vars")
         if unknown_top_level_keys:
             unknown_text = ", ".join(unknown_top_level_keys)
-            raise ValueError(f"local override {local_path} has unknown top-level keys: {unknown_text}")
+            raise UsageError(f"local override {local_path} has unknown top-level keys: {unknown_text}")
         vars_payload = payload.get("vars", {})
         if not isinstance(vars_payload, dict):
-            raise ValueError(f"local override {local_path} [vars] must be a table")
+            raise UsageError(f"local override {local_path} [vars] must be a table")
         return _copy_map(vars_payload)
 
     def compose_profile(self, profile_id: str) -> tuple[dict[str, Any], list[str]]:
         if profile_id not in self.profiles:
-            raise ValueError(f"unknown profile '{profile_id}' in repo '{self.config.name}'")
+            raise UsageError(f"unknown profile '{profile_id}' in repo '{self.config.name}'")
 
         lineage: list[str] = []
 
         def visit(current_id: str, stack: tuple[str, ...]) -> dict[str, Any]:
             if current_id in stack:
                 cycle = " -> ".join([*stack, current_id])
-                raise ValueError(f"profile include cycle detected in repo '{self.config.name}': {cycle}")
+                raise UsageError(f"profile include cycle detected in repo '{self.config.name}': {cycle}")
             if current_id not in self.profiles:
-                raise ValueError(
+                raise UsageError(
                     f"profile '{stack[-1]}' includes unknown profile '{current_id}' in repo '{self.config.name}'"
                 )
             profile = self.profiles[current_id]
@@ -371,9 +372,9 @@ class Repository:
             return cached
         if package_id in extending:
             cycle = " -> ".join([*extending, package_id])
-            raise ValueError(f"package extends cycle detected in repo '{self.config.name}': {cycle}")
+            raise UsageError(f"package extends cycle detected in repo '{self.config.name}': {cycle}")
         if package_id not in self.packages:
-            raise ValueError(f"unknown package '{package_id}' in repo '{self.config.name}'")
+            raise UsageError(f"unknown package '{package_id}' in repo '{self.config.name}'")
         loaded = self.packages[package_id]
         merged: PackageSpec | None = None
         for parent_id in loaded.extends or ():
@@ -406,27 +407,27 @@ class Repository:
 
     def expand_group(self, group_id: str) -> list[str]:
         if group_id not in self.groups:
-            raise ValueError(f"unknown group '{group_id}' in repo '{self.config.name}'")
+            raise UsageError(f"unknown group '{group_id}' in repo '{self.config.name}'")
         ordered: list[str] = []
         seen: set[str] = set()
 
         def visit(current_group_id: str, stack: tuple[str, ...]) -> None:
             if current_group_id in stack:
                 cycle = " -> ".join([*stack, current_group_id])
-                raise ValueError(f"group membership cycle detected in repo '{self.config.name}': {cycle}")
+                raise UsageError(f"group membership cycle detected in repo '{self.config.name}': {cycle}")
             current_group = self.groups[current_group_id]
             for member in current_group.members:
                 package_exists = member in self.packages
                 group_exists = member in self.groups
                 if package_exists and group_exists:
-                    raise ValueError(
+                    raise UsageError(
                         f"selector '{member}' is ambiguous between package and group in repo '{self.config.name}'"
                     )
                 if group_exists:
                     visit(member, (*stack, current_group_id))
                     continue
                 if not package_exists:
-                    raise ValueError(f"group member '{member}' does not resolve in repo '{self.config.name}'")
+                    raise UsageError(f"group member '{member}' does not resolve in repo '{self.config.name}'")
                 if member not in seen:
                     seen.add(member)
                     ordered.append(member)

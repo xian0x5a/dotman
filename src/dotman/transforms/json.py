@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 from typing import Any
 
+from dotman.errors import UsageError
 from dotman.transforms.cli import run_engine_cli
 from dotman.transforms.framework import (
     BaseTransformEngine,
@@ -51,14 +52,14 @@ def parse_finite_json_float(number_text: str) -> float:
     # would be written back as the invalid JSON token Infinity.
     value = float(number_text)
     if math.isinf(value):
-        raise ValueError(f"JSON number {number_text} is out of float range")
+        raise UsageError(f"JSON number {number_text} is out of float range")
     return value
 
 
 def reject_non_json_constant(token: str) -> float:
     # json.loads accepts NaN and Infinity as an extension, but they would be
     # written back as the same invalid JSON tokens.
-    raise ValueError(f"{token} is not a valid JSON number")
+    raise UsageError(f"{token} is not a valid JSON number")
 
 
 def load_json(path: Path, *, stdin_bytes: bytes | None = None) -> JsonDict:
@@ -72,7 +73,7 @@ def load_json(path: Path, *, stdin_bytes: bytes | None = None) -> JsonDict:
         parse_constant=reject_non_json_constant,
     )
     if not isinstance(loaded, dict):
-        raise ValueError(f"Expected top-level JSON object in {path}")
+        raise UsageError(f"Expected top-level JSON object in {path}")
     return loaded
 
 

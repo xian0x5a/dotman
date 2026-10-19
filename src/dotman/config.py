@@ -3,12 +3,13 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from dotman.errors import UsageError
 from dotman.models import GitConfig, ManagerConfig, RepoConfig, SnapshotConfig, UiConfig, UiMenusConfig
 from dotman.sync_commit import validate_commit_message_template
 from dotman.toml_utils import load_toml_file
 
 
-class ManagerConfigLoadError(ValueError):
+class ManagerConfigLoadError(UsageError):
     def __init__(self, *, path: Path, detail: str, hint: str | None = None) -> None:
         self.path = path
         self.detail = detail
@@ -59,30 +60,30 @@ def default_local_override_path(repo_name: str) -> Path:
 
 def validate_state_key(state_key: object, *, repo_name: str) -> str:
     if not isinstance(state_key, str):
-        raise ValueError(f"repo '{repo_name}' state_key must be a string")
+        raise UsageError(f"repo '{repo_name}' state_key must be a string")
     normalized = state_key.strip()
     if not normalized:
-        raise ValueError(f"repo '{repo_name}' state_key must not be empty")
+        raise UsageError(f"repo '{repo_name}' state_key must not be empty")
     if normalized in {".", ".."}:
-        raise ValueError(f"repo '{repo_name}' state_key must not be '.' or '..'")
+        raise UsageError(f"repo '{repo_name}' state_key must not be '.' or '..'")
     if "/" in normalized or "\\" in normalized:
-        raise ValueError(f"repo '{repo_name}' state_key must not contain path separators")
+        raise UsageError(f"repo '{repo_name}' state_key must not contain path separators")
     return normalized
 
 
 def validate_symlink_mode(mode: object, *, field_name: str, allowed_values: tuple[str, ...]) -> str:
     if not isinstance(mode, str):
-        raise ValueError(f"config {field_name} must be a string")
+        raise UsageError(f"config {field_name} must be a string")
     normalized = mode.strip()
     if normalized not in allowed_values:
         allowed_text = ", ".join(allowed_values)
-        raise ValueError(f"config {field_name} must be one of: {allowed_text}")
+        raise UsageError(f"config {field_name} must be one of: {allowed_text}")
     return normalized
 
 
 def validate_positive_integer(value: object, *, field_name: str) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value < 1:
-        raise ValueError(f"config {field_name} must be an integer >= 1")
+        raise UsageError(f"config {field_name} must be an integer >= 1")
     return value
 
 
@@ -105,33 +106,33 @@ def load_manager_config(config_path: str | Path | None = None) -> ManagerConfig:
     payload = load_toml_file(resolved_path, context="manager config")
     repos_payload = payload.get("repos")
     if not isinstance(repos_payload, dict) or not repos_payload:
-        raise ValueError("config must define at least one [repos.<name>] entry")
+        raise UsageError("config must define at least one [repos.<name>] entry")
 
     repos: dict[str, RepoConfig] = {}
     seen_orders: dict[int, str] = {}
     seen_state_keys: dict[str, str] = {}
     for repo_name, repo_payload in repos_payload.items():
         if not isinstance(repo_payload, dict):
-            raise ValueError(f"repo entry '{repo_name}' must be a table")
+            raise UsageError(f"repo entry '{repo_name}' must be a table")
         if "state_path" in repo_payload:
             # Orphan-state discovery only works when every repo state dir is derived from one
             # predictable manager root, so custom per-repo state paths are no longer supported.
-            raise ValueError(f"repo '{repo_name}' uses unsupported key 'state_path'; use state_key and migrate bindings under the dotman state root")
+            raise UsageError(f"repo '{repo_name}' uses unsupported key 'state_path'; use state_key and migrate bindings under the dotman state root")
         repo_path_value = repo_payload.get("path")
         order_value = repo_payload.get("order")
         if not isinstance(repo_path_value, str):
-            raise ValueError(f"repo '{repo_name}' must define string path")
+            raise UsageError(f"repo '{repo_name}' must define string path")
         if not isinstance(order_value, int) or isinstance(order_value, bool):
-            raise ValueError(f"repo '{repo_name}' must define integer order")
+            raise UsageError(f"repo '{repo_name}' must define integer order")
         if order_value in seen_orders:
-            raise ValueError(
+            raise UsageError(
                 f"repo order values must be unique: {repo_name} and {seen_orders[order_value]} both use {order_value}"
             )
         seen_orders[order_value] = repo_name
         state_key_value = repo_payload.get("state_key", repo_name)
         state_key = validate_state_key(state_key_value, repo_name=repo_name)
         if state_key in seen_state_keys:
-            raise ValueError(
+            raise UsageError(
                 f"repo state_key values must be unique: {repo_name} and {seen_state_keys[state_key]} both use '{state_key}'"
             )
         seen_state_keys[state_key] = repo_name
@@ -147,7 +148,7 @@ def load_manager_config(config_path: str | Path | None = None) -> ManagerConfig:
 
     symlinks_payload = payload.get("symlinks", {})
     if not isinstance(symlinks_payload, dict):
-        raise ValueError("config [symlinks] must be a table")
+        raise UsageError("config [symlinks] must be a table")
     file_symlink_mode = validate_symlink_mode(
         symlinks_payload.get("file_symlink_mode", "prompt"),
         field_name="symlinks.file_symlink_mode",
@@ -161,13 +162,13 @@ def load_manager_config(config_path: str | Path | None = None) -> ManagerConfig:
 
     snapshots_payload = payload.get("snapshots", {})
     if not isinstance(snapshots_payload, dict):
-        raise ValueError("config [snapshots] must be a table")
+        raise UsageError("config [snapshots] must be a table")
     enabled_value = snapshots_payload.get("enabled", True)
     if not isinstance(enabled_value, bool):
-        raise ValueError("config snapshots.enabled must be a boolean")
+        raise UsageError("config snapshots.enabled must be a boolean")
     snapshot_path_value = snapshots_payload.get("path")
     if snapshot_path_value is not None and not isinstance(snapshot_path_value, str):
-        raise ValueError("config snapshots.path must be a string")
+        raise UsageError("config snapshots.path must be a string")
     snapshot_path = (
         expand_path(snapshot_path_value, base_dir=resolved_path.parent)
         if snapshot_path_value is not None
@@ -179,27 +180,27 @@ def load_manager_config(config_path: str | Path | None = None) -> ManagerConfig:
     )
 
     if "selection_menu" in payload:
-        raise ValueError("config [selection_menu] is no longer supported; use [ui] and [ui.menus]")
+        raise UsageError("config [selection_menu] is no longer supported; use [ui] and [ui.menus]")
     ui_payload = payload.get("ui", {})
     if not isinstance(ui_payload, dict):
-        raise ValueError("config [ui] must be a table")
+        raise UsageError("config [ui] must be a table")
     ui_menus_payload = ui_payload.get("menus", {})
     if not isinstance(ui_menus_payload, dict):
-        raise ValueError("config [ui.menus] must be a table")
+        raise UsageError("config [ui.menus] must be a table")
     full_paths_value = ui_payload.get("full_paths", False)
     if not isinstance(full_paths_value, bool):
-        raise ValueError("config ui.full_paths must be a boolean")
+        raise UsageError("config ui.full_paths must be a boolean")
     compact_path_tail_segments_value = validate_positive_integer(
         ui_payload.get("compact_path_tail_segments", 2),
         field_name="ui.compact_path_tail_segments",
     )
     bottom_up_value = ui_menus_payload.get("bottom_up", True)
     if not isinstance(bottom_up_value, bool):
-        raise ValueError("config ui.menus.bottom_up must be a boolean")
+        raise UsageError("config ui.menus.bottom_up must be a boolean")
 
     git_payload = payload.get("git", {})
     if not isinstance(git_payload, dict):
-        raise ValueError("config [git] must be a table")
+        raise UsageError("config [git] must be a table")
     git = GitConfig(**({"commit_message": validate_commit_message_template(git_payload["commit_message"])}
                        if "commit_message" in git_payload else {}))
 

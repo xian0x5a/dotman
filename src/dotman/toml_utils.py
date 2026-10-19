@@ -4,8 +4,10 @@ from pathlib import Path
 from typing import Any
 import tomllib
 
+from dotman.errors import UsageError
 
-class TomlLoadError(ValueError):
+
+class TomlLoadError(UsageError):
     def __init__(
         self,
         *,

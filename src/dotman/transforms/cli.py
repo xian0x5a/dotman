@@ -6,6 +6,7 @@ import argparse
 from pathlib import Path
 import sys
 
+from dotman.errors import UsageError
 from dotman.transforms.framework import (
     EXCLUSION_PREFIX,
     STDIN_PATH,
@@ -40,7 +41,7 @@ def parse_selectors(
                 break
         if not matched:
             if default_spec is None:
-                raise ValueError(
+                raise UsageError(
                     f"Engine {engine.name} has no default selector spec, but no prefix was matched for: {selector}"
                 )
             target_by_type[default_spec.name].append(selector)
@@ -170,7 +171,7 @@ def run_parsed_engine(engine: TransformEngine, parser: argparse.ArgumentParser, 
         path for path in (parsed_args.base_path, parsed_args.overlay_path) if path == STDIN_PATH
     ]
     if len(stdin_inputs) > 1:
-        raise ValueError("at most one of BASE and --overlay-file may read from stdin ('-')")
+        raise UsageError("at most one of BASE and --overlay-file may read from stdin ('-')")
 
     if getattr(parsed_args, "compare_file", None) == STDIN_PATH:
         parser.error("--compare-file must be a file path; stdin ('-') is not supported")
@@ -190,7 +191,7 @@ def run_parsed_engine(engine: TransformEngine, parser: argparse.ArgumentParser, 
     except OSError as error:
         # Unreadable inputs and unwritable outputs are user errors; report
         # them like other transform errors instead of as a traceback.
-        raise ValueError(str(error)) from error
+        raise UsageError(str(error)) from error
     return 0
 
 

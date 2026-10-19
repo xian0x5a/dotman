@@ -11,6 +11,7 @@ from typing import Mapping, TYPE_CHECKING
 import tomlkit
 
 from dotman.atomic_files import write_text_atomic
+from dotman.errors import UsageError
 from dotman.toml_utils import load_toml_file
 from dotman.models import (
     FullSpecSelector,
@@ -55,7 +56,7 @@ def get_repository(context: TrackedStateContext, repo_name: str) -> Repository:
     try:
         return context.repositories[repo_name]
     except KeyError as exc:
-        raise ValueError(f"unknown repo '{repo_name}'") from exc
+        raise UsageError(f"unknown repo '{repo_name}'") from exc
 
 
 def candidate_repositories(
@@ -757,7 +758,7 @@ def remove_persisted_tracked_package_entry(
             )
         except TrackedTargetConflictError as exc:
             binding_label = f"{record.package_entry.repo}:{record.package_entry.selector}@{record.package_entry.profile}"
-            raise ValueError(
+            raise UsageError(
                 f"cannot {operation} '{binding_label}': removing this binding would expose {exc}"
             ) from None
     write_tracked_package_entries_file(record.state_dir, remaining)
@@ -804,7 +805,7 @@ def remove_tracked_package_entries(
         )
     except TrackedTargetConflictError as exc:
         label = operation_label or ", ".join(f"{binding.repo}:{binding.selector}@{binding.profile}" for binding in removed)
-        raise ValueError(
+        raise UsageError(
             f"cannot {operation} '{label}': removing these bindings would expose {exc}"
         ) from None
 

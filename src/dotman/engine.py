@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Sequence
 from dotman.collisions import TrackedTargetOverride
 from dotman.command_runtime import CommandRuntime, current_command_runtime
 from dotman.config import default_state_root, load_manager_config
+from dotman.errors import UsageError
 from dotman.models import (
     FullSpecSelector,
     ResolvedPackageSelection,
@@ -98,7 +99,7 @@ class DotmanEngine:
         try:
             return self.repos[repo_name]
         except KeyError as exc:
-            raise ValueError(f"unknown repo '{repo_name}'") from exc
+            raise UsageError(f"unknown repo '{repo_name}'") from exc
 
     def candidate_repos(self, repo_name: str | None = None) -> list[Repository]:
         if repo_name:
@@ -120,7 +121,7 @@ class DotmanEngine:
             package_match = selector in repo.packages
             group_match = selector in repo.groups
             if package_match and group_match:
-                raise ValueError(f"selector '{selector}' is ambiguous between package and group in repo '{repo.config.name}'")
+                raise UsageError(f"selector '{selector}' is ambiguous between package and group in repo '{repo.config.name}'")
             if package_match:
                 exact_matches.append((repo, selector, "package"))
                 continue
@@ -157,16 +158,16 @@ class DotmanEngine:
             return exact_matches[0]
         if len(exact_matches) > 1:
             candidates = ", ".join(f"{repo.config.name}:{match}" for repo, match, _ in exact_matches)
-            raise ValueError(f"selector '{selector}' is defined in multiple repos: {candidates}")
+            raise UsageError(f"selector '{selector}' is defined in multiple repos: {candidates}")
         if len(partial_matches) == 1:
             repo, match, _selector_kind = partial_matches[0]
-            raise ValueError(
+            raise UsageError(
                 f"no exact match for '{selector}'; use exact name '{repo.config.name}:{match}'"
             )
         if len(partial_matches) > 1:
             candidates = ", ".join(f"{repo.config.name}:{match}" for repo, match, _ in partial_matches)
-            raise ValueError(f"selector '{selector}' is ambiguous: {candidates}")
-        raise ValueError(f"selector '{selector}' did not match any package or group")
+            raise UsageError(f"selector '{selector}' is ambiguous: {candidates}")
+        raise UsageError(f"selector '{selector}' did not match any package or group")
 
     def resolve_full_spec_selector_text(self, query_text: str, *, profile: str | None = None) -> tuple[Repository, FullSpecSelector]:
         explicit_repo, selector, selector_profile = parse_full_spec_selector_text(query_text)
@@ -184,7 +185,7 @@ class DotmanEngine:
     def search_selectors(self, query_text: str) -> list[SearchMatch]:
         query = query_text.strip()
         if not query:
-            raise ValueError("search query must not be empty")
+            raise UsageError("search query must not be empty")
 
         query_lower = query.lower()
         ranked_matches: list[tuple[tuple[int, int, int, int, str], SearchMatch]] = []

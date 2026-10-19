@@ -9,6 +9,7 @@ from typing import Any
 
 import yaml
 
+from dotman.errors import UsageError
 from dotman.transforms.cli import run_engine_cli
 from dotman.transforms.framework import (
     BaseTransformEngine,
@@ -220,12 +221,12 @@ def load_yaml(path: Path, *, stdin_bytes: bytes | None = None) -> YamlDict:
     try:
         loaded = parse_yaml_text(source_text)
     except yaml.YAMLError as error:
-        raise ValueError(f"invalid YAML in {path}: {error}") from error
+        raise UsageError(f"invalid YAML in {path}: {error}") from error
     # An empty or comment-only document has no mapping yet, like a missing file.
     if loaded is None:
         return {}
     if not isinstance(loaded, dict):
-        raise ValueError(f"Expected top-level YAML mapping in {path}")
+        raise UsageError(f"Expected top-level YAML mapping in {path}")
     return loaded
 
 

@@ -11,6 +11,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Literal
 
+from dotman.errors import UsageError
 from dotman.manifest import (
     build_target_spec,
     normalize_additional_sources,
@@ -140,13 +141,13 @@ class _PatchContext:
     def manifest_path(self) -> Path:
         return self.package_root / "package.toml"
 
-    def error(self, message: str) -> ValueError:
+    def error(self, message: str) -> UsageError:
         # Name the manifest that declares the remove/append so users of a
         # repo with many packages know which file to fix.
-        return ValueError(f"package manifest {self.manifest_path}: {message}")
+        return UsageError(f"package manifest {self.manifest_path}: {message}")
 
 
-def _unknown_path(path: str, context: _PatchContext) -> ValueError:
+def _unknown_path(path: str, context: _PatchContext) -> UsageError:
     return context.error(f"package inheritance path '{path}' does not name a manifest field that remove or append can change")
 
 

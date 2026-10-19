@@ -4,10 +4,11 @@ import os
 import sys
 from pathlib import Path
 
+from dotman.errors import UsageError
 from dotman.rewrites.home import active_home_path, collapse_home_paths, expand_home_paths
 
 
-class HomeRewriteError(ValueError):
+class HomeRewriteError(UsageError):
     def __init__(self, detail: str, *, path: Path | None = None) -> None:
         super().__init__(detail)
         self.detail = detail

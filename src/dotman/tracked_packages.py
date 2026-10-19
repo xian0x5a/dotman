@@ -6,6 +6,7 @@ from typing import Any, TYPE_CHECKING
 
 from dotman.collisions import resolve_tracked_target_winners
 from dotman.config import expand_path
+from dotman.errors import UsageError
 from dotman.manifest import deep_merge, infer_profile_os
 from dotman.projection import default_compare_live, resolve_target_kind, validate_probe_target_config
 from dotman.models import (
@@ -76,12 +77,12 @@ def resolve_tracked_package(
             for repo, package_id, match_bound_profile in exact_matches
         )
         if len({repo.config.name for repo, _package_id, _match_bound_profile in exact_matches}) > 1:
-            raise ValueError(f"tracked package '{selector}' is defined in multiple repos: {candidates}")
-        raise ValueError(f"tracked package '{selector}' is ambiguous: {candidates}")
+            raise UsageError(f"tracked package '{selector}' is defined in multiple repos: {candidates}")
+        raise UsageError(f"tracked package '{selector}' is ambiguous: {candidates}")
 
     if len(partial_matches) == 1:
         repo, package_id, match_bound_profile = partial_matches[0]
-        raise ValueError(
+        raise UsageError(
             f"no exact match for '{selector}'; use exact name '"
             f"{repo.config.name}:{package_ref_text(package_id=package_id, bound_profile=match_bound_profile)}'"
         )
@@ -90,8 +91,8 @@ def resolve_tracked_package(
             f"{repo.config.name}:{package_ref_text(package_id=package_id, bound_profile=match_bound_profile)}"
             for repo, package_id, match_bound_profile in partial_matches
         )
-        raise ValueError(f"tracked package '{selector}' is ambiguous: {candidates}")
-    raise ValueError(f"tracked package '{selector}' did not match any tracked package")
+        raise UsageError(f"tracked package '{selector}' is ambiguous: {candidates}")
+    raise UsageError(f"tracked package '{selector}' did not match any tracked package")
 
 
 def describe_tracked_package(context: "PlanningContext", package_text: str) -> TrackedPackageDetail:
@@ -129,7 +130,7 @@ def describe_tracked_package(context: "PlanningContext", package_text: str) -> T
 
     if not details:
         package_ref = package_ref_text(package_id=package_id, bound_profile=bound_profile)
-        raise ValueError(f"package '{repo.config.name}:{package_ref}' is not currently tracked")
+        raise UsageError(f"package '{repo.config.name}:{package_ref}' is not currently tracked")
 
     return TrackedPackageDetail(
         repo=repo.config.name,
@@ -157,11 +158,11 @@ def find_tracked_target_matches(
     """Match tracked targets; probes only when the caller selects identities, not paths."""
     _explicit_repo, selector, profile = parse_full_spec_selector_text(target_text)
     if profile is not None:
-        raise ValueError("tracked target lookup expects a target selector, not a binding")
+        raise UsageError("tracked target lookup expects a target selector, not a binding")
     if "." in selector:
         package_query, separator, target_name = selector.partition(".")
         if not separator or not package_query or not target_name:
-            raise ValueError(
+            raise UsageError(
                 f"invalid tracked target selector '{target_text}'; expected [<repo>:]<package>.<target>"
             )
         parse_package_ref_text(package_query)
@@ -407,7 +408,7 @@ def summarize_targets(
         if target.source is None or target.path is None:
             # Config errors belong to the package definition, so they omit the instance.
             config_label = repo_qualified_target_text(repo_name=repo.config.name, package_id=package.id, target_name=target.name)
-            raise ValueError(f"target '{config_label}' must define source and path")
+            raise UsageError(f"target '{config_label}' must define source and path")
         rendered_source = render_template_string(target.source, context, base_dir=target.declared_in, source_path=target.declared_in)
         rendered_path = render_template_string(target.path, context, base_dir=target.declared_in, source_path=target.declared_in)
         repo_path = (target.declared_in / rendered_source).resolve()

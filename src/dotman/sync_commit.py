@@ -11,6 +11,7 @@ from typing import Iterator, Literal, Sequence
 from dotman.command_runtime import (
     ArgvCommand, CommandRequest, CommandRuntime, first_output_line, raise_for_command_interruption,
 )
+from dotman.errors import UsageError
 from dotman.models import ResolvedSyncTarget, package_ref_text, target_ref_text
 COMMIT_MESSAGE_FIELDS = ("operation", "count", "summary", "packages", "repo")
 
@@ -45,21 +46,21 @@ def _template_fields(template: str) -> Iterator[str]:
 
 def validate_commit_message_template(template: object) -> str:
     if not isinstance(template, str) or not template.strip():
-        raise ValueError("config git.commit_message must be a non-empty string")
+        raise UsageError("config git.commit_message must be a non-empty string")
     try:
         fields = list(_template_fields(template))
     except ValueError as exc:
-        raise ValueError(f"config git.commit_message is not a valid template: {exc}") from exc
+        raise UsageError(f"config git.commit_message is not a valid template: {exc}") from exc
     for field in fields:
         if field not in COMMIT_MESSAGE_FIELDS:
             allowed = ", ".join(f"{{{name}}}" for name in COMMIT_MESSAGE_FIELDS)
-            raise ValueError(f"config git.commit_message uses unknown placeholder {{{field}}}; use {allowed}")
+            raise UsageError(f"config git.commit_message uses unknown placeholder {{{field}}}; use {allowed}")
     # Names alone miss bad format specs, conversions and nested fields, which
     # would otherwise fail only after a run had written its sources.
     try:
         template.format(operation="sync", count=1, summary="sync main:app.unit", packages="main:app", repo="main")
     except (ValueError, LookupError, AttributeError, TypeError) as exc:
-        raise ValueError(f"config git.commit_message is not a valid template: {exc}") from exc
+        raise UsageError(f"config git.commit_message is not a valid template: {exc}") from exc
     return template
 
 

@@ -6,6 +6,7 @@ import tempfile
 from collections.abc import Sequence
 from pathlib import Path
 
+from dotman.errors import UsageError
 from dotman.templates import (
     JinjaRenderError,
     build_template_context,
@@ -42,11 +43,11 @@ def _apply_template_var_assignments(
 ) -> dict[str, object]:
     for assignment in assignments:
         if "=" not in assignment:
-            raise ValueError(f"invalid --var assignment '{assignment}'; expected <key=value>")
+            raise UsageError(f"invalid --var assignment '{assignment}'; expected <key=value>")
         dotted_key, value = assignment.split("=", 1)
         key_parts = [part for part in dotted_key.split(".") if part]
         if not key_parts:
-            raise ValueError(f"invalid --var assignment '{assignment}'; expected <key=value>")
+            raise UsageError(f"invalid --var assignment '{assignment}'; expected <key=value>")
         _assign_nested_value(variables, key_parts, value)
     return variables
 
@@ -63,7 +64,7 @@ def run_jinja_render(
     variables = _template_vars_from_dotman_env(dict(os.environ))
     _apply_template_var_assignments(variables, var_assignments)
     if not path.exists():
-        raise JinjaRenderError(path=path, detail="source path does not exist")
+        raise UsageError(f"source path does not exist: {path}")
     context = build_template_context(
         variables,
         profile=profile or os.environ.get("DOTMAN_PROFILE") or "default",
@@ -165,7 +166,7 @@ def _build_cli_patch_capture_projector(
             raise_for_command_interruption(result)
             if result.exit_code != 0:
                 stderr = result.stderr.decode("utf-8", errors="replace")
-                raise ValueError(stderr.strip() or f"render command exited with status {result.exit_code}")
+                raise UsageError(stderr.strip() or f"render command exited with status {result.exit_code}")
             return result.stdout
         finally:
             temp_source_path.unlink(missing_ok=True)

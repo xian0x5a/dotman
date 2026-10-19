@@ -14,6 +14,7 @@ from dotman.atomic_files import write_text_atomic
 from dotman.collisions import TargetClaim, validate_target_collisions
 from dotman.command_runtime import ArgvCommand, CommandRequest, current_command_runtime
 from dotman.config import expand_path
+from dotman.errors import UsageError
 from dotman.ignore import GitIgnoreChain, collect_gitignore_chain
 from dotman.manifest import (
     PACKAGE_MANIFEST_FILE_NAME,
@@ -94,9 +95,9 @@ def resolve_live_path_spec(live_path_text: str, *, cwd: Path | None = None, home
     if not candidate_path.is_absolute():
         candidate_path = current_dir / candidate_path
     if not candidate_path.exists() and not candidate_path.is_symlink():
-        raise ValueError(f"live path does not exist: {candidate_path.resolve(strict=False)}")
+        raise UsageError(f"live path does not exist: {candidate_path.resolve(strict=False)}")
     if candidate_path.is_symlink():
-        raise ValueError(f"live path symlinks are not supported: {candidate_path.resolve(strict=False)}")
+        raise UsageError(f"live path symlinks are not supported: {candidate_path.resolve(strict=False)}")
     resolved_path = candidate_path.resolve()
     file_mode = stat.S_IMODE(resolved_path.stat().st_mode)
     if resolved_path.is_file():
@@ -106,7 +107,7 @@ def resolve_live_path_spec(live_path_text: str, *, cwd: Path | None = None, home
         target_kind = "directory"
         chmod = None if file_mode == 0o755 else f"{file_mode:03o}"
     else:
-        raise ValueError(f"unsupported live path type for add: {resolved_path}")
+        raise UsageError(f"unsupported live path type for add: {resolved_path}")
     config_path = _config_path_text(resolved_path, home_dir=home_dir)
     return LivePathSpec(
         raw_input=live_path_text,
@@ -121,7 +122,7 @@ def resolve_live_path_spec(live_path_text: str, *, cwd: Path | None = None, home
 
 def build_target_name(*, config_path: str, target_kind: str) -> str:
     if target_kind not in {"file", "directory"}:
-        raise ValueError(f"unsupported target kind '{target_kind}'")
+        raise UsageError(f"unsupported target kind '{target_kind}'")
     normalized_path = config_path
     if normalized_path.startswith("~/"):
         normalized_path = normalized_path[2:]
@@ -170,7 +171,7 @@ def ensure_package_is_not_inside_another(*, repo_root: Path, repo_name: str, pac
     for depth in range(1, len(package_parts)):
         enclosing_package_id = "/".join(package_parts[:depth])
         if (packages_root / enclosing_package_id / PACKAGE_MANIFEST_FILE_NAME).exists():
-            raise ValueError(
+            raise UsageError(
                 f"cannot create package '{repo_name}:{package_id}' inside package "
                 f"'{repo_name}:{enclosing_package_id}': packages cannot nest"
             )
@@ -185,7 +186,7 @@ def ensure_new_package_holds_no_packages(*, repo_root: Path, repo_name: str, pac
     ]
     if nested_package_ids:
         nested_text = ", ".join(f"'{repo_name}:{nested_id}'" for nested_id in nested_package_ids)
-        raise ValueError(
+        raise UsageError(
             f"cannot create package '{repo_name}:{package_id}': its folder already holds "
             f"{nested_text}; packages cannot nest"
         )
@@ -206,7 +207,7 @@ def prepare_add_to_package(*, repo: Repository, package_id: str, live_path_text:
         package_id=package_id,
     )
     if live_spec.config_path in existing_targets.paths:
-        raise ValueError(
+        raise UsageError(
             f"package '{repo_name}:{package_id}' already declares target path '{live_spec.config_path}'"
         )
     target_name = next_available_target_name(live_spec.target_name_base, existing_targets.names)
@@ -385,7 +386,7 @@ def ensure_target_nests_compatibly(
                     },
                 )
             except ValueError as error:
-                raise ValueError(
+                raise UsageError(
                     f"cannot add '{config_path}': {operation} would fail with: {error}; "
                     "cover the nested path with the parent target's ignore patterns, "
                     "or give one of the targets a different path or source in the package manifest"

@@ -8,6 +8,7 @@ from typing import Generic, TypeVar
 from dotman import cli_style
 from dotman import tracking
 from dotman.engine import DotmanEngine
+from dotman.errors import UsageError
 from dotman.interaction import ChoiceOption, ChoiceRequest, Interaction
 from dotman.interaction_policy import InteractionRequiredError
 from dotman.models import ManagerConfig, package_ref_text
@@ -329,7 +330,7 @@ class EditResolver:
             if self._interaction is None:
                 raise InteractionRequiredError(partial_error)
             return self._choose_candidate(header_text, ranked_partial)
-        raise ValueError(not_found_error)
+        raise UsageError(not_found_error)
 
     @staticmethod
     def _rank_candidates(
@@ -483,13 +484,13 @@ class EditResolver:
     @staticmethod
     def _parse_query_text(query_text: str) -> tuple[str, str | None, str]:
         if any(marker in query_text for marker in ("@", "<", ">")):
-            raise ValueError(
+            raise UsageError(
                 "edit query does not accept selector@profile syntax; "
                 "use explicit edit package or edit target"
             )
         explicit_repo, selector, selector_profile = parse_full_spec_selector_text(query_text)
         if selector_profile is not None:
-            raise ValueError(
+            raise UsageError(
                 "edit query does not accept selector@profile syntax; "
                 "use explicit edit package or edit target"
             )
@@ -497,7 +498,7 @@ class EditResolver:
             return "package", explicit_repo, selector
         package_id, separator, target_name = selector.partition(".")
         if not separator or not package_id or not target_name:
-            raise ValueError(
+            raise UsageError(
                 f"invalid edit target query '{query_text}'; "
                 "expected [<repo>:]<package>.<target>"
             )

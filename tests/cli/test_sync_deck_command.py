@@ -5,6 +5,7 @@ import pytest
 from types import SimpleNamespace
 
 from dotman.cli_parser import build_parser
+from dotman.errors import UsageError
 from tests.engine.test_sync_session import make_engine
 
 
@@ -204,7 +205,7 @@ def test_json_summary_counts_only_selected_effects(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("failure,code,status", [
-    (ValueError("invalid scope"), 2, "failed"),
+    (UsageError("invalid scope"), 2, "failed"),
     (KeyboardInterrupt(), 130, "aborted"),
 ])
 def test_json_preflight_failure_is_one_document(tmp_path, monkeypatch, capsys, failure, code, status):

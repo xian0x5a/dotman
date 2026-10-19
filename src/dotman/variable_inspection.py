@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from dotman.errors import UsageError
 from dotman.manifest import deep_merge, infer_profile_os
 from dotman.models import FullSpecSelector
 from dotman.repository import Repository
@@ -194,5 +195,5 @@ def describe_resolved_variable(context: TrackedStateContext, variable_text: str)
     query = _normalize_variable_query(variable_text)
     occurrences = [occurrence for occurrence in list_resolved_variables(context) if occurrence.variable == query]
     if not occurrences:
-        raise ValueError(f"variable '{query}' did not match any resolved variable")
+        raise UsageError(f"variable '{query}' did not match any resolved variable")
     return ResolvedVariableDetail(variable=query, occurrences=occurrences)

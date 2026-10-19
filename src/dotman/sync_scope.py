@@ -6,6 +6,7 @@ from pathlib import PurePosixPath
 from typing import Sequence
 
 from dotman import planning, tracking
+from dotman.errors import UsageError
 from dotman.models import (
     ResolvedPackageIdentity,
     ResolvedPackageSelection,
@@ -80,14 +81,14 @@ def split_scope_child_path(text: str) -> tuple[str, str | None]:
 
 def _parse_scope_selector(text: str) -> _ScopeSelector:
     if not isinstance(text, str) or not text.strip():
-        raise ValueError("sync scope selector must not be empty")
+        raise UsageError("sync scope selector must not be empty")
     if text != text.strip():
-        raise ValueError(f"sync scope '{text}' is not canonical")
+        raise UsageError(f"sync scope '{text}' is not canonical")
     if ":" not in text:
-        raise ValueError(f"sync scope '{text}' is not canonical; expected repo:package")
+        raise UsageError(f"sync scope '{text}' is not canonical; expected repo:package")
     repo, remainder = text.split(":", 1)
     if not repo or not remainder or ":" in repo:
-        raise ValueError(f"sync scope '{text}' is not canonical; expected repo:package")
+        raise UsageError(f"sync scope '{text}' is not canonical; expected repo:package")
     target_name: str | None = None
     child_path: str | None = None
     package_ref = remainder
@@ -95,14 +96,14 @@ def _parse_scope_selector(text: str) -> _ScopeSelector:
         separator = target_separator_index(remainder, text)
         if separator >= 0:
             if separator == len(remainder) - 1:
-                raise ValueError(f"sync scope '{text}' is not canonical")
+                raise UsageError(f"sync scope '{text}' is not canonical")
             package_ref = remainder[:separator]
             target_name = remainder[separator + 1 :]
         if target_name is not None:
             if "/" in target_name:
                 target_name, child_path = target_name.split("/", 1)
                 if not target_name or not child_path or "." in target_name:
-                    raise ValueError(f"sync scope '{text}' is not canonical")
+                    raise UsageError(f"sync scope '{text}' is not canonical")
                 path = PurePosixPath(child_path)
                 if (
                     path.is_absolute()
@@ -110,15 +111,15 @@ def _parse_scope_selector(text: str) -> _ScopeSelector:
                     or any(part in {"", ".", ".."} for part in path.parts)
                     or "\\" in child_path
                 ):
-                    raise ValueError(f"sync scope '{text}' child path must be normalized POSIX")
+                    raise UsageError(f"sync scope '{text}' child path must be normalized POSIX")
             elif "." in target_name:
-                raise ValueError(f"sync scope '{text}' is not canonical")
+                raise UsageError(f"sync scope '{text}' is not canonical")
     try:
         parsed_repo, package_id, bound_profile = parse_package_ref_text(f"{repo}:{package_ref}")
     except ValueError as exc:
-        raise ValueError(f"sync scope '{text}' is not canonical") from exc
+        raise UsageError(f"sync scope '{text}' is not canonical") from exc
     if parsed_repo != repo:
-        raise ValueError(f"sync scope '{text}' is not canonical")
+        raise UsageError(f"sync scope '{text}' is not canonical")
     return _ScopeSelector(text, repo, package_id, bound_profile, target_name, child_path)
 
 
@@ -139,7 +140,7 @@ def _matching_selection(
     selections: list[ResolvedPackageSelection],
 ) -> ResolvedPackageSelection:
     if selector.package_id in repo.groups and selector.package_id not in repo.packages:
-        raise ValueError(f"sync scope '{selector.text}' names group '{selector.package_id}'; groups are not tracked identities")
+        raise UsageError(f"sync scope '{selector.text}' names group '{selector.package_id}'; groups are not tracked identities")
     candidates = [
         selection
         for selection in selections
@@ -154,10 +155,10 @@ def _matching_selection(
             if repo.package_binding_mode(selection.package_id) != "multi_instance"
         ]
     if not candidates:
-        raise ValueError(f"sync scope '{selector.text}' did not match an exact tracked package identity")
+        raise UsageError(f"sync scope '{selector.text}' did not match an exact tracked package identity")
     if len(candidates) > 1:
         labels = ", ".join(selection.selection_label for selection in candidates)
-        raise ValueError(f"sync scope '{selector.text}' is ambiguous: {labels}")
+        raise UsageError(f"sync scope '{selector.text}' is ambiguous: {labels}")
     return candidates[0]
 
 
@@ -267,7 +268,7 @@ def resolve_sync_scope(
         for item in parsed:
             repo = context.repositories.get(item.repo)
             if repo is None:
-                raise ValueError(f"unknown repo '{item.repo}'")
+                raise UsageError(f"unknown repo '{item.repo}'")
             root = _matching_selection(item, repo=repo, selections=all_selections)
             # Only a package input expands to its dependencies; a target input is the narrowest scope.
             expand = include_dependencies and item.target_name is None
@@ -360,7 +361,7 @@ def resolve_sync_scope(
         requested_scopes.add(root.identity.canonical)
         if item.target_name is not None:
             if not _target_exists(context, root, item.target_name):
-                raise ValueError(f"sync scope '{item.text}' did not match an exact target")
+                raise UsageError(f"sync scope '{item.text}' did not match an exact target")
             target = ResolvedSyncTarget(
                 repo=item.repo,
                 package_id=root.identity.package_id,
@@ -369,10 +370,10 @@ def resolve_sync_scope(
                 child_path=item.child_path,
             )
             if not any(_target_key(target) in keys for keys in winner_keys_by_operation.values()):
-                raise ValueError(f"sync scope '{item.text}' is not an owning tracked target")
+                raise UsageError(f"sync scope '{item.text}' is not an owning tracked target")
             metadata = primary_metadata.get(_target_key(target))
             if item.child_path is not None and (metadata is None or not rendered_target_is_directory(metadata)):
-                raise ValueError(f"sync scope '{item.text}' child identity requires a resolved directory target")
+                raise UsageError(f"sync scope '{item.text}' child identity requires a resolved directory target")
             requested_scopes.add(replace(target, child_path=None).canonical)
             key = (*_target_key(target), target.child_path)
             if key not in selected_target_keys:
@@ -473,7 +474,7 @@ def sync_unit_identity_bytes(identity: ResolvedSyncTarget) -> bytes:
         # here would fail the whole session open instead of one child.
         or (identity.child_path is not None and not identity.child_path.isprintable())
     ):
-        raise ValueError(
+        raise UsageError(
             "Sync Base requires a canonical file or directory-child identity"
         )
     return identity.canonical.encode("utf-8")
