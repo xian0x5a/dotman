@@ -15,6 +15,7 @@ import subprocess
 import sys
 import termios
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -28,65 +29,96 @@ WAIT_SECONDS = 8
 CHILD_PATIENCE_SECONDS = 20  # children give up on their own if the test dies
 SRC_DIR = Path(dotman.__file__).resolve().parent.parent
 
-# Waits for `<name>-release`, announcing itself with `<name>-started` first.
-PIPE_CHILD = """\
-import pathlib, sys, time
-markers = pathlib.Path(sys.argv[1])
-(markers / "pipe-started").touch()
-deadline = time.monotonic() + {patience}
-while not (markers / "pipe-release").exists():
-    if time.monotonic() > deadline:
-        sys.exit(3)
-    time.sleep(0.01)
-"""
-
-# A password prompt: ECHO off on the terminal until released, then put back.
-TTY_CHILD = """\
+# One child for every command. It applies its terminal action, announces
+# `<name>-started`, waits for `<name>-release`, then exits. It never restores the
+# modes it changed: a child dying mid-change is when dotman's own restore
+# matters, and its cleanup would mask the runtime's behavior.
+CHILD = """\
 import pathlib, sys, termios, time
-markers = pathlib.Path(sys.argv[1])
-saved = termios.tcgetattr(0)
-held = termios.tcgetattr(0)
-held[3] &= ~termios.ECHO
-termios.tcsetattr(0, termios.TCSANOW, held)
-(markers / "tty-ready").touch()
+markers, name, action = pathlib.Path(sys.argv[1]), sys.argv[2], sys.argv[3]
+if action != "none":  # a pipe command's stdin is not the terminal
+    attributes = termios.tcgetattr(0)
+    if action == "echo-off":  # a password prompt
+        attributes[3] &= ~termios.ECHO
+    elif action == "raw":  # a raw-mode editor keeps echo, drops line editing
+        attributes[3] &= ~termios.ICANON
+    termios.tcsetattr(0, termios.TCSANOW, attributes)
+(markers / f"{{name}}-started").touch()
 deadline = time.monotonic() + {patience}
-while not (markers / "tty-release").exists():
+while not (markers / f"{{name}}-release").exists():
     if time.monotonic() > deadline:
         sys.exit(3)
     time.sleep(0.01)
-termios.tcsetattr(0, termios.TCSANOW, saved)
 """
 
-# Runs one pipe and one tty command on separate threads, starting the one named
-# first and waiting for its child to be underway before starting the other.
+# Runs the commands named on its command line (`name:io:action`) on separate
+# threads, starting each one only once the previous child is underway.
 DRIVER = """\
 import pathlib, sys, threading
 from dotman.command_runtime import ArgvCommand, CommandRequest, ProductionCommandRuntime
 
-markers = pathlib.Path(sys.argv[1])
-first = sys.argv[2]
-scripts = {{"pipe": sys.argv[3], "tty": sys.argv[4]}}
-underway = {{"pipe": "pipe-started", "tty": "tty-ready"}}
+markers, child = pathlib.Path(sys.argv[1]), sys.argv[2]
 runtime = ProductionCommandRuntime()
 
-def run(kind):
+def run(name, io, action):
     request = CommandRequest(
-        ArgvCommand((sys.executable, scripts[kind], str(markers))), io=kind,
+        ArgvCommand((sys.executable, child, str(markers), name, action)), io=io,
     )
     result = runtime.run(request)
-    assert result.exit_code == 0, (kind, result.exit_code)
-    (markers / f"{{kind}}-returned").touch()
+    assert result.exit_code == 0, (name, result.exit_code)
+    (markers / f"{{name}}-returned").touch()
 
-threads = {{}}
-for kind in (first, "tty" if first == "pipe" else "pipe"):
-    threads[kind] = threading.Thread(target=run, args=(kind,))
-    threads[kind].start()
-    while not (markers / underway[kind]).exists():
-        assert threads[kind].is_alive(), f"{{kind}} command ended before it was underway"
+threads = []
+for spec in sys.argv[3:]:
+    name, io, action = spec.split(":")
+    thread = threading.Thread(target=run, args=(name, io, action))
+    threads.append(thread)
+    thread.start()
+    while not (markers / f"{{name}}-started").exists():
+        assert thread.is_alive(), f"{{name}} ended before it was underway"
         threading.Event().wait(0.01)
-for thread in threads.values():
+for thread in threads:
     thread.join()
 """
+
+# Terminal modes as (ECHO, ICANON).
+ORIGINAL = (True, True)  # a fresh PTY
+ECHO_OFF = (False, True)
+RAW = (True, False)
+ECHO_OFF_RAW = (False, False)
+
+
+@dataclass(frozen=True)
+class OverlapCase:
+    # Commands in start order, as (name, io, action).
+    commands: tuple[tuple[str, str, str], ...]
+    # Commands in the order they are released; each return must leave these modes.
+    releases: tuple[tuple[str, tuple[bool, bool]], ...]
+
+
+CASES = {
+    # The pipe command captured ECHO on, then the tty prompt took the terminal.
+    "pipe_snapshot_before_tty_hold": OverlapCase(
+        commands=(("pipe", "pipe", "none"), ("tty", "tty", "echo-off")),
+        releases=(("pipe", ECHO_OFF), ("tty", ORIGINAL)),
+    ),
+    # The pipe command captured ECHO off during the prompt, which ends first.
+    "pipe_snapshot_during_tty_hold": OverlapCase(
+        commands=(("tty", "tty", "echo-off"), ("pipe", "pipe", "none")),
+        releases=(("tty", ORIGINAL), ("pipe", ORIGINAL)),
+    ),
+    # An editor is killed while a password prompt on another thread still holds
+    # the terminal; the prompt must keep its modes, and the terminal must then
+    # return to what it was before the editor, not to the editor's modes.
+    "tty_commands_first_exits_first": OverlapCase(
+        commands=(("editor", "tty", "raw"), ("prompt", "tty", "echo-off")),
+        releases=(("editor", ECHO_OFF_RAW), ("prompt", ORIGINAL)),
+    ),
+    "tty_commands_nested": OverlapCase(
+        commands=(("editor", "tty", "raw"), ("prompt", "tty", "echo-off")),
+        releases=(("prompt", RAW), ("editor", ORIGINAL)),
+    ),
+}
 
 
 class _Pty:
@@ -103,8 +135,9 @@ class _Pty:
                 if exc.errno != errno.EIO:
                     raise
 
-    def echo_enabled(self) -> bool:
-        return bool(termios.tcgetattr(self.slave)[3] & termios.ECHO)
+    def modes(self) -> tuple[bool, bool]:
+        local_flags = termios.tcgetattr(self.slave)[3]
+        return bool(local_flags & termios.ECHO), bool(local_flags & termios.ICANON)
 
     def close(self) -> None:
         os.close(self.master)
@@ -125,66 +158,45 @@ def _wait_for(marker: Path, terminal: _Pty, driver: subprocess.Popen[bytes]) -> 
         )
 
 
-@pytest.mark.parametrize(
-    "case",
-    ["pipe_snapshot_before_tty_hold", "pipe_snapshot_during_tty_hold"],
-)
-def test_pipe_command_leaves_terminal_modes_to_overlapping_tty_command(
-    case: str, tmp_path: Path
+@pytest.mark.parametrize("case_name", CASES)
+def test_terminal_modes_follow_foreground_tty_command_across_overlaps(
+    case_name: str, tmp_path: Path
 ) -> None:
+    case = CASES[case_name]
     markers = tmp_path / "markers"
     markers.mkdir()
-    pipe_script = tmp_path / "pipe_child.py"
-    pipe_script.write_text(PIPE_CHILD.format(patience=CHILD_PATIENCE_SECONDS))
-    tty_script = tmp_path / "tty_child.py"
-    tty_script.write_text(TTY_CHILD.format(patience=CHILD_PATIENCE_SECONDS))
+    child_script = tmp_path / "child.py"
+    child_script.write_text(CHILD.format(patience=CHILD_PATIENCE_SECONDS))
     driver_script = tmp_path / "driver.py"
     driver_script.write_text(DRIVER.format())
 
     terminal = _Pty()
-    assert terminal.echo_enabled(), "fresh PTY should start with ECHO on"
+    assert terminal.modes() == ORIGINAL, "fresh PTY should start with ECHO and ICANON on"
     driver = subprocess.Popen(
         [
-            sys.executable, str(driver_script), str(markers),
-            "pipe" if case == "pipe_snapshot_before_tty_hold" else "tty",
-            str(pipe_script), str(tty_script),
+            sys.executable, str(driver_script), str(markers), str(child_script),
+            *(":".join(command) for command in case.commands),
         ],
         stdin=terminal.slave, stdout=terminal.slave, stderr=terminal.slave,
         env={**os.environ, "PYTHONPATH": str(SRC_DIR)},
         start_new_session=True,
     )
     try:
-        if case == "pipe_snapshot_before_tty_hold":
-            # The pipe command captured ECHO on, then the tty command took the
-            # terminal. The pipe command exits while the prompt is still up.
-            _wait_for(markers / "tty-ready", terminal, driver)
-            assert not terminal.echo_enabled(), "tty command should hold ECHO off"
-            (markers / "pipe-release").touch()
-            _wait_for(markers / "pipe-returned", terminal, driver)
-            assert not terminal.echo_enabled(), (
-                "pipe command restored its stale ECHO-on snapshot under the tty command's prompt"
-            )
-            (markers / "tty-release").touch()
-            _wait_for(markers / "tty-returned", terminal, driver)
-        else:
-            # The pipe command captured ECHO off while the tty command held the
-            # terminal. The tty command finishes first, then the pipe command exits.
-            _wait_for(markers / "pipe-started", terminal, driver)
-            (markers / "tty-release").touch()
-            _wait_for(markers / "tty-returned", terminal, driver)
-            assert terminal.echo_enabled(), "tty command should have restored ECHO"
-            (markers / "pipe-release").touch()
-            _wait_for(markers / "pipe-returned", terminal, driver)
-            assert terminal.echo_enabled(), (
-                "pipe command put the tty command's ECHO-off modes back after the tty command restored the terminal"
+        for name, _, _ in case.commands:
+            _wait_for(markers / f"{name}-started", terminal, driver)
+        for name, expected in case.releases:
+            (markers / f"{name}-release").touch()
+            _wait_for(markers / f"{name}-returned", terminal, driver)
+            assert terminal.modes() == expected, (
+                f"after {name} returned, (ECHO, ICANON) should be {expected}"
+                f" but are {terminal.modes()}"
             )
         driver.wait(timeout=WAIT_SECONDS)
         assert driver.returncode == 0, terminal.output[-3000:].decode(errors="replace")
-        assert terminal.echo_enabled()
     finally:
         # Let any child still waiting finish on its own, then reap the driver.
-        (markers / "pipe-release").touch()
-        (markers / "tty-release").touch()
+        for name, _, _ in case.commands:
+            (markers / f"{name}-release").touch()
         try:
             driver.wait(timeout=WAIT_SECONDS)
         except subprocess.TimeoutExpired:

@@ -4,6 +4,7 @@ import os
 import sys
 import threading
 from contextlib import contextmanager
+from dataclasses import dataclass, field
 from typing import Iterator, Sequence, TextIO
 
 try:
@@ -23,47 +24,72 @@ def colors_enabled(stream: TextIO) -> bool:
 
 
 # Foreground terminal commands (a sudo password prompt, a tty Editor) and
-# background commands run on different threads. A background command's snapshot
-# goes stale once a foreground command takes the terminal: restoring it would
-# undo that command's modes, e.g. turn echo back on under a password prompt.
-_terminal_ownership_lock = threading.Lock()
-_foreground_owner_count = 0
+# background commands run on different threads. A snapshot goes stale once
+# another foreground command takes the terminal: restoring it would undo that
+# command's modes, e.g. turn echo back on under a password prompt (#291).
+_terminal_holds_lock = threading.Lock()
+# Foreground holds, in the order they took the terminal.
+_terminal_holds: list[_TerminalHold] = []
 # Bumped whenever a foreground command takes or releases the terminal.
-_foreground_ownership_changes = 0
+_terminal_hold_changes = 0
+
+
+@dataclass(eq=False)
+class _TerminalHold:
+    # The modes to put back when this hold ends.
+    snapshots: list[TerminalStateSnapshot] = field(default_factory=list)
 
 
 @contextmanager
 def own_terminal(*, streams: Sequence[object] | None = None) -> Iterator[None]:
-    """Hold the terminal for a foreground command; always put its modes back afterwards."""
-    global _foreground_owner_count, _foreground_ownership_changes
-    with _terminal_ownership_lock:
-        snapshots = _capture_terminal_state(streams=streams)
-        _foreground_owner_count += 1
-        _foreground_ownership_changes += 1
+    """Hold the terminal for a foreground command, then put back the modes it found."""
+    global _terminal_hold_changes
+    hold = _TerminalHold()
     try:
+        with _terminal_holds_lock:
+            hold.snapshots = _capture_terminal_state(streams=streams)
+            _terminal_holds.append(hold)
+            _terminal_hold_changes += 1
         yield
     finally:
-        with _terminal_ownership_lock:
-            _restore_terminal_state(snapshots)
-            _foreground_owner_count -= 1
-            _foreground_ownership_changes += 1
+        _release_terminal_hold(hold)
 
 
 @contextmanager
 def preserve_terminal_state(*, streams: Sequence[object] | None = None) -> Iterator[None]:
     """Put back the modes of a background command's run unless a foreground command held the terminal meanwhile."""
-    with _terminal_ownership_lock:
+    with _terminal_holds_lock:
         snapshots = _capture_terminal_state(streams=streams)
-        captured_without_owner = _foreground_owner_count == 0
-        changes_at_capture = _foreground_ownership_changes
+        captured_during_hold = bool(_terminal_holds)
+        changes_at_capture = _terminal_hold_changes
     try:
         yield
     finally:
         # Check and restore under one lock, so no foreground command can take
         # the terminal in between.
-        with _terminal_ownership_lock:
-            if captured_without_owner and _foreground_ownership_changes == changes_at_capture:
+        with _terminal_holds_lock:
+            if not captured_during_hold and _terminal_hold_changes == changes_at_capture:
                 _restore_terminal_state(snapshots)
+
+
+def _release_terminal_hold(hold: _TerminalHold) -> None:
+    global _terminal_hold_changes
+    with _terminal_holds_lock:
+        if hold not in _terminal_holds:
+            # Interrupted before it took the terminal.
+            return
+        index = _terminal_holds.index(hold)
+        # Bookkeeping first: an interrupted restore must not leave the hold behind.
+        del _terminal_holds[index]
+        _terminal_hold_changes += 1
+        if index < len(_terminal_holds):
+            # Holds can end out of order, e.g. an Editor cancelled while the
+            # broker's sudo prompt is up. The later hold still owns the terminal
+            # and captured this hold's modes: leave the terminal to it, and have
+            # it put back what this hold found instead.
+            _terminal_holds[index].snapshots = hold.snapshots
+            return
+        _restore_terminal_state(hold.snapshots)
 
 
 def read_prompt_line(
