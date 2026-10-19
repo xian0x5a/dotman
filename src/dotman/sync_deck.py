@@ -33,7 +33,7 @@ from textual.widgets.option_list import Option
 
 from dotman.diff_review import display_review_path
 from dotman.models import projection_display_text
-from dotman.cli_style import MENU_HEADER_MARKER, MENU_HEADER_MARKER_STYLE, MENU_HINT_STYLE, MENU_PROMPT_STYLE, render_annotation_parentheses, render_conflict_lines, render_diff_line, render_info_section_header, render_key_hint, render_key_hint_chip, render_key_hint_separator, render_payload_action, render_payload_section_label, render_sync_term, render_package_label, style_text, SYNC_TERM_STYLE_BY_NAME
+from dotman.cli_style import MENU_HEADER_MARKER, MENU_HEADER_MARKER_STYLE, MENU_HINT_STYLE, MENU_PROMPT_STYLE, render_annotation_parentheses, render_conflict_lines, render_diff_lines, render_info_section_header, render_key_hint, render_key_hint_chip, render_key_hint_separator, render_payload_action, render_payload_section_label, render_sync_term, render_package_label, style_text, SYNC_TERM_STYLE_BY_NAME
 from dotman.sync_base_store import DirectoryChildPresent, FilePresent, Missing
 from dotman.sync_deck_command import CommandDeckCrashed, selection_uses_inclusion, auxiliary_resolution, additional_label, guard_skip_explanation, guard_skip_label, set_all_selected, set_selected, row_diagnostics, auxiliary_label, review, edit_proposal, set_resolution_intent, retry_materialization, effect_summary, primary_change_summary, render_guess_annotation, render_resolution, resolution_label, live_counts, summary_stats
 from dotman.sync_session import AuthorizeSymlinkReplacement, AdditionalRow, AuxiliaryRow, CommandRejected, CommitOption, SessionRow, SetCommit, SyncSession, conflict_diagnostic
@@ -141,7 +141,7 @@ class ReviewDocument:
                 elif isinstance(item, ReviewConflict):
                     lines.extend(indent + line for line in render_conflict_lines(item.lines, use_color=self.use_color))
                 else:
-                    lines.extend(indent + "".join(render_diff_line(line, use_color=self.use_color)) for line in item.lines)
+                    lines.extend(indent + line.marker + line.content for line in render_diff_lines(item.lines, use_color=self.use_color))
         return "\n".join(lines)
 
     def renderable(self, search: str = "") -> Group:
@@ -184,15 +184,13 @@ class ReviewDocument:
         grid.add_column(width=1, no_wrap=True)
         grid.add_column(ratio=1, overflow="fold")
         previous_changed = False
-        for line in lines:
-            marker, content = render_diff_line(line, use_color=self.use_color)
-            marker_text = Text.from_ansi(marker)
-            changed = line.startswith(("+", "-")) and not line.startswith(("+++", "---"))
+        for line in render_diff_lines(lines, use_color=self.use_color):
+            marker_text = Text.from_ansi(line.marker)
             # Tag only a block's first line, so change navigation stops once per block.
-            if changed and not previous_changed:
+            if line.changed and not previous_changed:
                 marker_text.apply_meta(REVIEW_CHANGE_META)
-            previous_changed = changed
-            grid.add_row(marker_text, mark(Text.from_ansi(content)))
+            previous_changed = line.changed
+            grid.add_row(marker_text, mark(Text.from_ansi(line.content)))
         return grid
 
 
