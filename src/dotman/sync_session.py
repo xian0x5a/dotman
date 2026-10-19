@@ -825,7 +825,8 @@ class ProposalSession:
                 failures[identity] = Diagnostic("base-maintenance-failed", str(exc), severity="warning")
                 continue
             prefix = (identity.canonical + "/").encode()
-            present = {prefix + path.encode() for path, _ in census.entries}
+            # Undecodable names keep their raw bytes; no stored identity can match them.
+            present = {prefix + path.encode(errors="surrogateescape") for path, _ in census.entries}
             candidates.extend(
                 (identity, state_key, record.identity) for record in stored
                 if record.identity.startswith(prefix) and record.identity not in present
