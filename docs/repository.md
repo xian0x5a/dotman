@@ -28,7 +28,7 @@ under `examples/repo/`.
 - Dependency resolution de-duplicates revisits and truncates cycles, including mixed package/group cycles, so traversal stays finite.
 - Packages that exist only for hard dependency aggregation should use a `-meta` suffix by convention.
 - A package's target live paths are implicitly reserved.
-- Packages may define `reserved_paths = [...]` for additional live paths that must stay exclusive to that package.
+- Packages may define `reserved_paths = [...]` for additional live paths that must stay exclusive to that package instance; two instances of one `multi_instance` package do not share them.
 - A package directly under `packages/` is in the default namespace.
 - Namespaced packages stay explicit, for example `work/git`.
 - Groups live under `groups/` and are used for package selection and composition.
