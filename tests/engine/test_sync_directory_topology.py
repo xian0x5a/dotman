@@ -276,3 +276,40 @@ def test_writer_requires_every_managed_descendant_deletion(tmp_path, monkeypatch
         command(session, SetApproval, "main:app.tree/node/b", True)
         assert session.execute().result.status == "completed"
     assert (root / "node").read_bytes() == b"new"
+
+
+def test_real_sync_over_a_push_only_directory_creates_no_base_store(tmp_path, monkeypatch):
+    from dotman.sync_base_store import LAYOUT_FILE_NAME, LOCK_FILE_NAME
+    engine = directory_engine(tmp_path, monkeypatch, policy="push-only")
+    put(tmp_path / "repo/packages/app/tree", "same"); put(tmp_path / "live/tree", "same")
+    with open_directory(engine, preview=False) as session:
+        session.execute()
+    # Push-only units never record a Base, so nothing may establish storage for them.
+    stored = {path.name for path in (tmp_path / "state/dotman/repos/main").iterdir()}
+    assert not {LAYOUT_FILE_NAME, LOCK_FILE_NAME} & stored
+
+
+def test_directory_base_maintenance_failure_flags_only_that_directory(tmp_path, monkeypatch):
+    import os
+    from dotman.engine import DotmanEngine
+    from dotman.sync_base_store import LOCK_FILE_NAME, SyncBaseStore
+    from tests.helpers import write_named_manager_config, write_sync_repository, write_tracked_packages_state
+
+    directory_engine(tmp_path, monkeypatch, policy="push-only")
+    put(tmp_path / "repo/packages/app/tree", "same"); put(tmp_path / "live/tree", "same")
+    # A second repo whose unit agrees on both sides has nothing to report.
+    write_sync_repository(tmp_path / "other", [("agree", "both", b"same", b"same", "")])
+    write_tracked_packages_state(tmp_path / "state", repo_name="other", entries=[("app", "default")])
+    (tmp_path / "state/dotman/repos/other").chmod(0o700)
+    engine = DotmanEngine.from_config_path(write_named_manager_config(
+        tmp_path, {"main": tmp_path / "repo", "other": tmp_path / "other/repo"}))
+    state_root = tmp_path / "state/dotman"
+    with SyncBaseStore.open(state_root, "main"):
+        pass
+    # A hard-linked lock is unrepairable, so main's store cannot be opened.
+    os.link(state_root / "repos/main" / LOCK_FILE_NAME, tmp_path / "lock-alias")
+    with open_directory(engine, preview=False) as session:
+        rows = {row.row_id: row for row in session.view.rows}
+        assert "other:app.agree" not in rows
+        other, = [unit for unit in session.view.observations if unit.identity.repo == "other"]
+        assert other.diagnostics == ()
