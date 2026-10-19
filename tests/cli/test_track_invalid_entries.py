@@ -208,3 +208,56 @@ def test_tracked_package_with_broken_manifest_is_reported_and_fails_planning(tmp
     assert "extends cycle" in capsys.readouterr().out
     assert main(["--config", str(config_path), "--no-confirm", "track", "main:a@default"]) != 0
     assert "extends cycle" in capsys.readouterr().err
+
+
+def _write_broken_manifest_repo(repo_root: Path, broken_kind: str) -> None:
+    """Write package `a` plus a package `alpha` whose manifest does not load."""
+    _write_plain_packages(repo_root, ["a"])
+    (repo_root / "packages" / "alpha").mkdir()
+    if broken_kind == "extends-cycle":
+        (repo_root / "packages" / "alpha" / "package.toml").write_text('extends = ["beta"]\n', encoding="utf-8")
+        (repo_root / "packages" / "beta").mkdir()
+        (repo_root / "packages" / "beta" / "package.toml").write_text('extends = ["alpha"]\n', encoding="utf-8")
+        return
+    if broken_kind == "extends-parent-missing":
+        (repo_root / "packages" / "alpha" / "package.toml").write_text('extends = ["gone"]\n', encoding="utf-8")
+        return
+    raise AssertionError(broken_kind)
+
+
+@pytest.mark.parametrize("broken_kind", ["extends-cycle", "extends-parent-missing"])
+@pytest.mark.parametrize("command", [["list", "tracked"], ["doctor"]], ids=["list-tracked", "doctor"])
+def test_human_output_lists_tracked_package_whose_manifest_does_not_load(
+    tmp_path: Path,
+    capsys,
+    broken_kind: str,
+    command: list[str],
+) -> None:
+    repo_root = tmp_path / "repo"
+    _write_broken_manifest_repo(repo_root, broken_kind)
+    config_path = write_named_manager_config(tmp_path, {"main": repo_root})
+    write_tracked_packages_state(tmp_path / "state", repo_name="main", entries=[("alpha", "default")])
+
+    capsys.readouterr()
+    main(["--config", str(config_path), *command])
+
+    captured = capsys.readouterr()
+    assert "main:alpha" in captured.out
+    assert "invalid" in captured.out
+    assert "ValueError" not in captured.err
+
+
+@pytest.mark.parametrize("broken_kind", ["extends-cycle", "extends-parent-missing"])
+def test_untrack_of_package_whose_manifest_does_not_load_succeeds(
+    tmp_path: Path,
+    capsys,
+    broken_kind: str,
+) -> None:
+    repo_root = tmp_path / "repo"
+    _write_broken_manifest_repo(repo_root, broken_kind)
+    config_path = write_named_manager_config(tmp_path, {"main": repo_root})
+    write_tracked_packages_state(tmp_path / "state", repo_name="main", entries=[("alpha", "default")])
+
+    assert main(["--config", str(config_path), "--no-confirm", "untrack", "main:alpha@default"]) == 0
+
+    assert _listed_package_entries(config_path, capsys) == set()
