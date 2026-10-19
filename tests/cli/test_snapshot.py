@@ -781,6 +781,36 @@ def test_restore_review_labels_items_by_recorded_target_or_live_path(
     assert "snapshot:" not in output
 
 
+def test_snapshot_labels_keep_the_package_instance_in_info_and_restore_review(
+    tmp_path: Path, monkeypatch, capsys,
+) -> None:
+    monkeypatch.setattr(cli_interaction, "colors_enabled", lambda: False)
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    repo_root = tmp_path / "repo"
+    _write_snapshot_execution_repo(repo_root)
+    manifest_path = repo_root / "packages" / "app" / "package.toml"
+    manifest_path.write_text('binding_mode = "multi_instance"\n' + manifest_path.read_text(encoding="utf-8"), encoding="utf-8")
+    config_path = _write_snapshot_config(tmp_path, repo_root)
+    _write_tracked_binding(tmp_path / "state")
+    live_path = home / ".config" / "app" / "config.txt"
+    live_path.parent.mkdir(parents=True, exist_ok=True)
+    live_path.write_text("before push\n", encoding="utf-8")
+    assert main(["--no-confirm", "--config", str(config_path), "push"]) == 0
+    live_path.write_text("mutated after push\n", encoding="utf-8")
+    snapshot = list_snapshots(tmp_path / "snapshots")[0]
+    capsys.readouterr()
+
+    assert main(["--no-confirm", "--config", str(config_path), "info", "snapshot", snapshot.snapshot_id]) == 0
+    assert "provenance: fixture:app<default>.config" in capsys.readouterr().out
+
+    cli_interaction.print_review_menu_items(
+        cli_interaction.build_restore_review_items(snapshot, build_restore_actions(snapshot)), operation="restore",
+    )
+    assert "[update] fixture:app<default>.config:" in capsys.readouterr().out
+
+
 def test_restore_preview_and_execution_headers_render_snapshot_metadata_like_info_snapshot(
     tmp_path: Path, monkeypatch, capsys,
 ) -> None:

@@ -69,7 +69,7 @@ $XDG_DATA_HOME/dotman/snapshots/
   - the original symlink target when the live path itself was a symlink
   - the symlink handling mode needed for restore
   - the live action that triggered snapshot capture, for example `create`, `update`, or `delete`
-- Provenance such as repo, selection label, package, and target labels may be recorded for human inspection, but restore correctness must not depend on them.
+- Provenance such as repo, selection label, package, package instance (bound profile, for `multi_instance` packages), and target labels may be recorded for human inspection, but restore correctness must not depend on them. Entries without a bound profile (older snapshots, singleton packages) are labeled without an instance.
 
 ## Restore Semantics
 
