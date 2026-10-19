@@ -9,7 +9,7 @@ from dotman.command_runtime import INTERRUPTED_EXIT_CODE, CommandResult, MemoryC
 from dotman.config import load_manager_config
 from dotman.engine import DotmanEngine
 from dotman.models import DEFAULT_COMMIT_MESSAGE, ResolvedSyncTarget
-from dotman.sync_commit import CommitFailed, commit_sources, committable_paths, probe_work_tree, render_commit_message
+from dotman.sync_commit import commit_sources, committable_paths, probe_work_tree, render_commit_message
 from dotman.sync_session import BatchSetApproval, Preview, SetApproval, SetCommit, SetResolutionIntent
 from tests.engine.test_sync_session import make_engine
 from tests.helpers import write_named_manager_config
@@ -302,7 +302,8 @@ def staged_work_tree(tmp_path, files, *, gitignore=""):
 def commit_written_sources(root, sources):
     runtime = ProductionCommandRuntime()
     paths = committable_paths(root, tuple(root / source for source in sources), runtime)
-    return commit_sources(root, paths, "commit sources", runtime)
+    # Sync calls commit_sources only when committable_paths found changes.
+    return commit_sources(root, paths, "commit sources", runtime) if paths else None
 
 
 def test_commit_keeps_a_staged_deletion_inside_a_directory_source(tmp_path):
@@ -316,14 +317,27 @@ def test_commit_keeps_a_staged_deletion_inside_a_directory_source(tmp_path):
     ]
 
 
-def test_commit_refuses_to_retrack_an_ignored_source_the_user_untracked(tmp_path):
-    root = staged_work_tree(tmp_path, {"cache/kept": "old"}, gitignore="/cache/\n")
-    # `git rm --cached` keeps the file but stops tracking it; it is now ignored.
-    git(root, "rm", "-q", "--cached", "cache/kept")
-    (root / "cache/kept").write_text("new")
+@pytest.mark.parametrize("gitignore,files,untracked,written,sources,committed", [
+    pytest.param("/cache/\n", {"cache/kept": "old"}, "cache/kept", "cache/kept", ["cache/kept"], None,
+                 id="file-source"),
+    pytest.param("*.log\n", {"src/a.log": "old", "src/b": "old"}, "src/a.log", "src/b", ["src"], ["M\tsrc/b"],
+                 id="directory-source"),
+])
+def test_commit_keeps_an_ignored_source_the_user_untracked_out_of_history(
+    tmp_path, gitignore, files, untracked, written, sources, committed,
+):
+    root = staged_work_tree(tmp_path, files, gitignore=gitignore)
+    # `git rm --cached` keeps the ignored file on disk but stops tracking it.
+    git(root, "rm", "-q", "--cached", untracked)
+    (root / written).write_text("new")
     head = git(root, "rev-parse", "HEAD")
 
-    with pytest.raises(CommitFailed, match="ignored"):
-        commit_written_sources(root, ["cache/kept"])
-    assert git(root, "rev-parse", "HEAD") == head
-    assert git(root, "ls-files", "cache") == ""
+    commit = commit_written_sources(root, sources)
+
+    if committed is None:
+        assert commit is None
+        assert git(root, "rev-parse", "HEAD") == head
+    else:
+        assert git(root, "show", "--name-status", "--format=", "HEAD").splitlines() == committed
+    # The user's staged deletion is left as it was.
+    assert git(root, "status", "--porcelain", "--", untracked).splitlines() == [f"D  {untracked}"]
