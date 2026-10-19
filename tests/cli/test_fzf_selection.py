@@ -135,6 +135,8 @@ def test_fzf_exit_status_distinguishes_cancel_from_fzf_failure(
     [
         pytest.param("--print-query", id="print-query-adds-query-line"),
         pytest.param("--read0", id="read0-merges-all-options-into-one"),
+        # Header lines cover the selected option, so fzf could never pick it.
+        pytest.param(f"--header-lines={SELECTED_LINE_NUMBER}", id="header-lines-hide-the-first-options"),
     ],
 )
 def test_fzf_selection_ignores_output_shaping_user_defaults(
