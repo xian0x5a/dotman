@@ -28,6 +28,21 @@ def test_no_confirm_directory_child_converges_with_normal_approval(tmp_path, mon
     assert (live / "nested/child").read_bytes() == b"repo"
 
 
+def test_bidi_override_in_child_name_never_prints_raw(tmp_path, monkeypatch, capsys):
+    engine = directory_engine(tmp_path, monkeypatch, policy="push-only")
+    repo, live = tmp_path / "repo/packages/app/tree", tmp_path / "live/tree"
+    put(repo, "good", b"repo")
+    put(live, "good", b"live")
+    put(live, "gnp\u202etxt.exe")
+
+    assert main(["--config", str(engine.config.config_path), "--json", "--no-confirm", "sync"]) != 0
+
+    out = capsys.readouterr().out
+    assert "\u202e" not in out
+    units = {unit["identity"]: unit for unit in json.loads(out)["sync_units"]}
+    assert units["main:app.tree/gnp\\u202etxt.exe"]["observation"] == "observation-failed"
+
+
 def test_deck_renders_child_as_normal_opt_in_approval(tmp_path, monkeypatch):
     engine = directory_engine(tmp_path, monkeypatch, policy="push-only")
     repo, live = tmp_path / "repo/packages/app/tree", tmp_path / "live/tree"

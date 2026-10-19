@@ -114,6 +114,12 @@ def test_unsupported_repository_nodes_are_path_local_and_exclusions_win(tmp_path
     # Control characters inside a name would reach the terminal raw.
     ('a\rb', 'a\\u000db'),
     ('evil\x1b[2Kname', 'evil\\u001b[2Kname'),
+    # Not isprintable(): format, separator and line-break characters are as invisible as controls.
+    ('a\u202eb', 'a\\u202eb'),
+    ('a\u200bb', 'a\\u200bb'),
+    ('a\u00a0b', 'a\\u00a0b'),
+    ('a\u2028b', 'a\\u2028b'),
+    ('a\U000e0001b', 'a\\U000e0001b'),
     (os.fsdecode(b'caf\xe9.txt'), 'caf\\xe9.txt'),
 ])
 def test_child_name_without_canonical_identity_fails_only_that_child(tmp_path, monkeypatch, name, shown):
@@ -130,6 +136,18 @@ def test_child_name_without_canonical_identity_fails_only_that_child(tmp_path, m
         assert units[shown].state == 'observation-failed'
         assert units[shown].diagnostics[0].code == 'unsupported-name'
         assert units[shown].base.status == 'unavailable'
+
+
+@pytest.mark.parametrize('name', ['with space.txt', 'café', '日本'])
+def test_printable_child_name_keeps_canonical_identity(tmp_path, monkeypatch, name):
+    engine = directory_engine(tmp_path, monkeypatch)
+    repo, live = tmp_path / 'repo/packages/app/tree', tmp_path / 'live/tree'
+    put(repo, name, b'repo'); put(live, name, b'live')
+    with open_directory(engine, preview=False) as session:
+        unit, = session.view.observations
+        assert unit.identity.child_path == name
+        assert unit.state == 'drifted'
+        assert not unit.diagnostics
 
 
 def test_stored_base_under_name_without_canonical_identity_does_not_block_session(tmp_path, monkeypatch):
