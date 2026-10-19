@@ -195,7 +195,11 @@ class ReviewDocument:
             # neither starts nor ends a block (it sits between -old and +new).
             if not raw.startswith("\\"):
                 previous_changed = line.changed
-            grid.add_row(marker_text, mark(Text.from_ansi(line.content)))
+            content = Text.from_ansi(line.content)
+            # rich sizes a grid cell before expanding tabs, so a tab left for render
+            # time overflows the cell and folds a line that fits.
+            content.expand_tabs()
+            grid.add_row(marker_text, mark(content))
         return grid
 
 

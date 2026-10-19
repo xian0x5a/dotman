@@ -1724,9 +1724,9 @@ def test_review_keeps_tab_in_file_content_as_layout(tmp_path, monkeypatch):
                 await pilot.pause()
                 assert_shown_escaped(app.deck.review_text(), "+tab\there\\u0001")
                 pane = review_text(app)
-                # Only that the tab is not escaped: rich wraps a grid cell holding a tab early (#307).
-                assert "\\u0009" not in pane and "+tab" in pane
-                assert_shown_escaped(pane, "here\\u0001")
+                assert "\\u0009" not in pane
+                # The tab expands within its row; the line fits, so it must not wrap (#307).
+                assert any("+tab" in row and "here\\u0001" in row for row in pane.split("\n")), pane
         run(interact())
 
 
