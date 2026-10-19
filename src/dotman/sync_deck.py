@@ -13,7 +13,7 @@ import re
 import signal
 import time
 
-from rich.console import Group
+from rich.console import Group, RenderableType
 from rich.padding import Padding
 from rich.rule import Rule
 from rich.style import Style
@@ -1055,6 +1055,12 @@ class SyncDeckApp(App[bool]):
         self._match_index = 0
         # Filters name Targets and searches find file text, so each keeps its own history.
         self._search_history: dict[str, list[str]] = {"filter": [], "search": []}
+
+    def exit(self, result: bool | None = None, return_code: int = 0, message: RenderableType | None = None) -> None:
+        # Textual's exit() overwrites the return code. After an unhandled error the
+        # Deck still exits as a dismissal once in-flight materialization drains,
+        # which would hide the crash from run_command_deck.
+        super().exit(result, return_code=return_code or self.return_code or 0, message=message)
 
     @property
     def busy(self) -> bool:
