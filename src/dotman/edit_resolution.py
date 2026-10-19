@@ -9,6 +9,7 @@ from dotman import cli_style
 from dotman import tracking
 from dotman.engine import DotmanEngine
 from dotman.interaction import ChoiceOption, ChoiceRequest, Interaction
+from dotman.interaction_policy import InteractionRequiredError
 from dotman.models import ManagerConfig, package_ref_text
 from dotman.package_resolution import (
     parse_full_spec_selector_text,
@@ -318,15 +319,15 @@ class EditResolver:
             return ranked_exact[0].value
         if len(ranked_exact) > 1:
             if self._interaction is None:
-                raise ValueError(exact_error)
+                raise InteractionRequiredError(exact_error)
             return self._choose_candidate(header_text, ranked_exact)
         if len(ranked_partial) == 1:
             if self._interaction is None:
-                raise ValueError(single_partial_error)
+                raise InteractionRequiredError(single_partial_error)
             return self._choose_candidate(header_text, ranked_partial)
         if len(ranked_partial) > 1:
             if self._interaction is None:
-                raise ValueError(partial_error)
+                raise InteractionRequiredError(partial_error)
             return self._choose_candidate(header_text, ranked_partial)
         raise ValueError(not_found_error)
 

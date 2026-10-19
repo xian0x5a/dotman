@@ -181,7 +181,7 @@ def test_store_failure_is_cli_error_and_doctor_failure_without_repair(tmp_path, 
     database.chmod(0o644)
     before = database.read_bytes()
     code, error = call(engine, capsys, "info", "sync-base", "main:app.unit")
-    assert code == 2
+    assert code == 1
     assert str(database) in error and "main" in error
     check = next(check for check in engine.doctor().checks if check.key == "sync_bases_store")
     assert check.status == "failed" and check.path == database.parents[2] and check.repo_name == "main"

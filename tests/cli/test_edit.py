@@ -231,7 +231,7 @@ def test_edit_repo_cli_rejects_non_exact_repo_in_non_interactive_mode(
 
     exit_code = main(["--config", str(config_path), "edit", "repo", "bet"])
 
-    assert exit_code == 2
+    assert exit_code == 1
     assert "edit repo 'bet' is not exact; use 'beta'" in capsys.readouterr().err
 
 
@@ -389,7 +389,7 @@ def test_edit_local_cli_rejects_unique_partial_repo_in_non_interactive_mode(
 
     exit_code = main(["--config", str(config_path), "edit", "local", "bet"])
 
-    assert exit_code == 2
+    assert exit_code == 1
     assert "edit local repo 'bet' is not exact; use 'beta'" in capsys.readouterr().err
 
 
@@ -438,7 +438,7 @@ def test_edit_local_cli_requires_repo_when_multiple_repos_in_non_interactive_mod
 
     exit_code = main(["--config", str(config_path), "edit", "local"])
 
-    assert exit_code == 2
+    assert exit_code == 1
     assert "edit local repo is required in non-interactive mode: alpha, beta" in capsys.readouterr().err
 
 
@@ -601,7 +601,7 @@ def test_edit_cli_sugar_rejects_cross_kind_exact_ambiguity(
 
     exit_code = main(["--config", str(config_path), "edit", "note"])
 
-    assert exit_code == 2
+    assert exit_code == 1
     err = capsys.readouterr().err
     assert "edit query 'note' is ambiguous:" in err
     assert "package fixture:note" in err
@@ -779,7 +779,7 @@ def test_edit_target_cli_rejects_ambiguous_target_query_in_non_interactive_mode(
 
     exit_code = main(["--config", str(config_path), "edit", "target", "gitconfig"])
 
-    assert exit_code == 2
+    assert exit_code == 1
     assert "tracked target 'gitconfig' is ambiguous:" in capsys.readouterr().err
 
 

@@ -476,7 +476,7 @@ def test_noninteractive_sync_rejects_ambiguous_scope_with_candidates(tmp_path, m
         ("one", "push-only", b"repo", b"live", ""),
         ("two", "push-only", b"repo", b"live", ""),
     ])
-    assert runner_for(engine).run(arguments(scopes=["o"])) == 2
+    assert runner_for(engine).run(arguments(scopes=["o"])) == 1
     payload = json.loads(capsys.readouterr().out)
     assert payload["status"] == "failed"
     assert "sync scope 'o' is ambiguous: target main:app.one, target main:app.two" in json.dumps(payload)

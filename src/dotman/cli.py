@@ -35,17 +35,15 @@ def main(
     *,
     interaction: Interaction | None = None,
 ) -> int:
-    no_confirm = False
     try:
         raw_argv = list(argv) if argv is not None else sys.argv[1:]
         args = build_parser().parse_args(normalize_edit_query_argv(raw_argv))
-        no_confirm = args.no_confirm
         if args.command in StandaloneCommandRunner.command_names:
             selected_runner = StandaloneCommandRunner()
             skipped_entries_warning = nullcontext()
         else:
             _refuse_root_under_sudo()
-            selected_runner = _repo_command_runner(args, None if no_confirm else interaction)
+            selected_runner = _repo_command_runner(args, None if args.no_confirm else interaction)
             skipped_entries_warning = _warn_about_skipped_entries()
         with command_operation(), interaction_scope(no_confirm=args.no_confirm), skipped_entries_warning:
             return selected_runner.run(args)
@@ -57,7 +55,7 @@ def main(
         return INTERRUPTED_EXIT_CODE
     except ValueError as exc:
         _emit_error(exc, use_color=colors_enabled(sys.stderr))
-        return 1 if no_confirm else 2
+        return 2
     except RuntimeError as exc:
         # Imported here because only repo commands load the Sync Base store.
         from dotman.sync_base_store import SyncBaseStoreError
@@ -65,7 +63,7 @@ def main(
         if not isinstance(exc, SyncBaseStoreError):
             raise
         _emit_error(exc, use_color=colors_enabled(sys.stderr))
-        return 1 if no_confirm else 2
+        return 1
 
 
 def console_main() -> NoReturn:

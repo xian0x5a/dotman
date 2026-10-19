@@ -601,7 +601,7 @@ def test_info_tracked_cli_requires_specific_multi_instance_package_identity_in_n
         ]
     )
 
-    assert exit_code == 2
+    assert exit_code == 1
     assert "ambiguous" in capsys.readouterr().err
 
     exit_code = main(

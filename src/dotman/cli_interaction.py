@@ -27,7 +27,7 @@ from dotman.diff_review import (
 )
 from dotman.engine import DotmanEngine
 from dotman.interaction import Interaction, choose_with_fzf
-from dotman.interaction_policy import no_confirm_enabled
+from dotman.interaction_policy import InteractionRequiredError, no_confirm_enabled
 from dotman.models import (
     FullSpecSelector,
     SelectorKind,
@@ -548,7 +548,7 @@ def resolve_candidate_match(
         return ranked_exact_matches[0]
     if len(exact_matches) > 1:
         if not interactive:
-            raise ValueError(exact_error_text)
+            raise InteractionRequiredError(exact_error_text)
         resolved_options = [option_resolver(match) for match in ranked_exact_matches]
         selected_index = select_menu_option(
             header_text=exact_header_text,
@@ -561,8 +561,8 @@ def resolve_candidate_match(
         partial_option = option_resolver(partial_match)
         if not interactive:
             if single_partial_error_text is not None:
-                raise ValueError(single_partial_error_text)
-            raise ValueError(
+                raise InteractionRequiredError(single_partial_error_text)
+            raise InteractionRequiredError(
                 f"no exact match for '{query_text}'; use exact name '{exact_name_resolver(partial_match)}'"
             )
         if single_partial_mode == "menu":
@@ -579,7 +579,7 @@ def resolve_candidate_match(
         return partial_match
     if len(partial_matches) > 1:
         if not interactive:
-            raise ValueError(partial_error_text)
+            raise InteractionRequiredError(partial_error_text)
         resolved_options = [option_resolver(match) for match in ranked_partial_matches]
         selected_index = select_menu_option(
             header_text=partial_header_text,

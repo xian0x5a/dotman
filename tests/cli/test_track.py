@@ -284,7 +284,7 @@ def test_track_cli_rejects_unique_partial_profile_in_non_interactive_mode(
         ]
     )
 
-    assert exit_code == 2
+    assert exit_code == 1
     assert "no exact match for 'wor'; use exact name 'work'" in capsys.readouterr().err
 
 
@@ -596,7 +596,7 @@ def test_track_cli_refuses_silent_profile_replacement_in_non_interactive_mode(
         ]
     )
 
-    assert exit_code == 2
+    assert exit_code == 1
     assert (
         "refusing to replace tracked package entry 'example:git@basic' with 'example:git@work' in non-interactive mode"
         in capsys.readouterr().err
@@ -691,7 +691,7 @@ def test_track_cli_refuses_implicit_override_in_non_interactive_mode(
         ]
     )
 
-    assert exit_code == 2
+    assert exit_code == 1
     assert (
         "refusing to let 'example:work/git@work' explicitly override implicitly tracked targets in non-interactive mode"
         in capsys.readouterr().err

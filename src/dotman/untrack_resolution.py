@@ -7,6 +7,7 @@ from typing import TypeAlias, TypeVar
 from dotman import cli_style
 from dotman.engine import DotmanEngine
 from dotman.interaction import ChoiceOption, ChoiceRequest, Interaction
+from dotman.interaction_policy import InteractionRequiredError
 from dotman.models import FullSpecSelector, TrackedPackageDetail, package_ref_text
 from dotman.package_resolution import parse_full_spec_selector_text
 from dotman.resolver import (
@@ -550,11 +551,11 @@ class UntrackResolver:
         if ranked_partial:
             if self._interaction is None:
                 if len(ranked_partial) == 1:
-                    raise ValueError(
+                    raise InteractionRequiredError(
                         f"no exact match for '{query_text}'; use exact name "
                         f"'{value_resolver(ranked_partial[0])}'"
                     )
-                raise ValueError(partial_error_text)
+                raise InteractionRequiredError(partial_error_text)
             return self._choose(
                 ranked_partial,
                 header_text=partial_header_text,
@@ -574,7 +575,7 @@ class UntrackResolver:
         noninteractive_error: str,
     ) -> Match:
         if self._interaction is None:
-            raise ValueError(noninteractive_error)
+            raise InteractionRequiredError(noninteractive_error)
         values = {value_resolver(match): match for match in matches}
         options: list[ChoiceOption[str]] = []
         for match in matches:

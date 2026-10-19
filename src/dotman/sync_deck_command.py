@@ -8,7 +8,7 @@ import sys
 
 from dotman.edit_resolution import EditResolver
 from dotman.interaction import Interaction
-from dotman.interaction_policy import interaction_scope
+from dotman.interaction_policy import InteractionRequiredError, interaction_scope
 from dotman.progress import make_planning_sink
 from dotman.sync_timeline import SyncTimelineRenderer
 from dotman.cli_style import SYNC_TERM_STYLE_BY_NAME, render_annotation_parentheses, render_sync_term, render_package_label, render_summary_stat, style_text, MENU_REPO_STYLE
@@ -181,6 +181,9 @@ class SyncDeckCommandRunner:
             scope = engine.resolve_sync_scope(self._resolve_scope_inputs(
                 engine, args.scopes, interaction=self._interaction if interactive else None,
             ), include_dependencies=not args.no_deps)
+        except InteractionRequiredError as exc:
+            self._emit(args, None, None, diagnostic={"code": "decision-required", "message": str(exc)})
+            return 1
         except ValueError as exc:
             self._emit(args, None, None, diagnostic={
                 "code": "invalid-input", "message": str(exc),

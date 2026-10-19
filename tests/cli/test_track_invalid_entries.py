@@ -97,7 +97,7 @@ def test_kept_invalid_entry_leaves_conflict_checks_on(
     write_tracked_packages_state(tmp_path / "state", repo_name="fixture", entries=[*entries, ("gone", entries[0][1])])
     before = _listed_package_entries(config_path, capsys)
 
-    assert main(["--config", str(config_path), "--no-confirm", *command]) == 1
+    assert main(["--config", str(config_path), "--no-confirm", *command]) == 2
 
     assert _listed_package_entries(config_path, capsys) == before
 
@@ -168,7 +168,7 @@ def test_invalid_row_in_another_repo_leaves_conflict_checks_on(tmp_path: Path, c
     write_tracked_packages_state(tmp_path / "state", repo_name="fixture", entries=[("alpha", "basic")])
     write_tracked_packages_state(tmp_path / "state", repo_name="other", entries=[("gone", "default")])
 
-    assert main(["--config", str(config_path), "--no-confirm", "track", "fixture:beta@basic"]) == 1
+    assert main(["--config", str(config_path), "--no-confirm", "track", "fixture:beta@basic"]) == 2
     assert "conflicting explicit tracked targets" in capsys.readouterr().err
 
 
