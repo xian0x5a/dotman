@@ -43,7 +43,6 @@ from dotman.resolver import (
     build_package_match_fields,
     build_selector_field_kinds,
     build_selector_match_fields,
-    parse_slash_qualified_query,
     rank_resolver_option,
 )
 from dotman.repository import Repository
@@ -599,14 +598,7 @@ def resolve_tracked_package_text(
 ) -> tuple[Repository, str, str | None]:
     explicit_repo, selector, bound_profile = parse_package_ref_text(package_text)
     package_query = package_ref_text(package_id=selector, bound_profile=bound_profile)
-    repo_names = [repo_config.name for repo_config in engine.config.ordered_repos]
-    lookup_repo, lookup_selector = parse_slash_qualified_query(
-        repo_names=repo_names,
-        explicit_repo=explicit_repo,
-        selector=selector,
-    )
-    lookup_package_ref = package_ref_text(package_id=lookup_selector, bound_profile=bound_profile)
-    lookup_package_text = f"{lookup_repo}:{lookup_package_ref}" if lookup_repo is not None else lookup_package_ref
+    lookup_package_text = f"{explicit_repo}:{package_query}" if explicit_repo is not None else package_query
     selector, bound_profile, exact_matches, partial_matches = engine.find_tracked_package_matches(lookup_package_text)
     return resolve_candidate_match(
         exact_matches=exact_matches,
@@ -662,13 +654,7 @@ def resolve_trackable_selector_text(
     explicit_repo, selector, selector_profile = parse_full_spec_selector_text(query_text)
     if selector_profile is not None:
         raise ValueError("trackable lookup does not accept selector@profile syntax")
-    repo_names = [repo_config.name for repo_config in engine.config.ordered_repos]
-    lookup_repo, lookup_selector = parse_slash_qualified_query(
-        repo_names=repo_names,
-        explicit_repo=explicit_repo,
-        selector=selector,
-    )
-    exact_matches, partial_matches = engine.find_selector_matches(lookup_selector, lookup_repo)
+    exact_matches, partial_matches = engine.find_selector_matches(selector, explicit_repo)
     return resolve_candidate_match(
         exact_matches=exact_matches,
         partial_matches=partial_matches,

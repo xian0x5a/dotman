@@ -24,7 +24,7 @@ See [Sync lifecycle](sync.md) for convergence semantics and
 - `<...>` is reserved for resolved tracked package instances, not selector+profile forms or manifest IDs.
 - `.` is reserved as the package/target separator in human-facing target labels.
 - When a menu, confirmation, diff banner, list output, or info view includes repo context, it should print the canonical colon-qualified form.
-- Slash-qualified repo input such as `repo/selector@profile` may remain accepted as a lookup alias for convenience, but dotman should normalize displays back to `repo:selector@profile`.
+- `repo:` is the only repo qualifier. `repo/selector` is not a repo alias: `work/git` always means the package or group `work/git`, and a repo-scoped lookup must be written `repo:work/git`.
 - `\` is not a valid selector separator or menu-display form.
 
 ## Confirmation and execution flags

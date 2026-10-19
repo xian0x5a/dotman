@@ -45,10 +45,9 @@ def _search_match_reason(
     query_lower: str,
     selector_lower: str,
     qualified_selector_lower: str,
-    slash_qualified_selector_lower: str,
     description_lower: str | None,
 ) -> tuple[str, int] | None:
-    if query_lower == qualified_selector_lower or query_lower == slash_qualified_selector_lower:
+    if query_lower == qualified_selector_lower:
         return "exact_repo_qualified_selector", 0
     if query_lower == selector_lower:
         return "exact_selector", 1
@@ -195,7 +194,6 @@ class DotmanEngine:
             selector_lower = selector.lower()
             qualified_selector = trackable.qualified_selector
             qualified_selector_lower = qualified_selector.lower()
-            slash_qualified_selector_lower = f"{repo.config.name}/{selector}".lower()
             description = trackable.description
             description_lower = description.lower() if isinstance(description, str) else None
 
@@ -203,7 +201,6 @@ class DotmanEngine:
                 query_lower=query_lower,
                 selector_lower=selector_lower,
                 qualified_selector_lower=qualified_selector_lower,
-                slash_qualified_selector_lower=slash_qualified_selector_lower,
                 description_lower=description_lower,
             )
             if match is None:

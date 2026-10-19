@@ -7,9 +7,7 @@ from dotman.resolver import (
     build_profile_field_kinds,
     build_profile_match_fields,
     build_selector_field_kinds,
-    build_package_match_fields,
     build_selector_match_fields,
-    parse_slash_qualified_query,
     rank_resolver_option,
 )
 
@@ -55,14 +53,6 @@ def test_rank_resolver_option_treats_profile_matches_as_weaker_fallback() -> Non
     )
 
 
-def test_parse_slash_qualified_query_uses_repo_prefix_as_lookup_hint() -> None:
-    assert parse_slash_qualified_query(
-        repo_names=["alpha", "beta"],
-        explicit_repo=None,
-        selector="beta/sunshine",
-    ) == ("beta", "sunshine")
-
-
 def test_profile_ranking_uses_simple_match_instead_of_segment_scoring() -> None:
     profile_prefix = ResolverOption(
         display_label="linux/work",
@@ -78,31 +68,4 @@ def test_profile_ranking_uses_simple_match_instead_of_segment_scoring() -> None:
     assert rank_resolver_option(query="linux", option=profile_prefix) < rank_resolver_option(
         query="linux",
         option=profile_substring,
-    )
-
-
-def test_package_match_fields_keep_repo_qualified_fallback_after_selector_field() -> None:
-    assert build_package_match_fields(repo_name="sandbox", package_id="sunshine") == (
-        "sunshine",
-        "sandbox:sunshine",
-        "sandbox/sunshine",
-    )
-
-
-def test_selector_match_fields_prefer_canonical_repo_qualified_form_before_alias() -> None:
-    assert build_selector_match_fields(repo_name="sandbox", selector="sunshine") == (
-        "sunshine",
-        "sandbox:sunshine",
-        "sandbox/sunshine",
-    )
-
-
-def test_binding_match_fields_keep_canonical_repo_qualified_binding_before_slash_alias() -> None:
-    assert build_full_spec_selector_match_fields(repo_name="sandbox", selector="sunshine", profile="host/linux") == (
-        "sunshine",
-        "sandbox:sunshine",
-        "sandbox/sunshine",
-        "sunshine@host/linux",
-        "sandbox:sunshine@host/linux",
-        "sandbox/sunshine@host/linux",
     )
