@@ -85,7 +85,8 @@ Current responsibility split:
   show text from outside dotman, where it enters output. `printable_text` is injective (backslash doubled) for Sync
   identity stand-ins; `terminal_safe_line` escapes every unprintable character, tab and newline included, for outside
   text inside a one-line row or field (live paths, OS messages, legacy tracked rows); `terminal_safe_text` keeps
-  newline and tab for outside messages that span lines (error details, Sync diagnostics). It also holds the
+  newline and tab for outside messages that span lines (error details, Sync diagnostics) and for file content
+  lines in Sync Deck review diffs and conflict blocks. It also holds the
   reserved characters of selector and profile IDs, which package, group, profile and repo names share
 - `sync_directory.py` — symmetric control-aware census and identity-derived child metadata; no aggregate payload or publication
 - `projection.py` — shared Render, Capture and comparison providers over real endpoints or staged Proposals through `ProjectionContext`

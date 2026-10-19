@@ -36,6 +36,7 @@ from dotman.diff_review import display_review_path
 from dotman.models import projection_display_text
 from dotman.cli_style import MENU_HEADER_MARKER, MENU_HEADER_MARKER_STYLE, MENU_HINT_STYLE, MENU_PROMPT_STYLE, render_annotation_parentheses, render_conflict_lines, render_diff_lines, render_info_section_header, render_key_hint, render_key_hint_chip, render_key_hint_separator, render_payload_action, render_payload_section_label, render_sync_term, render_package_label, style_text, SYNC_TERM_STYLE_BY_NAME
 from dotman.sync_base_store import DirectoryChildPresent, FilePresent, Missing
+from dotman.printable import terminal_safe_text
 from dotman.sync_deck_command import CommandDeckCrashed, selection_uses_inclusion, auxiliary_resolution, additional_label, guard_skip_explanation, guard_skip_label, set_all_selected, set_selected, row_diagnostics, auxiliary_label, review, edit_proposal, set_resolution_intent, retry_materialization, effect_summary, primary_change_summary, render_guess_annotation, render_resolution, resolution_label, live_counts, summary_stats
 from dotman.sync_session import AuthorizeSymlinkReplacement, AdditionalRow, AuxiliaryRow, CommandRejected, CommitOption, SessionRow, SetCommit, SyncSession, conflict_diagnostic
 
@@ -225,7 +226,8 @@ def conflict_excerpt(content: bytes, *, description: str, full_context: bool = F
     for previous, index in zip([-1, *kept], kept):
         if index - previous > 1:
             excerpt.append(CONFLICT_ELISION)
-        excerpt.append(lines[index])
+        # File content is outside text; escape it before from_ansi passes or swallows control characters.
+        excerpt.append(terminal_safe_text(lines[index]))
     if kept and kept[-1] < len(lines) - 1:
         excerpt.append(CONFLICT_ELISION)
     return ReviewConflict(tuple(excerpt))
@@ -281,7 +283,9 @@ def _review_difference(
                 lineterm="\n",
             )
             for line in diff:
-                lines.append(line.rstrip("\n"))
+                # File content is outside text: from_ansi would pass C0/C1 controls raw, swallow
+                # ESC sequences and blank a CRLF line at its \r, so escape them (tab stays).
+                lines.append(terminal_safe_text(line.rstrip("\n")))
                 # Retain newline-only drift in both evidence and effect previews.
                 if not line.endswith("\n"):
                     lines.append("\\ No newline at end of file")
