@@ -988,6 +988,37 @@ def merge_target_specs(base: TargetSpec, override: TargetSpec) -> TargetSpec:
 
 
 
+def _path_rule_following_target(rule: TargetPathRule, target: TargetSpec) -> TargetPathRule:
+    editor = rule.editor if rule.editor_explicit else target.editor
+    return replace(
+        rule,
+        render=rule.render if rule.render_explicit else target.render,
+        capture=rule.capture if rule.capture_explicit else target.capture,
+        compare_repo=rule.compare_repo if rule.compare_repo_explicit else target.compare_repo,
+        compare_live=rule.compare_live if rule.compare_live_explicit else target.compare_live,
+        editor=editor,
+        additional_sources=editor.additional_sources,
+        additional_source_entries=editor.source_entries(),
+        sync_policy=rule.sync_policy if rule.sync_policy_explicit else target.sync_policy,
+    )
+
+
+def path_rules_following_targets(package: PackageSpec) -> PackageSpec:
+    """Re-copy the target fields each path rule leaves unset.
+
+    Loading copies a target's values into the rule fields its manifest omits.
+    `extends`, `remove` and `append` can change the target afterwards, so the
+    copies are refreshed once the package is resolved; otherwise readers of
+    the copies see a parent's stale value.
+    """
+    if not package.targets:
+        return package
+    return replace(package, targets={
+        name: replace(target, path_rules=tuple(_path_rule_following_target(rule, target) for rule in target.path_rules))
+        for name, target in package.targets.items()
+    })
+
+
 def validate_patch_capture(owner: str, *, render: str, capture: str, compare_repo: str, compare_live: str) -> None:
     if capture != "patch":
         return
