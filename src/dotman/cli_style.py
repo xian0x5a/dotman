@@ -264,8 +264,6 @@ def render_profile_conflict_detail(error: object, *, use_color: bool) -> str:
 
 
 def render_variable_name(variable_name: str, *, use_color: bool) -> str:
-    # Authored in a manifest and never checked at load, so it is escaped here.
-    variable_name = terminal_safe_line(variable_name)
     if not use_color:
         return variable_name
     return style_text(variable_name, "1")

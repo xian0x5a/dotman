@@ -42,22 +42,24 @@ def printable_text(text: str) -> str:
 
 
 def terminal_safe_line(text: str) -> str:
-    """Text for a person to read inside one line: every unprintable character is escaped, tab and newline included.
+    """Outside text for a person to read inside one line: every unprintable character is escaped, tab and newline included.
 
-    Use it for names, paths and any other field of a row or a labelled line, so
-    the text cannot start a new line or shift a column. Not injective: a
-    backslash stays a backslash. Free text that may span lines uses
-    `terminal_safe_text`; identities use `printable_text`.
+    Use it where text dotman does not control enters a row or a labelled line
+    (a live file name, an environment value, a row an older dotman stored), so
+    it cannot start a new line or shift a column. Not injective: a backslash
+    stays a backslash. Outside text that may span lines uses `terminal_safe_text`;
+    Sync identities use `printable_text`. Authored identity is validated at load
+    and printed as written.
     """
     return "".join(_shown(character) for character in text)
 
 
 def terminal_safe_text(text: str) -> str:
-    """Free text for a person to read as a block: unprintable characters are escaped, but newline and tab stay.
+    """Outside text that may span lines: unprintable characters are escaped, but newline and tab stay.
 
-    Only a block of free text that may span lines keeps its layout: the `info`
-    description, an error's detail, a Sync diagnostic or failure message, and a
-    hook command. Anything inside a one-line row or field uses `terminal_safe_line`.
+    Only a message that may run over several lines keeps its layout: an error's
+    detail, a Sync diagnostic or a failure message. Anything inside a one-line row
+    or field uses `terminal_safe_line`.
     """
     return "".join(
         character if character in KEPT_LAYOUT_CHARACTERS else _shown(character) for character in text

@@ -17,7 +17,7 @@ from dotman.command_runtime import (
     raise_for_command_interruption,
 )
 from dotman.models import AdditionalSource, EditorSpec
-from dotman.printable import terminal_safe_line, terminal_safe_text
+from dotman.printable import terminal_safe_line
 from dotman.terminal import colors_enabled
 from dotman.ui_context import current_ui_config
 
@@ -61,7 +61,6 @@ class ReviewItem:
 
 
 def _render_hook_command_summary(summary: str) -> str:
-    summary = terminal_safe_text(summary)  # a hook command is a script: layout stays, other unprintables are escaped
     if ": " not in summary:
         return summary
     hook_name, command = summary.split(": ", 1)
@@ -166,7 +165,7 @@ def _review_materialized_display_path(reference_path: Path) -> Path:
 
 
 def display_review_path(reference_path: Path | str, *, compact: bool = True, tail_segments: int | None = None) -> str:
-    """A path for a person to read, in a row or a heading. Authored and live paths can hold unprintable characters, so it is escaped."""
+    """A path for a person to read, in a row or a heading. A live path is outside text and can hold unprintable characters, so it is escaped."""
     path = Path(reference_path)
     if not compact:
         return terminal_safe_line(str(path))

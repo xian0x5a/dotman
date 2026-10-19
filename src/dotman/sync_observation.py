@@ -18,7 +18,7 @@ from dotman.manifest import resolve_sync_policy, sync_policy_allows_operation
 from dotman.models import GuardSkip, ResolvedSyncScope, ResolvedSyncTarget, resolved_package_selection_key
 from dotman.planning_guards import evaluate_directional_guards, evaluate_directory_path_rule_guards
 from dotman.progress import ProgressSink
-from dotman.printable import printable_text
+from dotman.printable import printable_text, terminal_safe_text
 from dotman.sync_directory import CensusFailure, census_directory, child_metadata, validate_planned_child
 from dotman.sync_base_lifecycle import (
     BaseUnit,
@@ -44,6 +44,11 @@ class Diagnostic:
     code: str
     message: str
     severity: Literal["error", "warning"] = "error"
+
+    @property
+    def display_message(self) -> str:
+        """The message for the Deck's panes. It carries OS errors and live file names, which are outside text."""
+        return terminal_safe_text(self.message)
 
 
 @dataclass(frozen=True)

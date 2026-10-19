@@ -321,7 +321,7 @@ def parse_selection_index(raw_answer: str, item_count: int) -> int:
     if not answer:
         return 1
     if not answer.isdigit():
-        raise ValueError(f"unsupported selection: {terminal_safe_line(answer)}")
+        raise ValueError(f"unsupported selection: {answer}")
     selected_index = int(answer)
     if not 1 <= selected_index <= item_count:
         raise ValueError(f"selection index out of range: {selected_index}")

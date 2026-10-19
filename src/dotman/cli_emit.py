@@ -192,7 +192,7 @@ def emit_trackables(*, trackables: Sequence[Any], json_output: bool, use_color: 
             member_count=trackable.member_count,
             use_color=use_color,
         )
-        description = cli_style.render_annotation_parentheses(terminal_safe_line(trackable.description or ""), use_color=use_color)
+        description = cli_style.render_annotation_parentheses(trackable.description or "", use_color=use_color)
         print(f"{cli_style.join_menu_display_fields(selector_label, kind_badge, meta_badge)}{description}")
     return 0
 
@@ -223,7 +223,7 @@ def emit_repos(*, repos: Sequence[Any], json_output: bool, use_color: bool) -> i
         order_badge = cli_style.render_menu_badge(f"[order {repo.order}]", use_color=use_color)
         state_annotation = "" if repo.state_key == repo.name else f"state_key: {repo.state_key}"
         print(
-            f"{cli_style.join_menu_display_fields(repo_name, order_badge, terminal_safe_line(str(repo.path)))}"
+            f"{cli_style.join_menu_display_fields(repo_name, order_badge, str(repo.path))}"
             f"{cli_style.render_annotation_parentheses(state_annotation, use_color=use_color)}"
         )
     return 0
@@ -322,7 +322,7 @@ def emit_search_matches(*, matches: Sequence[Any], query: str, json_output: bool
         return 0
 
     if not matches:
-        print(f"no packages or groups matched '{terminal_safe_line(query)}'")
+        print(f"no packages or groups matched '{query}'")
         return 0
 
     for match in matches:
@@ -333,7 +333,7 @@ def emit_search_matches(*, matches: Sequence[Any], query: str, json_output: bool
             member_count=match.member_count,
             use_color=use_color,
         )
-        description = cli_style.render_annotation_parentheses(terminal_safe_line(match.description or ""), use_color=use_color)
+        description = cli_style.render_annotation_parentheses(match.description or "", use_color=use_color)
         package_label = cli_style.render_package_label(
             repo_name=match.repo,
             package_id=match.selector,
@@ -382,7 +382,11 @@ def emit_variable_detail(*, variable_detail: Any, json_output: bool, use_color: 
         print(json.dumps(payload, indent=2, sort_keys=True))
         return 0
 
-    print(cli_style.render_variable_name(variable_detail.variable, use_color=use_color))
+    header_text = variable_detail.variable
+    if use_color:
+        print(cli_style.style_text(header_text, "1"))
+    else:
+        print(header_text)
 
     for index, occurrence in enumerate(variable_detail.occurrences):
         if index > 0:
@@ -398,15 +402,15 @@ def emit_variable_detail(*, variable_detail: Any, json_output: bool, use_color: 
         print(f"      {binding_label}")
         print()
         print(cli_style.render_info_section_header("resolved value", use_color=use_color))
-        print(f"      {terminal_safe_line(_format_variable_value(occurrence.value))}")
+        print(f"      {_format_variable_value(occurrence.value)}")
         print()
         print(cli_style.render_info_section_header("provenance", use_color=use_color))
-        provenance_label = terminal_safe_line(occurrence.provenance.source_label)
+        provenance_label = occurrence.provenance.source_label
         if occurrence.provenance.source_kind in {"package", "profile"}:
             provenance_label = f"{occurrence.provenance.source_kind} {provenance_label}"
         print(
             f"      {cli_style.render_payload_section_label(provenance_label, use_color=use_color)}: "
-            f"{terminal_safe_line(str(occurrence.provenance.source_path))}"
+            f"{occurrence.provenance.source_path}"
         )
     return 0
 
@@ -567,11 +571,10 @@ def emit_add_result(*, result: Any, json_output: bool, use_color: bool) -> int:
     )
     action = "created" if result.created_package else "updated"
     print(f"{action} package config {package_label}")
-    # The source and path come from a live file name or an authored manifest, so they may hold unprintable characters.
-    print(f"  manifest: {terminal_safe_line(str(result.manifest_path))}")
-    print(f"  target:   {terminal_safe_line(result.target_name)} [{result.target_kind}]")
-    print(f"  source:   {terminal_safe_line(str(result.source_path))}")
-    print(f"  path:     {terminal_safe_line(str(result.config_path))}")
+    print(f"  manifest: {result.manifest_path}")
+    print(f"  target:   {result.target_name} [{result.target_kind}]")
+    print(f"  source:   {result.source_path}")
+    print(f"  path:     {result.config_path}")
     if result.chmod is not None:
         print(f"  chmod:    {result.chmod}")
     manifest_only_note = "manifest only; repo source files were not copied"
@@ -665,8 +668,7 @@ def render_hook_command_lines(
     io: str = "pipe",
     elevation: str = "none",
 ) -> list[str]:
-    # A hook command is a script that may span lines and use tabs; its unprintable characters are still escaped.
-    command_lines = terminal_safe_text(command).splitlines() or [""]
+    command_lines = command.splitlines() or [""]
     # Number multi-command hooks so users can tell distinct commands apart without cluttering single-command hooks.
     first_prefix = f"      [{index}] " if command_count > 1 else "      "
     continuation_prefix = " " * len(first_prefix)
@@ -714,7 +716,7 @@ def emit_trackable_detail(*, trackable_detail: Any, json_output: bool, use_color
         )
     )
     if getattr(trackable_detail, "description", None):
-        print(f"  {terminal_safe_text(trackable_detail.description)}")
+        print(f"  {trackable_detail.description}")
 
     print()
     print(cli_style.render_info_section_header("status", use_color=use_color))
@@ -776,7 +778,7 @@ def emit_trackable_detail(*, trackable_detail: Any, json_output: bool, use_color
             if target.path is None:
                 print(f"    {target_name}")
                 continue
-            print(f"    {target_name} -> {terminal_safe_line(str(target.path))}")
+            print(f"    {target_name} -> {target.path}")
         return 0
 
     tracked_state = trackable_detail.tracked_state.replace("_", " ")
@@ -810,7 +812,7 @@ def emit_tracked_package_detail(*, package_detail: Any, json_output: bool, use_c
         )
     )
     if package_detail.description:
-        print(f"  {terminal_safe_text(package_detail.description)}")
+        print(f"  {package_detail.description}")
     if package_detail.package_entries:
         print()
         print(cli_style.render_info_section_header("provenance", use_color=use_color))
@@ -854,7 +856,7 @@ def emit_tracked_package_detail(*, package_detail: Any, json_output: bool, use_c
         print(cli_style.render_info_section_header("owned targets", use_color=use_color))
     for target in package_detail.owned_targets:
         target_name = cli_style.style_text(target.target.target_name, '1') if use_color else target.target.target_name
-        print(f"    {target_name} -> {terminal_safe_line(str(target.target.live_path))}")
+        print(f"    {target_name} -> {target.target.live_path}")
     return 0
 
 

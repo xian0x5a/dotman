@@ -42,7 +42,8 @@ def set_all_selected(session: SyncSession, selected: bool, row_ids: tuple[str, .
 
 def additional_label(row, *, use_color: bool = False) -> str:
     repo = style_text(row.repo, *MENU_REPO_STYLE) if use_color else row.repo
-    return f"{repo}:{row.path}"
+    # Additional Source paths are not validated at load and can name files found on disk, so the path is outside text.
+    return f"{repo}:{terminal_safe_line(str(row.path))}"
 
 
 def row_diagnostics(row):
@@ -84,7 +85,8 @@ def auxiliary_label(scope: str, kind: str, directions, *, path_rule_pattern: str
 
 def guard_skip_explanation(row) -> str:
     """Guard exit 100 omits work by design; say which Guard and why."""
-    reason = f" ({row.guard_skip.reason})" if row.guard_skip.reason else ""
+    # The reason is the Guard command's output, which is outside text.
+    reason = f" ({terminal_safe_line(row.guard_skip.reason)})" if row.guard_skip.reason else ""
     return f"guard_{row.directions[0]} exited 100{reason}"
 
 
