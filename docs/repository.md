@@ -81,6 +81,7 @@ under `examples/repo/`.
 ## Package Identity Modes (`binding_mode`)
 
 - `binding_mode` controls package identity semantics, not file rendering semantics.
+- `binding_mode` is inherited through `extends` with last-wins behavior, like other scalars; a child only repeats it to change it.
 - File naming conventions such as `.tmpl` should not change package identity behavior.
 - A `singleton` package is directly trackable as one package identity.
 - A `multi_instance` package definition is not itself a tracked package identity.

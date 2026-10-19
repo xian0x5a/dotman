@@ -263,7 +263,8 @@ class PackageSpec:
     id: str
     package_root: Path
     description: str | None = None
-    binding_mode: str = "singleton"
+    # None until resolution so extends can tell "unset" from an explicit value.
+    binding_mode: str | None = None
     sync_policy: str | None = None
     depends: tuple[str, ...] | None = None
     extends: tuple[str, ...] | None = None

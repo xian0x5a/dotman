@@ -956,7 +956,7 @@ def merge_package_specs(base: PackageSpec, override: PackageSpec) -> PackageSpec
         id=override.id,
         package_root=override.package_root,
         description=override.description if override.description is not None else base.description,
-        binding_mode=override.binding_mode,
+        binding_mode=override.binding_mode if override.binding_mode is not None else base.binding_mode,
         sync_policy=override.sync_policy if override.sync_policy is not None else base.sync_policy,
         depends=override.depends if override.depends is not None else base.depends,
         extends=None,

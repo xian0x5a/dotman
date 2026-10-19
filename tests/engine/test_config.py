@@ -563,3 +563,30 @@ def test_repository_accepts_three_or_four_digit_octal_chmod(tmp_path: Path, loca
     config_path = write_chmod_repo(tmp_path, **{location: chmod})
 
     DotmanEngine.from_config_path(config_path)
+
+
+@pytest.mark.parametrize(
+    ("child_lines", "expected_binding_mode"),
+    [
+        (['extends = ["base"]'], "multi_instance"),
+        # A later parent that never sets binding_mode must not reset an earlier parent's choice.
+        (['extends = ["base", "plain"]'], "multi_instance"),
+        (['extends = ["base"]', 'binding_mode = "singleton"'], "singleton"),
+    ],
+)
+def test_package_binding_mode_inherits_through_extends(
+    tmp_path: Path, child_lines: list[str], expected_binding_mode: str
+) -> None:
+    config_path = write_tracked_fixture_repo(
+        tmp_path,
+        packages={
+            "base": ['binding_mode = "multi_instance"'],
+            "plain": ['description = "plain"'],
+            "child": child_lines,
+        },
+    )
+    engine = DotmanEngine.from_config_path(config_path)
+
+    assert engine.get_repo("fixture").resolve_package("child").binding_mode == expected_binding_mode
+    catalog_modes = {entry.selector: entry.binding_mode for entry in engine.list_trackables() if entry.kind == "package"}
+    assert catalog_modes == {"base": "multi_instance", "plain": "singleton", "child": expected_binding_mode}

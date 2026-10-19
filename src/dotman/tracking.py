@@ -99,7 +99,9 @@ class TrackedStateSummary:
 
 def iter_trackable_catalog_entries(context: TrackedStateContext):
     for repo in candidate_repositories(context):
-        for package_id, package in sorted(repo.packages.items()):
+        for package_id in sorted(repo.packages):
+            # Inherited metadata such as binding_mode only exists on the resolved package.
+            package = repo.resolve_package(package_id)
             yield repo, TrackableCatalogEntry(
                 kind="package",
                 repo=repo.config.name,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -61,6 +62,9 @@ def normalize_skip_markers(value: Any, *, repo_config_path: Path) -> tuple[str, 
         markers.append(marker)
     return tuple(markers)
 
+
+PACKAGE_BINDING_MODES = ("singleton", "multi_instance")
+DEFAULT_PACKAGE_BINDING_MODE = "singleton"
 
 PACKAGE_MANIFEST_TOP_LEVEL_KEYS = {
     "binding_mode",
@@ -180,8 +184,8 @@ class Repository:
                 validate_package_id(package_id)
             except ValueError as exc:
                 raise ValueError(f"package manifest {manifest_path}: {exc}") from None
-            binding_mode = str(payload.get("binding_mode", "singleton"))
-            if binding_mode not in {"singleton", "multi_instance"}:
+            binding_mode = payload.get("binding_mode")
+            if binding_mode is not None and binding_mode not in PACKAGE_BINDING_MODES:
                 raise ValueError(
                     f"package manifest {manifest_path} has unsupported binding_mode '{binding_mode}'"
                 )
@@ -350,6 +354,9 @@ class Repository:
             default_command_elevation=self.default_command_elevation,
         )
         if validate:
+            # binding_mode stays unset through extends so an unset parent or
+            # child inherits it like other scalars; default it only once final.
+            merged = replace(merged, binding_mode=merged.binding_mode or DEFAULT_PACKAGE_BINDING_MODE)
             merged = _validate_resolved_package(merged, repo_name=self.config.name)
             self._resolved_packages[package_id] = merged
         return merged
