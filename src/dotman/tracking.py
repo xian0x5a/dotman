@@ -315,10 +315,14 @@ def read_tracked_packages_file(state_path: Path) -> list[TrackedPackageEntry]:
     packages_payload = payload.get("packages", [])
     if not isinstance(packages_payload, list):
         raise TrackedPackagesFileError(state_path, "must declare packages as an array of tables")
-    return [
-        _tracked_package_entry_from_row(state_path, row_number, package_payload)
-        for row_number, package_payload in enumerate(packages_payload, start=1)
-    ]
+    # The file is a set of entries. A repeated row (hand edit, merge) would otherwise
+    # surface as an ambiguous duplicate and survive a single-row untrack.
+    return list(
+        dict.fromkeys(
+            _tracked_package_entry_from_row(state_path, row_number, package_payload)
+            for row_number, package_payload in enumerate(packages_payload, start=1)
+        )
+    )
 
 
 def _tracked_package_entry_from_row(state_path: Path, row_number: int, package_payload: object) -> TrackedPackageEntry:
