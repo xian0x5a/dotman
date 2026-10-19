@@ -1,15 +1,17 @@
 """Text dotman did not validate at load never reaches the terminal raw (issues #295, #304).
 
-Two kinds of stored text can hold characters a terminal misreads:
+Three kinds of stored text can hold characters a terminal misreads:
 
 - Tracked rows an older dotman wrote, before profile IDs were checked for
-  printability. A row's profile may hold NBSP or ESC, and the rows must stay
-  visible, escaped, and removable.
+  printability. A row's package ID or profile may hold NBSP or ESC, and the rows
+  must stay visible, escaped, and removable.
 - Package descriptions, which are free text rather than names.
+- Variable names, which are authored but never checked at load.
 
 Escaping is `\\uNNNN` per unprintable character, so a profile `work<NBSP>laptop`
-shows as `work\\u00a0laptop`. Tab and newline are unprintable too: a name never
-carries layout, while free text such as a description keeps its line breaks.
+shows as `work\\u00a0laptop`. Tab and newline are unprintable too: a name, or any
+text in a one-line row, never carries layout. Only a multi-line block of free text,
+such as the description under `info`, keeps its line breaks.
 """
 
 from __future__ import annotations
@@ -23,7 +25,7 @@ from pathlib import Path
 import pytest
 
 from dotman.cli import main
-from tests.helpers import write_multi_instance_repo, write_named_manager_config
+from tests.helpers import write_multi_instance_repo, write_named_manager_config, write_tracked_packages_state
 
 REPO_NAME = "main"
 LEGACY_PACKAGE = "profiled"  # multi_instance, so its profile is part of how a row is labelled
@@ -66,23 +68,8 @@ def tracked_state_path(tmp_path: Path) -> Path:
 
 
 def write_tracked_rows(tmp_path: Path, rows: list[tuple[str, str]]) -> None:
-    """Write `tracked-packages.toml` the way an older dotman did, whatever the profile holds.
-
-    `json.dumps` quotes with `\\uNNNN` escapes, which TOML 1.0 reads back, so the
-    file is valid even when a profile holds a control character.
-    """
-    lines = ["schema_version = 1", ""]
-    for package_id, profile in rows:
-        lines += [
-            "[[packages]]",
-            f"repo = {json.dumps(REPO_NAME)}",
-            f"package_id = {json.dumps(package_id)}",
-            f"profile = {json.dumps(profile)}",
-            "",
-        ]
-    state_path = tracked_state_path(tmp_path)
-    state_path.parent.mkdir(parents=True, exist_ok=True)
-    state_path.write_text("\n".join(lines), encoding="utf-8")
+    """Write `tracked-packages.toml` the way an older dotman did, whatever the package ID and profile hold."""
+    write_tracked_packages_state(tmp_path / "state", repo_name=REPO_NAME, entries=rows)
 
 
 def read_tracked_rows(tmp_path: Path) -> list[tuple[str, str]]:
@@ -169,22 +156,16 @@ def test_untrack_result_line_shows_the_removed_legacy_profile_escaped(
 
 
 def advertised_untrack_arguments(warning_text: str) -> list[str]:
-    """The arguments of the `dotman untrack ...` command a stale-row warning advertises, split as a shell splits them."""
+    """The arguments of the `dotman untrack ...` command a stale-row warning ends with, split as a shell splits them."""
     stale_row_lines = [line for line in warning_text.splitlines() if "skipped stale tracked row" in line]
     assert len(stale_row_lines) == 1, warning_text
-    line = stale_row_lines[0]
-    advertised = re.search(r"dotman untrack .*$", line)
+    # The command is the last thing on its line, so a user can copy from `dotman` to the end.
+    advertised = re.search(r"dotman untrack .*$", stale_row_lines[0])
     assert advertised, f"the stale-row warning must advertise 'dotman untrack <selector>': {warning_text!r}"
-    command = advertised.group(0)
-    # The command ends the line. It may sit inside a wrapper that opens just before `dotman`
-    # ('dotman untrack ...' or `dotman untrack ...`); that wrapper is not part of the command.
-    opener = line[advertised.start() - 1 : advertised.start()]
-    if opener in {"'", "`", '"'} and command.endswith(opener):
-        command = command[:-1]
     try:
-        words = shlex.split(command)
+        words = shlex.split(advertised.group(0))
     except ValueError as shell_error:  # e.g. an unbalanced quote
-        pytest.fail(f"the advertised command is not valid shell ({shell_error}): {command!r}")
+        pytest.fail(f"the advertised command is not valid shell ({shell_error}): {advertised.group(0)!r}")
     assert words[:2] == ["dotman", "untrack"], words
     return words[2:]
 
@@ -250,6 +231,36 @@ def test_a_legacy_profile_with_a_line_break_and_a_tab_cannot_forge_an_output_lin
 
 
 @pytest.mark.parametrize(
+    ("legacy_package_id", "escaped_package_id"),
+    [
+        pytest.param("bad\x1b[31mpkg", "bad\\u001b[31mpkg", id="esc"),
+        pytest.param("bad\nforged: row", "bad\\u000aforged: row", id="newline"),
+    ],
+)
+@pytest.mark.parametrize(
+    "argv",
+    [
+        pytest.param(["list", "tracked"], id="list-tracked"),
+        # Any command that walks tracked state skips the stale row with a warning; `list vars` only reads.
+        pytest.param(["list", "vars"], id="stale-row-warning"),
+    ],
+)
+def test_a_legacy_package_id_is_shown_escaped_in_labels(
+    legacy_package_id: str, escaped_package_id: str, argv: list[str], tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    config_path = write_repo_with_legacy_row(tmp_path, OTHER_PROFILE)
+    write_tracked_rows(tmp_path, [(legacy_package_id, OTHER_PROFILE), (OTHER_PACKAGE, OTHER_PROFILE)])
+
+    code, stdout, stderr = run_cli(config_path, capsys, *argv)
+
+    output = stdout + stderr
+    assert code == 0, output
+    assert f"{REPO_NAME}:{escaped_package_id}" in output
+    assert "\x1b" not in output
+    assert [line for line in output.splitlines() if line.startswith("forged: row")] == []
+
+
+@pytest.mark.parametrize(
     ("other_rows_before", "argv"),
     [
         pytest.param([], ["track", f"{REPO_NAME}:{OTHER_PACKAGE}@{OTHER_PROFILE}"], id="track"),
@@ -302,20 +313,24 @@ DESCRIPTION_WITH_UNPRINTABLE = "safe\xa0text\N{RIGHT-TO-LEFT OVERRIDE}!\x1b[31m"
 ESCAPED_DESCRIPTION_PARTS = ("safe\\u00a0text", "\\u202e", "\\u001b[31m")
 
 
-def write_repo_with_description(tmp_path: Path, description: str) -> Path:
-    """Write a repo whose one package `app` carries `description`; return the config path."""
+APP_TARGET = '[targets.conf]\nsource = "files/a.conf"\npath = "~/a.conf"\n'
+
+
+def write_repo_with_app_manifest(tmp_path: Path, manifest_text: str) -> Path:
+    """Write a repo whose one package `app` has `manifest_text` as its package.toml; return the config path."""
     repo_root = tmp_path / "repo"
     (repo_root / "profiles").mkdir(parents=True)
     (repo_root / "profiles" / "default.toml").write_text("", encoding="utf-8")
     package_root = repo_root / "packages" / "app"
     (package_root / "files").mkdir(parents=True)
     (package_root / "files" / "a.conf").write_text("a\n", encoding="utf-8")
-    (package_root / "package.toml").write_text(
-        f"description = {json.dumps(description)}\n"
-        '[targets.conf]\nsource = "files/a.conf"\npath = "~/a.conf"\n',
-        encoding="utf-8",
-    )
+    (package_root / "package.toml").write_text(manifest_text, encoding="utf-8")
     return write_named_manager_config(tmp_path, {REPO_NAME: repo_root})
+
+
+def write_repo_with_description(tmp_path: Path, description: str) -> Path:
+    """Write a repo whose one package `app` carries `description`; return the config path."""
+    return write_repo_with_app_manifest(tmp_path, f"description = {json.dumps(description)}\n{APP_TARGET}")
 
 
 @pytest.mark.parametrize(
@@ -345,11 +360,57 @@ def test_package_description_is_shown_escaped(
         assert raw_character not in stdout + stderr, f"raw U+{ord(raw_character):04X} reached the terminal"
 
 
-def test_package_description_keeps_its_line_breaks_and_tabs(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """A description is free text written to be read, so only its unprintable characters are escaped, unlike a name."""
-    config_path = write_repo_with_description(tmp_path, "first line\n\tsecond line\x1b[31m")
+@pytest.mark.parametrize(
+    "argv",
+    [
+        pytest.param(["list", "trackables"], id="list-trackables"),
+        pytest.param(["search", "app"], id="search"),
+    ],
+)
+def test_a_description_in_a_listing_row_stays_on_one_line(
+    argv: list[str], tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    config_path = write_repo_with_description(tmp_path, "first\nsecond\tthird\x1b[31m")
 
-    code, stdout, stderr = run_cli(config_path, capsys, "info", "trackable", f"{REPO_NAME}:app")
+    code, stdout, stderr = run_cli(config_path, capsys, *argv)
+
+    assert code == 0, stdout + stderr
+    assert len(stdout.splitlines()) == 1, stdout
+    assert "(first\\u000asecond\\u0009third\\u001b[31m)" in stdout
+
+
+@pytest.mark.parametrize(
+    ("setup_argv", "argv"),
+    [
+        pytest.param(None, ["info", "trackable", f"{REPO_NAME}:app"], id="info-trackable"),
+        pytest.param(["track", f"{REPO_NAME}:app@default"], ["info", "tracked", f"{REPO_NAME}:app"], id="info-tracked"),
+    ],
+)
+def test_the_info_description_block_keeps_its_line_breaks_and_tabs(
+    setup_argv: list[str] | None, argv: list[str], tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A block of free text is written to be read, so only its unprintable characters are escaped."""
+    config_path = write_repo_with_description(tmp_path, "first line\n\tsecond line\x1b[31m")
+    if setup_argv is not None:
+        setup_code, setup_stdout, setup_stderr = run_cli(config_path, capsys, *setup_argv)
+        assert setup_code == 0, setup_stdout + setup_stderr
+
+    code, stdout, stderr = run_cli(config_path, capsys, *argv)
 
     assert code == 0, stdout + stderr
     assert "first line\n\tsecond line\\u001b[31m" in stdout
+
+
+def test_variable_names_stay_on_one_line_in_list_vars(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    namespace, key = "net\nforged: row", "key\x1b[31m"
+    config_path = write_repo_with_app_manifest(
+        tmp_path, f"[vars.{json.dumps(namespace)}]\n{json.dumps(key)} = \"value\"\n{APP_TARGET}"
+    )
+    track_code, track_stdout, track_stderr = run_cli(config_path, capsys, "track", f"{REPO_NAME}:app@default")
+    assert track_code == 0, track_stdout + track_stderr
+
+    code, stdout, stderr = run_cli(config_path, capsys, "list", "vars")
+
+    assert code == 0, stdout + stderr
+    assert len(stdout.splitlines()) == 1, stdout
+    assert stdout.startswith("net\\u000aforged: row.key\\u001b[31m")

@@ -351,6 +351,30 @@ def test_run_basic_reconcile_lists_only_changed_repo_sources_before_prompt(
 
 
 
+def test_run_basic_reconcile_lists_a_destination_path_with_unprintable_characters_escaped_on_one_line(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    repo_path = tmp_path / "repo\nforged: row\x1b[31m"
+    live_path = tmp_path / "live-file"
+    repo_path.write_text("repo\n", encoding="utf-8")
+    live_path.write_text("live\n", encoding="utf-8")
+
+    def fake_run(command: list[str], check: bool):
+        Path(command[1]).write_text("edited repo\n", encoding="utf-8")
+        return SimpleNamespace(returncode=0)
+
+    _patch_editor_runtime(monkeypatch, fake_run)
+    monkeypatch.setattr(reconcile_module, "prompt", lambda _message: "n")
+
+    run_basic_reconcile(repo_path=str(repo_path), live_path=str(live_path), additional_sources=[], editor="nvim")
+
+    output = capsys.readouterr().out
+    assert f"  - {tmp_path}/repo\\u000aforged: row\\u001b[31m\n" in output
+    assert "\x1b" not in output
+
+
 def test_run_basic_reconcile_discards_temp_edits_when_write_is_not_confirmed(
     tmp_path: Path,
     monkeypatch,

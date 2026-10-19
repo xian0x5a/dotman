@@ -18,11 +18,15 @@ from dotman.cli import main
 from tests.helpers import EXAMPLE_REPO
 
 
-def write_config(tmp_path: Path, *repo_names: str) -> Path:
-    """Write a manager config with one `[repos.<name>]` per name, all backed by the example repo."""
+def write_config(tmp_path: Path, *repo_names: str, state_key: str | None = None) -> Path:
+    """Write a manager config with one `[repos.<name>]` per name, all backed by the example repo.
+
+    Without `state_key` a repo's state key defaults to its name.
+    """
+    state_key_line = "" if state_key is None else f"state_key = {json.dumps(state_key)}\n"
     # `json.dumps` writes a quoted TOML key, so names with `.`, `:` or `/` stay one key.
     tables = [
-        f"[repos.{json.dumps(name)}]\npath = {json.dumps(str(EXAMPLE_REPO))}\norder = {index * 10}\n"
+        f"[repos.{json.dumps(name)}]\npath = {json.dumps(str(EXAMPLE_REPO))}\norder = {index * 10}\n{state_key_line}"
         for index, name in enumerate(repo_names, start=1)
     ]
     config_path = tmp_path / "config.toml"
@@ -68,6 +72,31 @@ def test_repo_name_with_selector_delimiter_or_path_part_is_rejected(
     assert "config.toml" in output
     # A blank name has nothing visible to look for; stripping it makes that check vacuous.
     assert name.strip() in output
+
+
+@pytest.mark.parametrize(
+    ("name", "shown_name"),
+    [
+        pytest.param("a/b", "a/b", id="slash"),
+        pytest.param("  ", "  ", id="blank"),
+        pytest.param("\xa0", "\\u00a0", id="non-breaking-space"),
+        pytest.param("a.b", "a.b", id="dot"),
+        pytest.param("a:b", "a:b", id="colon"),
+        pytest.param("..", "..", id="parent-directory"),
+    ],
+)
+def test_repo_name_is_rejected_even_when_the_state_key_is_explicit(
+    name: str, shown_name: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Without an explicit `state_key`, the key defaults to the name, so a bad name can fail on the key instead."""
+    config_path = write_config(tmp_path, name, state_key="safe")
+
+    exit_code, stdout, stderr = run_list_repo(config_path, capsys)
+
+    output = stdout + stderr
+    assert exit_code == 2, output
+    assert "config.toml" in output
+    assert f"invalid repo name '{shown_name}'" in output
 
 
 def test_repo_name_that_selectors_cannot_address_rejects_the_whole_config(

@@ -29,6 +29,26 @@ def test_emit_error_includes_path_for_structured_generic_errors(capsys) -> None:
     assert "boom" in error_output
 
 
+def test_emit_error_keeps_the_layout_of_a_detail_but_escapes_its_unprintable_characters(capsys) -> None:
+    """A detail is free text that may span lines on purpose."""
+    error = StructuredGenericError(path=Path("/tmp/example.txt"), detail="first line\n\tsecond line\x1b[31m")
+
+    emit_error(error, use_color=False)
+
+    error_output = capsys.readouterr().err
+    assert "detail: first line\n\tsecond line\\u001b[31m\n" in error_output
+
+
+def test_emit_error_escapes_every_unprintable_character_in_a_path_field(capsys) -> None:
+    """A path is one field of one line: a line break in it would start a line the error never printed."""
+    error = StructuredGenericError(path=Path("/tmp/a\nforged: line\x1b[31m"), detail="boom")
+
+    emit_error(error, use_color=False)
+
+    error_output = capsys.readouterr().err
+    assert "path: /tmp/a\\u000aforged: line\\u001b[31m\n" in error_output
+
+
 def test_emit_error_styles_capture_errors_with_capture_header(capsys) -> None:
     error = CaptureError(path=Path("/tmp/review.txt"), detail="broken projection")
 

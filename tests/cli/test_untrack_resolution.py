@@ -159,6 +159,34 @@ def test_untrack_resolver_chooses_package_instance_for_group(tmp_path: Path) -> 
     assert request.header_text == "Select a tracked profile for fixture:bundle:"
 
 
+def test_untrack_profile_menu_shows_a_legacy_profile_escaped_but_untracks_it_by_its_stored_name(
+    tmp_path: Path,
+) -> None:
+    legacy_profile = "work\x1b[31m\nred"
+    repo_root = tmp_path / "repo"
+    write_multi_instance_repo(repo_root)
+    (repo_root / "groups").mkdir()
+    (repo_root / "groups" / "bundle.toml").write_text('members = ["profiled"]\n', encoding="utf-8")
+    config_path = write_named_manager_config(tmp_path, {"fixture": repo_root})
+    write_tracked_packages_state(
+        tmp_path / "state",
+        repo_name="fixture",
+        entries=[("profiled", "basic"), ("profiled", legacy_profile)],
+    )
+    interaction = ScriptedInteraction(choices=[legacy_profile])
+
+    result = UntrackResolver(
+        DotmanEngine.from_config_path(config_path),
+        interaction=interaction,
+    ).resolve("fixture:bundle")
+
+    request = interaction.requests[0]
+    assert isinstance(request, ChoiceRequest)
+    assert [option.label for option in request.options] == ["basic", "work\\u001b[31m\\u000ared"]
+    assert isinstance(result, UntrackGroupRequest)
+    assert [binding.profile for binding in result.removal_bindings] == [legacy_profile]
+
+
 def test_untrack_resolver_describes_remaining_tracking_after_removal(tmp_path: Path) -> None:
     config_path = write_named_manager_config(tmp_path, {"example": EXAMPLE_REPO})
     write_tracked_packages_state(

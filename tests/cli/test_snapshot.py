@@ -781,6 +781,26 @@ def test_restore_review_labels_items_by_recorded_target_or_live_path(
     assert "snapshot:" not in output
 
 
+def test_restore_review_shows_a_recorded_package_id_with_unprintable_characters_escaped(
+    tmp_path: Path, monkeypatch, capsys,
+) -> None:
+    monkeypatch.setattr(cli_interaction, "colors_enabled", lambda: False)
+    _push_snapshot_then_mutate_live(tmp_path, monkeypatch)
+    snapshot = list_snapshots(tmp_path / "snapshots")[0]
+    # An older dotman may have recorded a package ID that is no longer valid.
+    snapshot = replace(snapshot, entries=tuple(replace(entry, package_id="bad\x1b[31m\npkg") for entry in snapshot.entries))
+    capsys.readouterr()
+
+    review_items = cli_interaction.build_restore_review_items(snapshot, build_restore_actions(snapshot))
+    cli_interaction.print_review_menu_items(review_items, operation="restore")
+    cli_interaction.print_review_diff_header(review_items[0], index=1, total=1)
+
+    output = capsys.readouterr().out
+    assert "fixture:bad\\u001b[31m\\u000apkg.config" in output
+    assert "\x1b" not in output
+    assert [line for line in output.splitlines() if line.startswith("pkg")] == []
+
+
 def test_snapshot_labels_keep_the_package_instance_in_info_and_restore_review(
     tmp_path: Path, monkeypatch, capsys,
 ) -> None:
