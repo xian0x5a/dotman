@@ -100,7 +100,8 @@ class _SudoLease:
 
     def _keepalive_loop(self, stop_event: threading.Event) -> None:
         while not stop_event.wait(_SUDO_KEEPALIVE_INTERVAL_SECONDS):
-            # `-n` never prompts, and a tty hook may own the terminal meanwhile.
+            # `-n` never prompts, and dotman's own prompt or Deck may change the
+            # terminal modes meanwhile.
             self._runtime.run(_sudo_request("-n", "true", preserve_terminal=False))
 
     def close(self) -> None:
