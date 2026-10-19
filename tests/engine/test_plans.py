@@ -1621,7 +1621,7 @@ def test_target_type_rejects_unknown_values(tmp_path: Path) -> None:
     repo_root, _live_root = write_sample_directory_repo(tmp_path, ['type = "socket"'])
     write_tracked_packages_state(tmp_path / "state", repo_name="fixture", entries=[("sample", "default")])
 
-    with pytest.raises(ValueError, match="unsupported target type 'socket'"):
+    with pytest.raises(ValueError, match="unsupported type 'socket'"):
         DotmanEngine.from_config_path(
             write_single_repo_config(tmp_path, repo_name="fixture", repo_path=repo_root)
         ).resolve_sync_scope()

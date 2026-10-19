@@ -32,7 +32,7 @@ under `examples/repo/`.
 - A package directly under `packages/` is in the default namespace.
 - Namespaced packages stay explicit, for example `work/git`.
 - Groups live under `groups/` and are used for package selection and composition.
-- Group IDs may be namespaced, for example `os/arch`.
+- Group IDs may be namespaced, for example `os/arch`. They follow the package ID rules, so `.`, `:`, `@`, `<` and `>` are not allowed.
 - Groups are not packages and are not tracked identities.
 - Tracking a group should behave like passing its resolved member packages as track arguments with the same bound profile.
 - Meta packages are still normal packages; they may be tracked explicitly and may use `depends` for aggregation.
@@ -41,8 +41,10 @@ under `examples/repo/`.
 - Repo qualification stays outside the selector with `repo:selector`, not `repo/selector`.
 - `\` is not a valid selector separator.
 - Groups should use a single `members` list for both package selectors and nested group selectors.
+- A group file may define only `members` and `description`; other keys fail to load.
 - Profiles provide variable values only.
 - Profiles may define `includes = [...]` to compose other profiles.
+- A profile file may define only `includes` and `[vars]`; other keys fail to load. Profile IDs may contain dots and spaces but not `@`, `<` or `>`.
 - Included profiles merge in declaration order.
 - Later included profiles override earlier included profiles.
 - The profile's own vars override all included profiles.

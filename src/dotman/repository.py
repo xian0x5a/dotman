@@ -18,6 +18,10 @@ from dotman.manifest import (
     normalize_string_list,
     normalize_sync_policy,
     strip_package_extensions,
+    require_optional_string,
+    require_optional_table,
+    validate_group_id,
+    validate_profile_id,
     validate_supported_keys,
     validate_package_id,
 )
@@ -61,6 +65,9 @@ def normalize_skip_markers(value: Any, *, repo_config_path: Path) -> tuple[str, 
         markers.append(marker)
     return tuple(markers)
 
+
+GROUP_FILE_KEYS = frozenset({"members", "description"})
+PROFILE_FILE_KEYS = frozenset({"includes", "vars"})
 
 PACKAGE_MANIFEST_TOP_LEVEL_KEYS = {
     "binding_mode",
@@ -125,8 +132,9 @@ class Repository:
             supported_keys=REPO_IGNORE_KEYS,
             context=f"repo config {repo_config_path} [ignore]",
         )
-        patterns = normalize_string_list(ignore_payload.get("patterns")) or ()
-        gitignore = normalize_gitignore_enabled(ignore_payload.get("gitignore")) or False
+        ignore_context = f"repo config {repo_config_path} [ignore]"
+        patterns = normalize_string_list(ignore_payload.get("patterns"), context=ignore_context, key="patterns") or ()
+        gitignore = normalize_gitignore_enabled(ignore_payload.get("gitignore"), context=ignore_context) or False
         return RepoIgnoreDefaults(
             patterns=patterns,
             skip_markers=normalize_skip_markers(ignore_payload.get("skip_markers"), repo_config_path=repo_config_path),
@@ -189,9 +197,11 @@ class Repository:
             if unknown_top_level_keys:
                 unknown_text = ", ".join(unknown_top_level_keys)
                 raise ValueError(f"package manifest {manifest_path} has unknown top-level keys: {unknown_text}")
-            targets_payload = payload.get("targets")
-            hooks_payload = payload.get("hooks")
-            append_payload = payload.get("append")
+            context = f"package manifest {manifest_path}"
+            targets_payload = require_optional_table(payload.get("targets"), context=context, key="targets")
+            hooks_payload = require_optional_table(payload.get("hooks"), context=context, key="hooks")
+            vars_payload = require_optional_table(payload.get("vars"), context=context, key="vars")
+            append_payload = require_optional_table(payload.get("append"), context=context, key="append")
             targets = (
                 {
                     target_name: build_target_spec(
@@ -202,11 +212,11 @@ class Repository:
                     )
                     for target_name, target_payload in targets_payload.items()
                 }
-                if isinstance(targets_payload, dict)
+                if targets_payload is not None
                 else None
             )
             hooks = None
-            if isinstance(hooks_payload, dict):
+            if hooks_payload is not None:
                 unknown_hook_names = [hook_name for hook_name in hooks_payload if hook_name not in VALID_HOOK_NAMES]
                 if unknown_hook_names:
                     unknown_text = ", ".join(sorted(unknown_hook_names))
@@ -228,8 +238,12 @@ class Repository:
                     raise ValueError(f"package manifest {manifest_path} ignore must be a table")
                 validate_supported_keys(package_ignore_payload, supported_keys={"gitignore", "patterns"},
                                         context=f"package manifest {manifest_path} ignore")
-                package_ignore_patterns = normalize_string_list(package_ignore_payload.get("patterns"))
-                package_gitignore_enabled = normalize_gitignore_enabled(package_ignore_payload.get("gitignore"))
+                package_ignore_patterns = normalize_string_list(
+                    package_ignore_payload.get("patterns"), context=f"{context} ignore", key="patterns"
+                )
+                package_gitignore_enabled = normalize_gitignore_enabled(
+                    package_ignore_payload.get("gitignore"), context=f"{context} ignore"
+                )
             else:
                 package_ignore_patterns = None
                 package_gitignore_enabled = None
@@ -237,20 +251,20 @@ class Repository:
             packages[package_id] = PackageSpec(
                 id=package_id,
                 package_root=manifest_path.parent,
-                description=payload.get("description"),
+                description=require_optional_string(payload.get("description"), context=context, key="description"),
                 binding_mode=binding_mode,
                 binding_mode_explicit="binding_mode" in payload,
-                sync_policy=normalize_sync_policy(payload.get("sync_policy")),
-                depends=normalize_string_list(payload.get("depends")),
-                extends=normalize_string_list(payload.get("extends")),
-                reserved_paths=normalize_string_list(payload.get("reserved_paths")),
+                sync_policy=normalize_sync_policy(payload.get("sync_policy"), context=context),
+                depends=normalize_string_list(payload.get("depends"), context=context, key="depends"),
+                extends=normalize_string_list(payload.get("extends"), context=context, key="extends"),
+                reserved_paths=normalize_string_list(payload.get("reserved_paths"), context=context, key="reserved_paths"),
                 ignore_patterns=package_ignore_patterns,
                 gitignore_enabled=package_gitignore_enabled,
-                vars=_copy_map(payload.get("vars")) if isinstance(payload.get("vars"), dict) else None,
+                vars=_copy_map(vars_payload) if vars_payload is not None else None,
                 targets=targets,
                 hooks=hooks,
-                remove=normalize_string_list(payload.get("remove")),
-                append=_copy_map(append_payload) if isinstance(append_payload, dict) else None,
+                remove=normalize_string_list(payload.get("remove"), context=context, key="remove"),
+                append=_copy_map(append_payload) if append_payload is not None else None,
             )
         return packages
 
@@ -262,11 +276,17 @@ class Repository:
         for group_path in sorted(groups_root.glob("**/*.toml")):
             group_id = group_path.relative_to(groups_root).with_suffix("").as_posix()
             payload = load_toml_file(group_path, context=f"group file for repo '{self.config.name}' group '{group_id}'")
+            context = f"group file {group_path}"
+            try:
+                validate_group_id(group_id)
+            except ValueError as exc:
+                raise ValueError(f"{context}: {exc}") from None
+            validate_supported_keys(payload, supported_keys=GROUP_FILE_KEYS, context=context)
             groups[group_id] = GroupSpec(
                 id=group_id,
-                members=normalize_string_list(payload.get("members")) or (),
+                members=normalize_string_list(payload.get("members"), context=context, key="members") or (),
                 path=group_path,
-                description=payload.get("description"),
+                description=require_optional_string(payload.get("description"), context=context, key="description"),
             )
         return groups
 
@@ -278,10 +298,17 @@ class Repository:
         for profile_path in sorted(profiles_root.glob("**/*.toml")):
             profile_id = profile_path.relative_to(profiles_root).with_suffix("").as_posix()
             payload = load_toml_file(profile_path, context=f"profile file for repo '{self.config.name}' profile '{profile_id}'")
+            context = f"profile file {profile_path}"
+            try:
+                validate_profile_id(profile_id)
+            except ValueError as exc:
+                raise ValueError(f"{context}: {exc}") from None
+            validate_supported_keys(payload, supported_keys=PROFILE_FILE_KEYS, context=context)
+            vars_payload = require_optional_table(payload.get("vars"), context=context, key="vars")
             profiles[profile_id] = ProfileSpec(
                 id=profile_id,
-                includes=normalize_string_list(payload.get("includes")) or (),
-                vars=_copy_map(payload.get("vars")) if isinstance(payload.get("vars"), dict) else {},
+                includes=normalize_string_list(payload.get("includes"), context=context, key="includes") or (),
+                vars=_copy_map(vars_payload) if vars_payload is not None else {},
                 path=profile_path,
             )
         return profiles
