@@ -252,7 +252,8 @@ otherwise **Use repository** is the visible fallback and Merge is unavailable.
   Both-policy drift without a usable Base is the exception: nothing shows which
   side changed, so it stays unselected and prints
   `[skipped] <identity> (no Base)` with a first-review hint. JSON lists it in
-  `no_base_skips` with the Base reason, and the exit status is unaffected. To
+  `no_base_skips` with the Base reason (`absent`, `unreadable`, `record_corrupt`,
+  or `payload_corrupt`), and the exit status is unaffected. To
   bootstrap a host without the Deck, run `dotman --no-confirm push` (or `pull`) once.
   The next Sync sees both sides agree and records a Base.
   Missing terminals and `--json` do not grant consent. Required interactive
