@@ -15,6 +15,7 @@ from tests.helpers import (
     write_shared_stack_repo,
     write_single_repo_config,
     write_single_repo_config_with_state_key,
+    untrack_entry,
 )
 
 
@@ -304,7 +305,7 @@ def test_remove_binding_rejects_single_partial_match_in_non_interactive_mode(
     engine = DotmanEngine.from_config_path(config_path)
 
     with pytest.raises(ValueError, match="no exact match for 'gi'; use exact name 'example:git@basic'"):
-        engine.remove_tracked_package_entry("example:gi")
+        untrack_entry(engine, "example:gi")
 
     assert (state_dir / "tracked-packages.toml").read_text(encoding="utf-8") == original_state
 
@@ -338,7 +339,7 @@ def test_remove_binding_treats_implicit_package_match_as_ambiguous(
     engine = DotmanEngine.from_config_path(config_path)
 
     with pytest.raises(ValueError, match="ambiguous"):
-        engine.remove_tracked_package_entry("shared")
+        untrack_entry(engine, "shared")
 
     assert (state_dir / "tracked-packages.toml").read_text(encoding="utf-8") == original_state
 
@@ -376,7 +377,7 @@ def test_remove_binding_deletes_only_the_selected_tracked_binding(
 
     engine = DotmanEngine.from_config_path(config_path)
 
-    removed = engine.remove_tracked_package_entry("example:git@basic")
+    removed = untrack_entry(engine, "example:git@basic")
 
     assert removed.repo == "example"
     assert removed.selector == "git"
@@ -413,7 +414,7 @@ def test_remove_binding_allows_selector_only_when_tracked_binding_is_unique(
 
     engine = DotmanEngine.from_config_path(config_path)
 
-    removed = engine.remove_tracked_package_entry("example:git")
+    removed = untrack_entry(engine, "example:git")
 
     assert removed == removed.__class__(repo="example", selector="git", selector_kind="package", profile="basic")
     assert engine.read_tracked_package_entries(engine.get_repo("example")) == []
@@ -451,7 +452,7 @@ def test_remove_binding_can_remove_invalid_configured_binding(
 
     engine = DotmanEngine.from_config_path(config_path)
 
-    removed = engine.remove_tracked_package_entry("example:old-meta@basic")
+    removed = untrack_entry(engine, "example:old-meta@basic")
 
     assert removed == removed.__class__(repo="example", selector="old-meta", selector_kind="package", profile="basic")
     assert engine.read_tracked_package_entries(engine.get_repo("example")) == [
@@ -496,7 +497,7 @@ def test_remove_binding_can_remove_orphan_binding_from_state_root(
 
     engine = DotmanEngine.from_config_path(config_path)
 
-    removed = engine.remove_tracked_package_entry("removed-repo:linux@basic")
+    removed = untrack_entry(engine, "removed-repo:linux@basic")
 
     assert removed == removed.__class__(repo="removed-repo", selector="linux", selector_kind="package", profile="basic")
     assert orphan_state_path.read_text(encoding="utf-8") == "\n".join(
@@ -544,7 +545,7 @@ def test_remove_binding_reports_tracked_owner_when_selector_is_only_a_dependency
         ValueError,
         match=r"cannot untrack 'example:nvim': required by tracked package entries: example:core-cli-meta@basic",
     ):
-        engine.remove_tracked_package_entry("nvim@basic")
+        untrack_entry(engine, "nvim@basic")
 
 
 def test_tracked_state_requires_schema_version_1(

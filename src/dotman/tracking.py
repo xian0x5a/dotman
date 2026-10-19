@@ -625,74 +625,6 @@ def find_persisted_tracked_package_entry_matches(
 
 
 
-def remove_tracked_package_entry(
-    context: "PlanningContext",
-    binding_text: str,
-    *,
-    operation: str = "untrack",
-) -> FullSpecSelector:
-    state = context.tracked_state
-    selector, profile, exact_matches, partial_matches = find_persisted_tracked_package_entry_matches(
-        state,
-        binding_text,
-    )
-    binding_label = selector if profile is None else f"{selector}@{profile}"
-    if len(exact_matches) == 1:
-        return remove_persisted_tracked_package_entry(
-            context,
-            exact_matches[0],
-            operation=operation,
-        )
-    if len(exact_matches) > 1:
-        raise ValueError(
-            f"tracked package entry '{binding_label}' is ambiguous: {format_persisted_tracked_package_entry_candidates(exact_matches)}"
-        )
-
-    package_matches, owner_package_entries = tracked_package_matches_for_untrack(
-        state,
-        selector=selector,
-        profile=profile,
-        repo_name=parse_full_spec_selector_text(binding_text)[0],
-    )
-    if partial_matches:
-        package_matches = [
-            package
-            for package in package_matches
-            if not any(
-                record.package_entry.repo == package.repo and record.package_entry.selector == package.package_id
-                for record in partial_matches
-            )
-        ]
-        if package_matches:
-            binding_candidates = format_persisted_tracked_package_entry_candidates(partial_matches)
-            package_candidates = format_tracked_package_candidates(package_matches)
-            raise ValueError(
-                f"tracked package entry '{binding_label}' is ambiguous: tracked package entries: {binding_candidates}; tracked packages: {package_candidates}"
-            )
-        if len(partial_matches) == 1:
-            record = partial_matches[0]
-            raise ValueError(
-                f"no exact match for '{binding_label}'; use exact name '{record.package_entry.repo}:{record.package_entry.selector}@{record.package_entry.profile}'"
-            )
-        raise ValueError(
-            f"tracked package entry '{binding_label}' is ambiguous: {format_persisted_tracked_package_entry_candidates(partial_matches)}"
-        )
-
-    if package_matches:
-        if len(package_matches) > 1:
-            raise ValueError(
-                f"tracked package entry '{binding_label}' is ambiguous: tracked packages: {format_tracked_package_candidates(package_matches)}"
-            )
-        owners = format_owner_package_entries(owner_package_entries)
-        required_repo = parse_full_spec_selector_text(binding_text)[0] or package_matches[0].repo
-        required_ref = f"{required_repo}:{selector}"
-        raise ValueError(f"cannot {operation} '{required_ref}': required by tracked package entries: {owners}")
-
-    raise ValueError(f"tracked package entry '{binding_label}' is not currently tracked")
-
-
-
-
 def write_tracked_package_entries(
     repo: Repository,
     bindings: list[FullSpecSelector],
@@ -996,25 +928,4 @@ def sorted_tracked_package_entry_issues(issues: list[TrackedPackageEntryIssue]) 
             item.profile,
             item.state_key,
         ),
-    )
-
-
-
-def format_persisted_tracked_package_entry_candidates(records: list[PersistedTrackedPackageEntryRecord]) -> str:
-    return ", ".join(
-        f"{record.package_entry.repo}:{record.package_entry.selector}@{record.package_entry.profile}"
-        for record in records
-    )
-
-
-
-def format_tracked_package_candidates(packages: list[TrackedPackageSummary]) -> str:
-    return ", ".join(f"{package.repo}:{package.package_ref}" for package in packages)
-
-
-
-def format_owner_package_entries(package_entries: list[TrackedPackageEntrySummary]) -> str:
-    return ", ".join(
-        f"{package_entry.repo}:{package_entry.selector}@{package_entry.profile}"
-        for package_entry in package_entries
     )

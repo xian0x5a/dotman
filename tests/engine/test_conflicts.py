@@ -12,6 +12,7 @@ from tests.helpers import (
     write_single_repo_config,
     write_tracked_packages_state,
     write_untrack_conflict_repo,
+    untrack_entry,
 )
 
 
@@ -689,6 +690,6 @@ def test_remove_binding_rejects_resulting_singleton_dependency_profile_ambiguity
     engine = DotmanEngine.from_config_path(config_path)
 
     with pytest.raises(ValueError, match=r"ambiguous implicit profile contexts for fixture:shared"):
-        engine.remove_tracked_package_entry("fixture:shared@direct")
+        untrack_entry(engine, "fixture:shared@direct")
 
     assert (state_dir / "tracked-packages.toml").read_text(encoding="utf-8") == original_state

@@ -5,11 +5,14 @@ from pathlib import Path
 
 import dotman.cli_interaction as cli
 from dotman.cli import main
+from dotman.interaction import ScriptedInteraction
 
 from tests.helpers import (
+    EXAMPLE_REPO,
     write_manager_config,
     write_multi_instance_repo,
     write_named_manager_config,
+    write_tracked_packages_state,
     write_untrack_conflict_repo,
 )
 
@@ -561,3 +564,33 @@ def test_untrack_cli_reports_remaining_package_tracking_after_success(
     assert "untracked example:git@basic" in output
     assert "example:git remains tracked via:" in output
     assert "implicit: example:core-cli-meta@basic" in output
+
+
+def test_untrack_cli_removes_chosen_orphan_record_sharing_identity_with_configured_record(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    # The orphan state directory holds the same repo:package@profile identity as the
+    # configured repo, so only the chosen record's state directory tells them apart.
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    config_path = write_named_manager_config(tmp_path, {"example": EXAMPLE_REPO})
+    state_root = tmp_path / "state"
+    write_tracked_packages_state(state_root, repo_name="example", entries=[("git", "basic")])
+    configured_state_path = state_root / "dotman" / "repos" / "example" / "tracked-packages.toml"
+    orphan_state_path = state_root / "dotman" / "repos" / "removed" / "tracked-packages.toml"
+    orphan_state_path.parent.mkdir(parents=True)
+    orphan_state_path.write_text(configured_state_path.read_text(encoding="utf-8"), encoding="utf-8")
+    configured_state_before = configured_state_path.read_text(encoding="utf-8")
+    interaction = ScriptedInteraction(choices=["entry:removed:example:git@basic"])
+
+    exit_code = main(
+        ["--config", str(config_path), "untrack", "example:git@basic"],
+        interaction=interaction,
+    )
+
+    assert exit_code == 0, capsys.readouterr().err
+    assert orphan_state_path.read_text(encoding="utf-8") == "schema_version = 1\n"
+    assert configured_state_path.read_text(encoding="utf-8") == configured_state_before
