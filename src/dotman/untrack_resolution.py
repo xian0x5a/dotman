@@ -136,9 +136,11 @@ class UntrackResolver:
             return None
         if binding.selector not in repo.packages:
             return None
-        if repo.resolve_package(binding.selector).binding_mode == "multi_instance":
-            return None
+        # Runs after the row is removed: a package whose manifest does not load is not
+        # still tracked through anything, so it gets no note rather than failing the untrack.
         try:
+            if repo.package_binding_mode(binding.selector) == "multi_instance":
+                return None
             return self._engine.describe_tracked_package(
                 f"{binding.repo}:{binding.selector}"
             )

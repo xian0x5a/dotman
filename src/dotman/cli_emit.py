@@ -112,8 +112,13 @@ def _render_tracked_issue_label(engine: Any, issue: Any, *, use_color: bool) -> 
     except ValueError:
         repo = None
     if repo is not None and issue.selector in repo.packages:
-        package = repo.resolve_package(issue.selector)
-        if package.binding_mode == "multi_instance":
+        try:
+            binding_mode = repo.package_binding_mode(issue.selector)
+        except ValueError:
+            # The row is listed because its manifest does not load; the issue message
+            # carries that error, so label it like an unknown package instead of failing.
+            binding_mode = None
+        if binding_mode == "multi_instance":
             bound_profile = issue.profile
     return cli_style.render_package_label(
         repo_name=issue.repo,
