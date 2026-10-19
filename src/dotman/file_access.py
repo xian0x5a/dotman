@@ -228,7 +228,7 @@ def read_bytes(path: Path) -> bytes:
 
 
 
-def write_bytes_atomic(path: Path, content: bytes, *, restore_root: Path | None = None, mode: int | None = None) -> None:
+def write_bytes_atomic(path: Path, content: bytes, *, mode: int | None = None) -> None:
     if not needs_sudo_for_write(path):
         try:
             atomic_write_bytes_atomic(path, content, mode=mode)
@@ -238,12 +238,8 @@ def write_bytes_atomic(path: Path, content: bytes, *, restore_root: Path | None 
             pass
 
     request_sudo(f"write protected path: {path}")
-    optional_args = []
-    if restore_root is not None or mode is not None:
-        optional_args.append(str(restore_root) if restore_root is not None else "-")
-    if mode is not None:
-        optional_args.append(str(mode))
-    result = _run_privileged_operation("write-bytes-atomic", str(path), *optional_args, input=content)
+    mode_args = () if mode is None else (str(mode),)
+    result = _run_privileged_operation("write-bytes-atomic", str(path), *mode_args, input=content)
     if result.exit_code != 0:
         stderr = result.stderr.decode("utf-8", errors="replace").strip()
         raise PermissionError(stderr or f"permission denied for {path}")
