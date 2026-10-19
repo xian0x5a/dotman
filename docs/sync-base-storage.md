@@ -145,7 +145,8 @@ its obsolete Bases wait for a later run.
   `main:app<work>.tree/nested/file`.
 - `dotman reset sync-base main:app.settings` immediately discards exactly that
   record. Already absent succeeds. There is no confirmation, preview, wildcard,
-  fuzzy selector, package scope, directory-target scope, or all-units form.
+  fuzzy selector, package scope, directory-target scope, or all-units form;
+  `*`, `?`, `[` and `]` are literal name characters (`main:app.tree/a[1].txt`).
   Reset takes the manager non-blocking operation lock before resolution and fails
   while a real Push, Pull, or Sync owns it.
 - `dotman doctor` warns with aggregate corrupt and proven orphaned record counts

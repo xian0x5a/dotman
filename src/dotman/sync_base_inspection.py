@@ -22,7 +22,8 @@ from dotman.sync_scope import _parse_scope_selector, resolve_sync_scope, sync_un
 
 def _identity(text: str) -> ResolvedSyncTarget:
     parsed = _parse_scope_selector(text)
-    if parsed.target_name is None or any(character in text for character in "*?[]"):
+    # Identities never glob: `*?[]` are literal name characters, matched exactly.
+    if parsed.target_name is None:
         raise ValueError("Sync Base requires one exact repo-qualified file or directory-child identity")
     identity = ResolvedSyncTarget(
         repo=parsed.repo, package_id=parsed.package_id, target_name=parsed.target_name,
