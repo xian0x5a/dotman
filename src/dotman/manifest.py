@@ -10,6 +10,7 @@ from typing import Any
 from dotman.errors import UsageError
 from dotman.models import AdditionalSource, DefaultCommandElevationMode, EditorSpec, HookCommandSpec, HookSpec, PackageSpec, RepoIgnoreDefaults, TargetPathRule, TargetSpec, repo_qualified_target_text
 from dotman.presets import BUILTIN_TARGET_PRESETS, get_builtin_target_preset
+from dotman.printable import SELECTOR_ID_RESERVED_CHARACTERS, validate_printable_name
 
 
 VALID_COMMAND_IO_VALUES = ("pipe", "tty")
@@ -45,17 +46,6 @@ def validate_supported_keys(
         raise UsageError(f"{context} has unsupported keys: {unsupported_text}")
 
 
-def validate_printable_name(name: str, *, kind: str) -> None:
-    """Reject a name the user wrote that a terminal could show as something else.
-
-    Control characters, bidi overrides, zero-width joiners and non-ASCII spaces
-    pass for ordinary text, so they are refused up front. The predicate is the one
-    `printable_text` escapes by, so a name that loads is always shown as written.
-    """
-    if not name.isprintable():
-        raise UsageError(f"invalid {kind} '{name}': names must be printable characters")
-
-
 def _validate_namespaced_id(selector_id: str, *, kind: str) -> None:
     validate_printable_name(selector_id, kind=f"{kind} id")
     if not selector_id.strip():
@@ -67,9 +57,6 @@ def _validate_namespaced_id(selector_id: str, *, kind: str) -> None:
         raise UsageError(f"invalid {kind} id '{selector_id}'")
 
 
-# Package and group IDs are selectors in `repo:selector@profile` and
-# `repo:package<profile>.target`, so they can't hold any of that syntax.
-SELECTOR_ID_RESERVED_CHARACTERS = ("\\", ":", "@", "<", ">", ".")
 # Profile IDs sit inside `@profile` and `<profile>`, where dots, spaces and
 # other punctuation are allowed; only the characters that delimit them are reserved.
 PROFILE_ID_RESERVED_CHARACTERS = ("@", "<", ">")

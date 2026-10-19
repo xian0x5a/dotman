@@ -10,7 +10,7 @@ from typing import Mapping, TYPE_CHECKING
 
 from dotman.atomic_files import write_text_atomic
 from dotman.errors import UsageError
-from dotman.printable import terminal_safe_text
+from dotman.printable import terminal_safe_name
 from dotman.toml_utils import TomlLoadError, dump_toml_text, load_toml_file
 from dotman.models import (
     FullSpecSelector,
@@ -689,7 +689,7 @@ def _is_named_by(row_text: str, query: str) -> bool:
     listing shows escaped (#295). Accepting that text back lets the untrack hint
     in the stale-row warning name the row without printing it raw.
     """
-    return query in (row_text, terminal_safe_text(row_text))
+    return query in (row_text, terminal_safe_name(row_text))
 
 
 def find_persisted_tracked_package_entry_matches(

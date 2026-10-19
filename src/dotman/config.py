@@ -4,8 +4,8 @@ import os
 from pathlib import Path
 
 from dotman.errors import UsageError
-from dotman.manifest import SELECTOR_ID_RESERVED_CHARACTERS, validate_printable_name
 from dotman.models import GitConfig, ManagerConfig, RepoConfig, SnapshotConfig, UiConfig, UiMenusConfig
+from dotman.printable import SELECTOR_ID_RESERVED_CHARACTERS, validate_printable_name
 from dotman.sync_commit import validate_commit_message_template
 from dotman.toml_utils import load_toml_file
 

@@ -15,7 +15,7 @@ from dotman.operation_runner import (
     RestoreOperationFinished,
     RestoreOperationStarted,
 )
-from dotman.printable import terminal_safe_text
+from dotman.printable import terminal_safe_name, terminal_safe_text
 from dotman.tracking import SkippedCatalogPackage
 
 
@@ -570,10 +570,11 @@ def emit_add_result(*, result: Any, json_output: bool, use_color: bool) -> int:
     )
     action = "created" if result.created_package else "updated"
     print(f"{action} package config {package_label}")
-    print(f"  manifest: {result.manifest_path}")
-    print(f"  target:   {result.target_name} [{result.target_kind}]")
-    print(f"  source:   {result.source_path}")
-    print(f"  path:     {result.config_path}")
+    # The source and path come from a live file name or an authored manifest, so they may hold unprintable characters.
+    print(f"  manifest: {terminal_safe_text(str(result.manifest_path))}")
+    print(f"  target:   {terminal_safe_name(result.target_name)} [{result.target_kind}]")
+    print(f"  source:   {terminal_safe_text(str(result.source_path))}")
+    print(f"  path:     {terminal_safe_text(str(result.config_path))}")
     if result.chmod is not None:
         print(f"  chmod:    {result.chmod}")
     manifest_only_note = "manifest only; repo source files were not copied"
@@ -777,7 +778,7 @@ def emit_trackable_detail(*, trackable_detail: Any, json_output: bool, use_color
             if target.path is None:
                 print(f"    {target_name}")
                 continue
-            print(f"    {target_name} -> {target.path}")
+            print(f"    {target_name} -> {terminal_safe_text(str(target.path))}")
         return 0
 
     tracked_state = trackable_detail.tracked_state.replace("_", " ")
@@ -855,7 +856,7 @@ def emit_tracked_package_detail(*, package_detail: Any, json_output: bool, use_c
         print(cli_style.render_info_section_header("owned targets", use_color=use_color))
     for target in package_detail.owned_targets:
         target_name = cli_style.style_text(target.target.target_name, '1') if use_color else target.target.target_name
-        print(f"    {target_name} -> {target.target.live_path}")
+        print(f"    {target_name} -> {terminal_safe_text(str(target.target.live_path))}")
     return 0
 
 
@@ -1133,7 +1134,7 @@ def emit_skipped_entry_warnings(skipped_entries: Sequence[Any], *, use_color: bo
         # Plain text for the untrack hint so it stays copy-pasteable. The row may hold
         # unprintable characters, so the hint carries the escaped text, which untrack
         # accepts for exactly that row (tracking._is_named_by).
-        untrack_hint = terminal_safe_text(
+        untrack_hint = terminal_safe_name(
             cli_style.full_spec_selector_label_text(
                 repo_name=skipped.binding.repo, selector=skipped.binding.selector, profile=skipped.binding.profile
             )
