@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
+import pytest
+
 from dotman.engine import DotmanEngine
+from dotman.manifest import infer_profile_os
 from dotman.profiles import compute_profile_heights, rank_profiles
 from tests.helpers import write_example_local_override
 
@@ -56,3 +60,27 @@ def test_rank_profiles_places_more_composed_profiles_first(tmp_path: Path) -> No
     assert ranked[1] == "host/mac"
     assert ranked.index("os/arch") < ranked.index("runtime/python")
     assert ranked.index("os/mac") < ranked.index("runtime/python")
+
+
+@pytest.mark.parametrize(
+    ("profile_id", "lineage", "expected_os"),
+    [
+        ("os/mac", ["os/mac"], "darwin"),
+        ("work", ["os/macos", "work"], "darwin"),
+        ("host-darwin", ["host-darwin"], "darwin"),
+        ("os/arch", ["os/arch"], "linux"),
+        ("home_linux", ["home_linux"], "linux"),
+        ("archlinux", ["archlinux"], "linux"),
+        # Words that merely contain an OS name must not infer that OS.
+        ("machete", ["machete"], "fallback"),
+        ("work-machine", ["work-machine"], "fallback"),
+        ("research", ["research"], "fallback"),
+        ("archive-box", ["archive-box"], "fallback"),
+    ],
+)
+def test_infer_profile_os_matches_whole_name_segments(
+    monkeypatch: pytest.MonkeyPatch, profile_id: str, lineage: list[str], expected_os: str
+) -> None:
+    monkeypatch.setattr(sys, "platform", "fallback")
+
+    assert infer_profile_os(profile_id, lineage, {}) == expected_os

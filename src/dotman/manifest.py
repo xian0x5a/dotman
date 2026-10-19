@@ -809,16 +809,28 @@ def flatten_vars(data: dict[str, Any], prefix: str = "") -> dict[str, str]:
     return flattened
 
 
+PROFILE_NAME_SEGMENT_SEPARATORS = re.compile(r"[/\-_.]")
+# Checked in order: a lineage naming both OSes infers darwin, as before.
+PROFILE_OS_SEGMENTS = (
+    ("darwin", frozenset({"mac", "macos", "darwin"})),
+    ("linux", frozenset({"linux", "arch", "archlinux"})),
+)
+
+
 def infer_profile_os(profile_id: str, lineage: list[str], variables: dict[str, Any]) -> str:
     explicit = variables.get("os")
     if isinstance(explicit, str):
         return explicit
-    names = [profile_id, *lineage]
-    joined = " ".join(names)
-    if "mac" in joined:
-        return "darwin"
-    if "linux" in joined or "arch" in joined:
-        return "linux"
+    # Match whole name segments so words like "machete" or "research" don't
+    # pick an OS; "os/mac", "home-linux" and "arch" still do.
+    segments = {
+        segment
+        for name in (profile_id, *lineage)
+        for segment in PROFILE_NAME_SEGMENT_SEPARATORS.split(name.lower())
+    }
+    for inferred_os, os_segments in PROFILE_OS_SEGMENTS:
+        if segments & os_segments:
+            return inferred_os
     return sys.platform
 
 
