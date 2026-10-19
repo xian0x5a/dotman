@@ -193,6 +193,14 @@ def overlay_with_base_slots(
     return result
 
 
+def drop_indentation_of_emptied_parent(parent: XmlNode) -> None:
+    # Call after removing children: whitespace before the first one was
+    # indentation, and left on a parent with no children it would read as a
+    # whitespace-only value.
+    if not len(parent) and parent.text is not None and not parent.text.strip():
+        parent.text = None
+
+
 def retain_nodes(
     root: XmlNode,
     node_matchers: list[str],
@@ -207,9 +215,11 @@ def retain_nodes(
         for child in child_elements(current):
             if retain_matching_descendants(child, f"{cur_path}/{child.tag}"):
                 retained_nodes.update(element_with_leading_nodes(child))
-        for child in list(current):
-            if child not in retained_nodes:
-                current.remove(child)
+        removed_nodes = [child for child in current if child not in retained_nodes]
+        for child in removed_nodes:
+            current.remove(child)
+        if removed_nodes:
+            drop_indentation_of_emptied_parent(current)
         return bool(retained_nodes)
 
     retain_matching_descendants(root, root.tag)
@@ -239,6 +249,7 @@ def strip_nodes(
             if matches_node_path(child_path, node_matchers, node_regexes):
                 for node in element_with_leading_nodes(child):
                     remove_child_keeping_following_text(current, node)
+                drop_indentation_of_emptied_parent(current)
             else:
                 strip_matching_descendants(child, child_path)
 

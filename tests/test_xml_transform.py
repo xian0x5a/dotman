@@ -872,3 +872,24 @@ def test_compare_file_ignores_only_layout_between_child_elements(
     transform_xml(input_path, output_path, node_matchers=["config/drop"], compare_path=compare_path)
 
     assert (output_path.read_text(encoding="utf-8") == compare_text) is reused
+
+
+@pytest.mark.parametrize(
+    ("selector_action", "selectors", "expected_empty_element"),
+    [
+        (MODULE.SelectorAction.REMOVE, ["config/opts/noise"], "<opts/>"),
+        (MODULE.SelectorAction.RETAIN, ["config/missing"], "<config/>"),
+    ],
+)
+def test_emptied_element_drops_its_indentation(
+    tmp_path: Path, selector_action: MODULE.SelectorAction, selectors: list[str], expected_empty_element: str
+) -> None:
+    # Leftover indentation would read as a whitespace-only value, which compare
+    # treats as different from the `<opts/>` an app writes for an empty list.
+    input_path = tmp_path / "input.xml"
+    output_path = tmp_path / "output.xml"
+    input_path.write_text("<config>\n  <opts>\n    <noise/>\n  </opts>\n</config>\n", encoding="utf-8")
+
+    transform_xml(input_path, output_path, node_matchers=selectors, selector_action=selector_action)
+
+    assert expected_empty_element in output_path.read_text(encoding="utf-8")
