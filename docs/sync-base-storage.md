@@ -132,6 +132,9 @@ the absent identity. Candidate keys are frozen before review, so the operation
 cannot reclaim a deletion it just acknowledged. Partial selectors, exclusions,
 ignores, markers, Guard restrictions, and discovery failures cannot provide that
 proof; preview and aborted sessions do no reclamation.
+Reclamation does not create missing storage. If a directory's stored Bases
+cannot be read, only that directory's units warn `base-maintenance-failed`, and
+its obsolete Bases wait for a later run.
 
 ## Public inspection and reset
 

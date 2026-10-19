@@ -21,7 +21,7 @@ class PullSession(ProposalSession):
 
     @staticmethod
     def _freeze_obsolete_bases(context, observed):
-        return ()
+        return (), {}
 
     def _prepare_workset(self):
         # Pull is opt-out for auxiliary work too; --no-confirm execution must not

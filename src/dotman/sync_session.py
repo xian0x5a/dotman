@@ -711,15 +711,16 @@ class ProposalSession:
                     command_runtime=context.projection.command_runtime, run_noop=run_noop, sink=sink,
                 ) + guard_skip_rows(observed.guard_skips)
                 commit_trees = cls._probe_commit_trees(context, observations) if cls.offers_commit else {}
-                try:
-                    obsolete_bases = cls._freeze_obsolete_bases(context, observed) if not preview else ()
-                except (KeyboardInterrupt, InterruptedError):
-                    raise
-                except (SyncBaseStoreError, OSError) as exc:
-                    obsolete_bases = ()
-                    observations = tuple(replace(unit, diagnostics=(*unit.diagnostics,
-                        Diagnostic("base-maintenance-failed", str(exc), severity="warning")))
-                        for unit in observations)
+                obsolete_bases, maintenance_failures = (
+                    cls._freeze_obsolete_bases(context, observed) if not preview else ((), {})
+                )
+                # A failure only concerns the units of the directory it was reading.
+                observations = tuple(
+                    replace(unit, diagnostics=(*unit.diagnostics, failure))
+                    if (failure := maintenance_failures.get(replace(unit.identity, child_path=None)))
+                    else unit
+                    for unit in observations
+                )
             except OperationBusy as exc:
                 return SessionOpenFailed(Diagnostic("operation-busy", str(exc)))
             except OperationLockError as exc:
@@ -807,19 +808,29 @@ class ProposalSession:
         return trees
 
     @staticmethod
-    def _freeze_obsolete_bases(context, observed) -> tuple:
-        candidates = []
+    def _freeze_obsolete_bases(context, observed) -> tuple[tuple, dict]:
+        """Obsolete child Bases of complete censuses, and per-directory read failures."""
+        candidates, failures = [], {}
         for identity, item, census, complete in observed.directory_censuses:
             if not complete:
                 continue
+            state_root, state_key = context.tracked_state.state_root, item.repo.config.state_key
+            try:
+                # Absent storage holds no obsolete Base; do not create it.
+                if not SyncBaseStore.exists(state_root, state_key):
+                    continue
+                with SyncBaseStore.open(state_root, state_key, create=False) as store:
+                    stored = store.target_records(identity.canonical.encode())
+            except (SyncBaseStoreError, OSError) as exc:
+                failures[identity] = Diagnostic("base-maintenance-failed", str(exc), severity="warning")
+                continue
             prefix = (identity.canonical + "/").encode()
             present = {prefix + path.encode() for path, _ in census.entries}
-            with SyncBaseStore.open(context.tracked_state.state_root, item.repo.config.state_key) as store:
-                candidates.extend(
-                    (identity, item.repo.config.state_key, key)
-                    for key in store.identities() if key.startswith(prefix) and key not in present
-                )
-        return tuple(candidates)
+            candidates.extend(
+                (identity, state_key, record.identity) for record in stored
+                if record.identity.startswith(prefix) and record.identity not in present
+            )
+        return tuple(candidates), failures
 
     def request_editor_cancel(self) -> None:
         self._editor_operation.request_cancel()
@@ -1637,17 +1648,22 @@ class ProposalSession:
         return units, diagnostics, steps
 
     def _reclaim_obsolete_bases(self) -> tuple[Diagnostic, ...]:
+        # Any unincluded or diagnosed row withholds its whole directory's proof.
+        withheld = {
+            replace(row.observation.identity, child_path=None) for row in self.view.rows
+            if isinstance(row, SessionRow) and (not row.included or row.observation.diagnostics or row.diagnostics)
+        }
+        keys_by_store = {}
+        for identity, state_key, key in self._obsolete_bases:
+            if identity not in withheld:
+                keys_by_store.setdefault(state_key, []).append(key)
         try:
-            for identity, state_key, key in self._obsolete_bases:
-                target_rows = [
-                    row for row in self.view.rows if isinstance(row, SessionRow)
-                    and replace(row.observation.identity, child_path=None) == identity
-                ]
-                if any(not row.included or row.observation.diagnostics or row.diagnostics for row in target_rows):
-                    continue
+            for state_key, keys in keys_by_store.items():
                 self.check_cancelled()
                 with SyncBaseStore.open(self._context.tracked_state.state_root, state_key) as store:
-                    store.delete(key)
+                    for key in keys:
+                        self.check_cancelled()
+                        store.delete(key)
         except (KeyboardInterrupt, InterruptedError):
             return (Diagnostic("interrupted", "Directory Base maintenance interrupted"),)
         except (SyncBaseStoreError, OSError) as exc:
