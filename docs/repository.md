@@ -105,11 +105,15 @@ under `examples/repo/`.
 - Keyed maps use deep merge by key.
 - Lists replace the earlier value; they do not merge.
 - Packages may define `remove = [...]` with dotted paths to delete inherited fields or keyed entries explicitly.
+- `remove` and `append` paths use the same keys you write in `package.toml`, for example `targets.config.type`, `targets.config.compare.live`, `targets.config.ignore.patterns`, or `targets.config.path_rules.secrets`.
+- Removing a field leaves it as if no manifest in the chain had set it. A target falls back to its defaults, and a path rule falls back to its target's value. Removing a table such as `compare` or `ignore` clears every field in it.
+- `preset` and the editor's `type`, `run`, `io` and `elevation` can't be removed one by one. Remove the whole `editor`, or `editor.additional_sources`, instead.
 - Packages may define `append` to append to inherited list-valued fields without replacing the whole list.
 - `append` should mirror the object shape it targets, for example:
   - `[append.hooks]`
   - `pre_push = ["{{ INSTALL }} extra-tool"]`
-- `append` should fail if the targeted inherited field is not a list.
+- Appendable lists: `depends`, `reserved_paths`, `ignore.patterns` (package or target), `editor.additional_sources`, hook commands, and list-valued `vars`.
+- `append` should fail if the targeted inherited field is not a list. Path rules are a keyed table: to add one, declare it in the child.
 - Targets and hooks should stay keyed so merges remain deterministic.
 - Conflicting target ownership or incompatible target/path collisions should fail hard.
 - Reserved path collisions should also fail hard when one package reserves a live path used or reserved by another package.
