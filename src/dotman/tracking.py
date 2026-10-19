@@ -407,9 +407,18 @@ def tracked_package_entry_scope_key(
     repo: Repository,
     binding: FullSpecSelector,
 ) -> tuple[str, str, str | None]:
-    if binding.selector in repo.packages and repo.package_binding_mode(binding.selector) == "multi_instance":
+    if binding.selector in repo.packages and _is_multi_instance(repo, binding.selector):
         return (binding.repo, binding.selector, binding.profile)
     return (binding.repo, binding.selector, None)
+
+
+def _is_multi_instance(repo: Repository, package_id: str) -> bool:
+    try:
+        return repo.package_binding_mode(package_id) == "multi_instance"
+    except MissingExtendsParentError:
+        # A stale row kept in state has no resolvable binding mode; scope it like a singleton
+        # so tracking another package in the same repo does not trip over it.
+        return False
 
 
 
@@ -509,13 +518,35 @@ def collecting_skipped_tracked_rows() -> Iterator[dict[tuple[str, str, str], Ski
         _SKIPPED_TRACKED_ROWS.reset(token)
 
 
-def _record_skipped_tracked_row(binding: FullSpecSelector, error: PersistedTrackedPackageEntryResolutionError) -> None:
+@contextmanager
+def silencing_skipped_tracked_rows() -> Iterator[None]:
+    """Stop collecting skipped rows, for commands that list every invalid row themselves."""
+    token = _SKIPPED_TRACKED_ROWS.set(None)
+    try:
+        yield
+    finally:
+        _SKIPPED_TRACKED_ROWS.reset(token)
+
+
+def _record_skipped_tracked_row(binding: FullSpecSelector, message: str) -> None:
     skipped_rows = _SKIPPED_TRACKED_ROWS.get()
     if skipped_rows is not None:
         skipped_rows.setdefault(
             (binding.repo, binding.selector, binding.profile),
-            SkippedTrackedRow(binding=binding, message=error.message),
+            SkippedTrackedRow(binding=binding, message=message),
         )
+
+
+def consume_skipped_tracked_row(repo_name: str | None, package_id: str) -> SkippedTrackedRow | None:
+    """Take the skipped row for a package the command is rejecting itself.
+
+    The caller reports the row in its own error, so the end-of-command warning would repeat it.
+    """
+    skipped_rows = _SKIPPED_TRACKED_ROWS.get() or {}
+    for key, skipped in skipped_rows.items():
+        if skipped.binding.selector == package_id and repo_name in (None, skipped.binding.repo):
+            return skipped_rows.pop(key)
+    return None
 
 
 def effective_tracked_package_entries_for_repo(
@@ -527,7 +558,7 @@ def effective_tracked_package_entries_for_repo(
         try:
             resolve_persisted_tracked_package_entry(repo, binding)
         except PersistedTrackedPackageEntryResolutionError as exc:
-            _record_skipped_tracked_row(binding, exc)
+            _record_skipped_tracked_row(binding, exc.message)
             continue
         effective_bindings = _normalize_tracked_package_entries_in_repo(repo, effective_bindings, binding)
     return effective_bindings
@@ -774,7 +805,11 @@ def remove_tracked_package_entry_record(bindings: list[FullSpecSelector], target
 def iter_tracked_package_entries(
     context: TrackedStateContext,
 ) -> list[tuple[Repository, FullSpecSelector, SelectorKind, list[str]]]:
-    valid_records, _invalid_records = configured_persisted_tracked_package_entry_records(context)
+    valid_records, invalid_records = configured_persisted_tracked_package_entry_records(context)
+    for record in invalid_records:
+        # package_invalid rows are malformed manifests, not stale state; they stay silent here as before.
+        if record.issue is not None and record.issue.reason != "package_invalid":
+            _record_skipped_tracked_row(record.package_entry, record.issue.message)
     return [
         (record.repo, record.package_entry, record.selector_kind or "package", list(record.package_ids))
         for record in valid_records

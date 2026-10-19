@@ -23,10 +23,6 @@ if TYPE_CHECKING:
 
 
 
-# `doctor` lists every stale row itself, so a skip warning on top would only repeat it.
-COMMANDS_REPORTING_STALE_ROWS = frozenset({"doctor"})
-
-
 class RootUnderSudoError(ValueError):
     def __init__(self, invoking_user: str) -> None:
         self.detail = f"dotman does not run as root under sudo (started by {invoking_user})"
@@ -50,9 +46,7 @@ def main(
         else:
             _refuse_root_under_sudo()
             selected_runner = _repo_command_runner(args, None if no_confirm else interaction)
-            skipped_rows_warning = (
-                nullcontext() if args.command in COMMANDS_REPORTING_STALE_ROWS else _warn_about_skipped_tracked_rows()
-            )
+            skipped_rows_warning = _warn_about_skipped_tracked_rows()
         with command_operation(), interaction_scope(no_confirm=args.no_confirm), skipped_rows_warning:
             return selected_runner.run(args)
     except InteractionRequiredError as exc:
@@ -93,11 +87,16 @@ def _warn_about_skipped_tracked_rows() -> Iterator[None]:
     to one report, however many times the command walked the tracked state.
     """
     from dotman.cli_emit import emit_skipped_tracked_row_warnings
-    from dotman.tracking import collecting_skipped_tracked_rows
+    from dotman.repository import MissingExtendsParentError
+    from dotman.tracking import collecting_skipped_tracked_rows, consume_skipped_tracked_row
 
     with collecting_skipped_tracked_rows() as skipped_rows:
         try:
             yield
+        except MissingExtendsParentError as error:
+            # The error already names the package and its missing parent.
+            consume_skipped_tracked_row(error.repo_name, error.package_id)
+            raise
         finally:
             emit_skipped_tracked_row_warnings(
                 list(skipped_rows.values()), use_color=colors_enabled(sys.stderr)

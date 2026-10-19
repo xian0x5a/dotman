@@ -271,7 +271,9 @@ class DotmanEngine:
 
 
     def list_tracked_state(self) -> TrackedStateSummary:
-        return tracking.list_tracked_state(self._tracked_state_context)
+        # It lists every invalid row itself; a skip warning would only repeat the list.
+        with tracking.silencing_skipped_tracked_rows():
+            return tracking.list_tracked_state(self._tracked_state_context)
 
     def list_invalid_explicit_package_entries(
         self,
@@ -314,8 +316,10 @@ class DotmanEngine:
 
         from dotman.sync_base_inspection import doctor_sync_bases
 
-        summary = doctor_context(self._tracked_state_context)
-        return replace(summary, checks=[*summary.checks, *doctor_sync_bases(self._planning_context)])
+        # Like `list tracked`, doctor reports every invalid row, so skip warnings stay silent.
+        with tracking.silencing_skipped_tracked_rows():
+            summary = doctor_context(self._tracked_state_context)
+            return replace(summary, checks=[*summary.checks, *doctor_sync_bases(self._planning_context)])
 
     def list_sync_bases(self):
         from dotman.sync_base_inspection import list_sync_bases
