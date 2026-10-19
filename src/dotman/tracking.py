@@ -359,6 +359,11 @@ def read_effective_tracked_package_entries(repo: Repository) -> list[FullSpecSel
 
 
 
+def read_persisted_tracked_package_entries(repo: Repository) -> list[FullSpecSelector]:
+    return persisted_tracked_package_entries_for_repo(repo, read_tracked_package_entries(repo))
+
+
+
 def expand_tracked_package_entry(
     context: TrackedStateContext,
     binding: FullSpecSelector,

@@ -338,6 +338,9 @@ class DotmanEngine:
     def read_effective_tracked_package_entries(self, repo: Repository) -> list[FullSpecSelector]:
         return tracking.read_effective_tracked_package_entries(repo)
 
+    def read_persisted_tracked_package_entries(self, repo: Repository) -> list[FullSpecSelector]:
+        return tracking.read_persisted_tracked_package_entries(repo)
+
     def expand_tracked_package_entry(self, binding: FullSpecSelector) -> list[FullSpecSelector]:
         return tracking.expand_tracked_package_entry(self._tracked_state_context, binding)
 

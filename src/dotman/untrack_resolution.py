@@ -299,9 +299,11 @@ class UntrackResolver:
             not_found_text=f"group '{selector}' did not match any tracked group",
         )
         group_package_ids = set(repo.expand_group(resolved_selector))
+        # Persisted, not effective, rows: a member row that no longer resolves is
+        # still part of the group being untracked and must not be left behind.
         tracked_group_bindings = tuple(
             binding
-            for binding in self._engine.read_effective_tracked_package_entries(repo)
+            for binding in self._engine.read_persisted_tracked_package_entries(repo)
             if binding.repo == repo.config.name and binding.selector in group_package_ids
         )
         resolved_profile = self._resolve_group_profile(

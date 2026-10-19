@@ -170,3 +170,41 @@ def test_invalid_row_in_another_repo_leaves_conflict_checks_on(tmp_path: Path, c
 
     assert main(["--config", str(config_path), "--no-confirm", "track", "fixture:beta@basic"]) == 1
     assert "conflicting explicit tracked targets" in capsys.readouterr().err
+
+
+def test_untrack_group_removes_member_rows_that_do_not_resolve(tmp_path: Path, capsys) -> None:
+    # A member whose dependency is gone is still part of the group the user untracks.
+    repo_root = tmp_path / "repo"
+    _write_stale_row_repo(repo_root, "dependency-broken")
+    (repo_root / "groups").mkdir()
+    (repo_root / "groups" / "stack.toml").write_text('members = ["a", "broken"]\n', encoding="utf-8")
+    config_path = write_named_manager_config(tmp_path, {"main": repo_root})
+    write_tracked_packages_state(tmp_path / "state", repo_name="main", entries=[("a", "default"), ("broken", "default")])
+
+    assert main(["--config", str(config_path), "--no-confirm", "untrack", "main:stack@default"]) == 0
+
+    assert _listed_package_entries(config_path, capsys) == set()
+
+
+def test_tracked_package_with_broken_manifest_is_reported_and_fails_planning(tmp_path: Path, capsys) -> None:
+    # A broken manifest is a repo error, not stale state: list and doctor report the
+    # row with the cause, and planning and writes fail instead of skipping it.
+    repo_root = tmp_path / "repo"
+    _write_plain_packages(repo_root, ["a"])
+    for package_id, parent in (("alpha", "beta"), ("beta", "alpha")):
+        (repo_root / "packages" / package_id).mkdir()
+        (repo_root / "packages" / package_id / "package.toml").write_text(f'extends = ["{parent}"]\n', encoding="utf-8")
+    config_path = write_named_manager_config(tmp_path, {"main": repo_root})
+    write_tracked_packages_state(tmp_path / "state", repo_name="main", entries=[("alpha", "default")])
+
+    capsys.readouterr()
+    for command in (["list", "tracked"], ["doctor"]):
+        main(["--config", str(config_path), "--json", *command])
+        invalid_entries = json.loads(capsys.readouterr().out)["invalid_package_entries"]
+        assert [(entry["package_id"], entry["reason"]) for entry in invalid_entries] == [("alpha", "package_invalid")]
+        assert "extends cycle" in invalid_entries[0]["message"]
+
+    assert main(["--config", str(config_path), "--json", "--no-confirm", "push", "--dry-run"]) != 0
+    assert "extends cycle" in capsys.readouterr().out
+    assert main(["--config", str(config_path), "--no-confirm", "track", "main:a@default"]) != 0
+    assert "extends cycle" in capsys.readouterr().err
