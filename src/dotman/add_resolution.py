@@ -14,7 +14,6 @@ from dotman.interaction import (
 )
 from dotman.manifest import validate_package_id
 from dotman.package_resolution import parse_full_spec_selector_text
-from dotman.resolver import parse_slash_qualified_query
 
 
 @dataclass(frozen=True)
@@ -144,11 +143,7 @@ class AddResolver:
         explicit_repo, selector, profile = parse_full_spec_selector_text(package_query)
         if profile is not None:
             raise ValueError("add package query expects a package selector, not a binding")
-        return parse_slash_qualified_query(
-            repo_names=[repo_config.name for repo_config in self._engine.config.ordered_repos],
-            explicit_repo=explicit_repo,
-            selector=selector,
-        )
+        return explicit_repo, selector
 
     def _find_package_matches(
         self,

@@ -22,7 +22,6 @@ from dotman.resolver import (
     build_profile_match_fields,
     build_selector_field_kinds,
     build_selector_match_fields,
-    parse_slash_qualified_query,
     rank_resolver_matches,
 )
 
@@ -369,15 +368,9 @@ class TrackResolver:
 
     def _resolve_selector(self, binding_text: str) -> FullSpecSelector:
         explicit_repo, selector, selector_profile = parse_full_spec_selector_text(binding_text)
-        repo_names = [repo_config.name for repo_config in self._engine.config.ordered_repos]
-        lookup_repo, lookup_selector = parse_slash_qualified_query(
-            repo_names=repo_names,
-            explicit_repo=explicit_repo,
-            selector=selector,
-        )
         exact_matches, partial_matches = self._engine.find_selector_matches(
-            lookup_selector,
-            lookup_repo,
+            selector,
+            explicit_repo,
         )
 
         def selector_option(

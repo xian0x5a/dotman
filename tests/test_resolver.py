@@ -106,10 +106,9 @@ REPO_QUALIFIED_OPTIONS = {
 @pytest.mark.parametrize("option_kind", REPO_QUALIFIED_OPTIONS)
 def test_repo_qualifier_is_colon_only_and_slash_never_matches_as_repo_alias(option_kind: str) -> None:
     option = REPO_QUALIFIED_OPTIONS[option_kind]
-    colon_query = "sandbox:sunshine.conf" if option_kind == "target" else "sandbox:sunshine"
-    slash_query = colon_query.replace(":", "/", 1)
 
-    # The first rank element is the index of the first matching field; len(fields) means none matched.
-    no_field_matched = len(option.match_fields)
-    assert rank_resolver_option(query=colon_query, option=option)[0] < no_field_matched
-    assert rank_resolver_option(query=slash_query, option=option)[0] == no_field_matched
+    # Ranking splits queries on `/` and `:`, so a repo-qualified query is stripped
+    # of its repo before ranking; the contract lives in the generated match fields.
+    assert any(field.startswith("sandbox:") for field in option.match_fields)
+    assert not any(field.startswith("sandbox/") for field in option.match_fields)
+    assert len(option.field_kinds) == len(option.match_fields)

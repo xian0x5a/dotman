@@ -19,7 +19,6 @@ from dotman.resolver import (
     build_package_match_fields,
     build_target_field_kinds,
     build_target_match_fields,
-    parse_slash_qualified_query,
     rank_resolver_option,
 )
 
@@ -90,16 +89,7 @@ class EditResolver:
         engine = self._require_engine()
         explicit_repo, selector, bound_profile = parse_package_ref_text(package_text)
         package_query = package_ref_text(package_id=selector, bound_profile=bound_profile)
-        lookup_repo, lookup_selector = parse_slash_qualified_query(
-            repo_names=[repo_config.name for repo_config in self._config.ordered_repos],
-            explicit_repo=explicit_repo,
-            selector=selector,
-        )
-        lookup_ref = package_ref_text(
-            package_id=lookup_selector,
-            bound_profile=bound_profile,
-        )
-        lookup_text = f"{lookup_repo}:{lookup_ref}" if lookup_repo is not None else lookup_ref
+        lookup_text = f"{explicit_repo}:{package_query}" if explicit_repo is not None else package_query
         _selector, _profile, exact_matches, partial_matches = engine.find_tracked_package_matches(
             lookup_text
         )

@@ -40,18 +40,14 @@ def normalize_field_kinds(*field_kinds: str) -> tuple[str, ...]:
 
 
 def build_selector_match_fields(*, repo_name: str, selector: str) -> tuple[str, ...]:
-    # `repo:selector` is the canonical displayed form. Keep `repo/selector` as a
-    # lookup alias so existing slash-qualified input still resolves.
     return normalize_match_fields(
         selector,
         f"{repo_name}:{selector}",
-        f"{repo_name}/{selector}",
     )
 
 
 def build_selector_field_kinds() -> tuple[str, ...]:
     return normalize_field_kinds(
-        "selector",
         "selector",
         "selector",
     )
@@ -61,10 +57,8 @@ def build_full_spec_selector_match_fields(*, repo_name: str, selector: str, prof
     return normalize_match_fields(
         selector,
         f"{repo_name}:{selector}",
-        f"{repo_name}/{selector}",
         f"{selector}@{profile}",
         f"{repo_name}:{selector}@{profile}",
-        f"{repo_name}/{selector}@{profile}",
     )
 
 
@@ -72,8 +66,6 @@ def build_full_spec_selector_field_kinds() -> tuple[str, ...]:
     return normalize_field_kinds(
         "selector",
         "selector",
-        "selector",
-        "profile",
         "profile",
         "profile",
     )
@@ -90,15 +82,12 @@ def build_package_match_fields(
         return normalize_match_fields(
             package_id,
             f"{repo_name}:{package_id}",
-            f"{repo_name}/{package_id}",
         )
     return normalize_match_fields(
         package_id,
         package_ref,
         f"{repo_name}:{package_id}",
-        f"{repo_name}/{package_id}",
         f"{repo_name}:{package_ref}",
-        f"{repo_name}/{package_ref}",
         bound_profile,
     )
 
@@ -108,11 +97,8 @@ def build_package_field_kinds(*, has_bound_profile: bool = False) -> tuple[str, 
         return normalize_field_kinds(
             "selector",
             "selector",
-            "selector",
         )
     return normalize_field_kinds(
-        "selector",
-        "selector",
         "selector",
         "selector",
         "selector",
@@ -134,13 +120,11 @@ def build_target_match_fields(
             target_name,
             f"{package_ref}.{target_name}",
             f"{repo_name}:{package_ref}.{target_name}",
-            f"{repo_name}/{package_ref}.{target_name}",
         )
     return normalize_match_fields(
         target_name,
         f"{package_ref}.{target_name}",
         f"{repo_name}:{package_ref}.{target_name}",
-        f"{repo_name}/{package_ref}.{target_name}",
         bound_profile,
     )
 
@@ -151,10 +135,8 @@ def build_target_field_kinds(*, has_bound_profile: bool = False) -> tuple[str, .
             "selector",
             "selector",
             "selector",
-            "selector",
         )
     return normalize_field_kinds(
-        "selector",
         "selector",
         "selector",
         "selector",
@@ -168,20 +150,6 @@ def build_profile_match_fields(*, profile: str) -> tuple[str, ...]:
 
 def build_profile_field_kinds() -> tuple[str, ...]:
     return normalize_field_kinds("profile")
-
-
-def parse_slash_qualified_query(
-    *,
-    repo_names: Sequence[str],
-    explicit_repo: str | None,
-    selector: str,
-) -> tuple[str | None, str]:
-    if explicit_repo is not None:
-        return explicit_repo, selector
-    repo_name, separator, remainder = selector.partition("/")
-    if not separator or not remainder or repo_name not in repo_names:
-        return None, selector
-    return repo_name, remainder
 
 
 def _segment_match_rank(query: str, text: str) -> tuple[int, int, int, int] | None:

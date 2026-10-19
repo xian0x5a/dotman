@@ -19,7 +19,6 @@ from dotman.resolver import (
     build_profile_match_fields,
     build_selector_field_kinds,
     build_selector_match_fields,
-    parse_slash_qualified_query,
     rank_resolver_matches,
 )
 from dotman.tracking import PersistedTrackedPackageEntryRecord
@@ -257,15 +256,9 @@ class UntrackResolver:
     ) -> tuple[list, list]:
         if explicit_repo is not None and explicit_repo not in self._engine.config.repos:
             return [], []
-        repo_names = [repo_config.name for repo_config in self._engine.config.ordered_repos]
-        lookup_repo, lookup_selector = parse_slash_qualified_query(
-            repo_names=repo_names,
-            explicit_repo=explicit_repo,
-            selector=selector,
-        )
         exact_matches, partial_matches = self._engine.find_selector_matches(
-            lookup_selector,
-            lookup_repo,
+            selector,
+            explicit_repo,
         )
         return (
             [match for match in exact_matches if match[2] == "group"],
