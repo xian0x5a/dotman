@@ -106,8 +106,10 @@ chmod belongs to the root.
 
 Repository symlinks and unsupported nodes yield typed path-specific Observation
 failures unless excluded. So does a child path that cannot form a canonical
-identity (trailing whitespace, a backslash, a control character such as ESC
-or CR, or bytes that are not UTF-8); its row shows an escaped stand-in
+identity (trailing whitespace, a backslash, any character Python's
+`str.isprintable()` rejects, or bytes that are not UTF-8). Rejected characters
+include control characters such as ESC or CR, bidi and other format characters,
+and non-ASCII spaces such as NBSP or U+3000. Its row shows an escaped stand-in
 (`Icon\u000d`, `caf\xe9.txt`) and it never has a Sync Base. Rename such a file
 or exclude it with an ignore pattern. A Sync Base stored for such a name by an
 older dotman is ignored; `dotman doctor` counts it as corrupt.

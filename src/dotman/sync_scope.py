@@ -461,9 +461,17 @@ def sync_unit_identity_bytes(identity: ResolvedSyncTarget) -> bytes:
             identity.target_name,
             identity.child_path,
         )
-        # Human output prints identities verbatim, so a control character
-        # (NUL, ESC, CR, ...) would reach the terminal raw.
+        # Human output prints identities verbatim, so a control character (NUL,
+        # ESC, CR, ...) anywhere would reach the terminal raw.
         or any(unicodedata.category(character) == "Cc" for character in identity.canonical)
+        # Child names come from the live filesystem and fail alone under an
+        # escaped stand-in, so they are held to the stricter rule `printable_text`
+        # escapes by (str.isprintable): one predicate, so the check and the
+        # escaping cannot drift, and bidi/format characters cannot reorder
+        # displayed rows. Repo/package/profile/target names are authored in the
+        # manifest; validating them belongs to manifest load, and rejecting them
+        # here would fail the whole session open instead of one child.
+        or (identity.child_path is not None and not identity.child_path.isprintable())
     ):
         raise ValueError(
             "Sync Base requires a canonical file or directory-child identity"

@@ -114,6 +114,12 @@ def test_unsupported_repository_nodes_are_path_local_and_exclusions_win(tmp_path
     # Control characters inside a name would reach the terminal raw.
     ('a\rb', 'a\\u000db'),
     ('evil\x1b[2Kname', 'evil\\u001b[2Kname'),
+    # Not isprintable(): format, separator and line-break characters are as invisible as controls.
+    ('a\u202eb', 'a\\u202eb'),
+    ('a\u200bb', 'a\\u200bb'),
+    ('a\u00a0b', 'a\\u00a0b'),
+    ('a\u2028b', 'a\\u2028b'),
+    ('a\U000e0001b', 'a\\U000e0001b'),
     (os.fsdecode(b'caf\xe9.txt'), 'caf\\xe9.txt'),
 ])
 def test_child_name_without_canonical_identity_fails_only_that_child(tmp_path, monkeypatch, name, shown):
@@ -130,6 +136,37 @@ def test_child_name_without_canonical_identity_fails_only_that_child(tmp_path, m
         assert units[shown].state == 'observation-failed'
         assert units[shown].diagnostics[0].code == 'unsupported-name'
         assert units[shown].base.status == 'unavailable'
+
+
+@pytest.mark.parametrize('name', ['with space.txt', 'café', '日本'])
+def test_printable_child_name_keeps_canonical_identity(tmp_path, monkeypatch, name):
+    engine = directory_engine(tmp_path, monkeypatch)
+    repo, live = tmp_path / 'repo/packages/app/tree', tmp_path / 'live/tree'
+    put(repo, name, b'repo'); put(live, name, b'live')
+    with open_directory(engine, preview=False) as session:
+        unit, = session.view.observations
+        assert unit.identity.child_path == name
+        assert unit.state == 'drifted'
+        assert not unit.diagnostics
+
+
+def test_manifest_authored_unprintable_profile_id_still_opens_session(tmp_path, monkeypatch):
+    # Only live child names are held to isprintable(); a profile ID authored in
+    # the manifest must not fail the whole session open.
+    from tests.helpers import write_tracked_packages_state
+    engine = directory_engine(tmp_path, monkeypatch)
+    manifest = tmp_path / 'repo/packages/app/package.toml'
+    manifest.write_text('binding_mode = "multi_instance"\n' + manifest.read_text())
+    profile = 'work\u00a0laptop'
+    (tmp_path / f'repo/profiles/{profile}.toml').write_text('')
+    write_tracked_packages_state(tmp_path / 'state', repo_name='main', entries=[('app', profile)])
+    engine = DotmanEngine.from_config_path(engine.config.config_path)
+    put(tmp_path / 'repo/packages/app/tree', 'good', b'repo'); put(tmp_path / 'live/tree', 'good', b'live')
+    with open_directory(engine, preview=False) as session:
+        unit, = session.view.observations
+        assert unit.identity.canonical == f'main:app<{profile}>.tree/good'
+        assert unit.state == 'drifted'
+        assert not unit.diagnostics
 
 
 def test_stored_base_under_name_without_canonical_identity_does_not_block_session(tmp_path, monkeypatch):
