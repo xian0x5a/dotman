@@ -15,6 +15,7 @@ import sys
 from typing import Any, ClassVar, Iterable, Protocol, runtime_checkable
 
 from dotman.atomic_files import write_bytes_atomic, write_text_atomic
+from dotman.errors import UsageError
 
 STDIN_PATH = Path("-")
 # A selector with this prefix removes paths from the selection instead of adding them.
@@ -41,7 +42,7 @@ def compile_selector_regexes(
         try:
             compiled_regexes.append(re.compile(raw_regex))
         except re.error as error:
-            raise ValueError(
+            raise UsageError(
                 f"invalid {selector_description} regex {raw_regex!r}: {error}"
             ) from error
     return tuple(compiled_regexes)
@@ -108,7 +109,7 @@ def split_quoted_key_path(raw_key: str, format_name: str) -> tuple[str, ...]:
     segment, as in ``a..b`` or ``a.``, is almost always a typo and is rejected.
     """
     if not raw_key:
-        raise ValueError(f"{format_name} key paths must not be empty")
+        raise UsageError(f"{format_name} key paths must not be empty")
     parts: list[str] = []
     current: list[str] = []
     in_quotes = False
@@ -117,7 +118,7 @@ def split_quoted_key_path(raw_key: str, format_name: str) -> tuple[str, ...]:
 
     def finish_segment() -> None:
         if not current and not segment_was_quoted:
-            raise ValueError(
+            raise UsageError(
                 f'empty segment in {format_name} key path {raw_key!r}; use "" for an empty key'
             )
         parts.append("".join(current))
@@ -148,7 +149,7 @@ def split_quoted_key_path(raw_key: str, format_name: str) -> tuple[str, ...]:
     if escape:
         current.append("\\")
     if in_quotes:
-        raise ValueError(f"unterminated quoted {format_name} key path: {raw_key}")
+        raise UsageError(f"unterminated quoted {format_name} key path: {raw_key}")
 
     finish_segment()
     return tuple(parts)
@@ -196,13 +197,13 @@ class SelectorSpec:
 
     def __post_init__(self) -> None:
         if not self.name:
-            raise ValueError("selector spec name must not be empty")
+            raise UsageError("selector spec name must not be empty")
         if not self.prefix:
-            raise ValueError("selector spec prefix must not be empty")
+            raise UsageError("selector spec prefix must not be empty")
         if not self.description:
-            raise ValueError("selector spec description must not be empty")
+            raise UsageError("selector spec description must not be empty")
         if not self.supported_modes:
-            raise ValueError("selector spec supported_modes must not be empty")
+            raise UsageError("selector spec supported_modes must not be empty")
 
 
 @dataclass(frozen=True)
@@ -218,11 +219,11 @@ class TransformRequest:
 
     def validate_basic(self) -> None:
         if self.mode == TransformMode.MERGE and self.overlay_path is None:
-            raise ValueError("overlay_path is required when mode=merge")
+            raise UsageError("overlay_path is required when mode=merge")
         if self.mode == TransformMode.CLEANUP and self.overlay_path is not None:
-            raise ValueError("overlay_path is only valid when mode=merge")
+            raise UsageError("overlay_path is only valid when mode=merge")
         if self.output_path is None and not self.engine_option("stdout", False):
-            raise ValueError("output_path is required unless stdout output is enabled")
+            raise UsageError("output_path is required unless stdout output is enabled")
 
     def selector_values(self, selector_type: str) -> tuple[str, ...]:
         return self.selectors_by_type.get(selector_type, ())
@@ -434,9 +435,9 @@ class BaseTransformEngine(ABC):
     def validate_request(self, request: TransformRequest) -> None:
         request.validate_basic()
         if self.requires_selectors() and not request.has_selectors():
-            raise ValueError("at least one selector value is required")
+            raise UsageError("at least one selector value is required")
         if request.has_excluded_selectors() and not self.SUPPORTS_EXCLUDED_SELECTORS:
-            raise ValueError(f"{self.name} does not support {EXCLUSION_PREFIX} selectors")
+            raise UsageError(f"{self.name} does not support {EXCLUSION_PREFIX} selectors")
 
         supported_specs = self.selector_spec_map()
         selector_types = {
@@ -450,7 +451,7 @@ class BaseTransformEngine(ABC):
             if selector_type not in supported_specs
         )
         if unknown_selector_types:
-            raise ValueError(
+            raise UsageError(
                 f"{self.name} does not support selector types: {', '.join(unknown_selector_types)}"
             )
 
@@ -462,7 +463,7 @@ class BaseTransformEngine(ABC):
             and request.mode not in supported_specs[selector_type].supported_modes
         )
         if unsupported_mode_selector_types:
-            raise ValueError(
+            raise UsageError(
                 f"{self.name} selector types not supported in {request.mode.value} mode: "
                 f"{', '.join(unsupported_mode_selector_types)}"
             )

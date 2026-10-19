@@ -6,6 +6,7 @@ import tempfile
 from collections.abc import Sequence
 from pathlib import Path
 
+from dotman.errors import UsageError
 from dotman.templates import (
     JinjaRenderError,
     build_template_context,
@@ -42,11 +43,11 @@ def _apply_template_var_assignments(
 ) -> dict[str, object]:
     for assignment in assignments:
         if "=" not in assignment:
-            raise ValueError(f"invalid --var assignment '{assignment}'; expected <key=value>")
+            raise UsageError(f"invalid --var assignment '{assignment}'; expected <key=value>")
         dotted_key, value = assignment.split("=", 1)
         key_parts = [part for part in dotted_key.split(".") if part]
         if not key_parts:
-            raise ValueError(f"invalid --var assignment '{assignment}'; expected <key=value>")
+            raise UsageError(f"invalid --var assignment '{assignment}'; expected <key=value>")
         _assign_nested_value(variables, key_parts, value)
     return variables
 
@@ -63,7 +64,7 @@ def run_jinja_render(
     variables = _template_vars_from_dotman_env(dict(os.environ))
     _apply_template_var_assignments(variables, var_assignments)
     if not path.exists():
-        raise JinjaRenderError(path=path, detail="source path does not exist")
+        raise UsageError(f"source path does not exist: {path}")
     context = build_template_context(
         variables,
         profile=profile or os.environ.get("DOTMAN_PROFILE") or "default",
@@ -189,6 +190,13 @@ def run_patch_capture(
     from dotman.capture import capture_patch
     from dotman.command_runtime import current_command_runtime
 
+    for label, path_text in (
+        ("repo path", repo_path),
+        ("review repo path", review_repo_path),
+        ("review live path", review_live_path),
+    ):
+        if path_text is not None and not Path(path_text).expanduser().exists():
+            raise UsageError(f"{label} does not exist: {path_text}")
     resolved_repo_path = Path(repo_path).expanduser().resolve()
     variables = _template_vars_from_dotman_env(dict(os.environ))
     _apply_template_var_assignments(variables, var_assignments)

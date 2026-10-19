@@ -8,7 +8,9 @@ from typing import Generic, TypeVar
 from dotman import cli_style
 from dotman import tracking
 from dotman.engine import DotmanEngine
+from dotman.errors import UsageError
 from dotman.interaction import ChoiceOption, ChoiceRequest, Interaction
+from dotman.interaction_policy import InteractionRequiredError
 from dotman.models import ManagerConfig, package_ref_text
 from dotman.package_resolution import (
     parse_full_spec_selector_text,
@@ -318,17 +320,17 @@ class EditResolver:
             return ranked_exact[0].value
         if len(ranked_exact) > 1:
             if self._interaction is None:
-                raise ValueError(exact_error)
+                raise InteractionRequiredError(exact_error)
             return self._choose_candidate(header_text, ranked_exact)
         if len(ranked_partial) == 1:
             if self._interaction is None:
-                raise ValueError(single_partial_error)
+                raise InteractionRequiredError(single_partial_error)
             return self._choose_candidate(header_text, ranked_partial)
         if len(ranked_partial) > 1:
             if self._interaction is None:
-                raise ValueError(partial_error)
+                raise InteractionRequiredError(partial_error)
             return self._choose_candidate(header_text, ranked_partial)
-        raise ValueError(not_found_error)
+        raise UsageError(not_found_error)
 
     @staticmethod
     def _rank_candidates(
@@ -482,13 +484,13 @@ class EditResolver:
     @staticmethod
     def _parse_query_text(query_text: str) -> tuple[str, str | None, str]:
         if any(marker in query_text for marker in ("@", "<", ">")):
-            raise ValueError(
+            raise UsageError(
                 "edit query does not accept selector@profile syntax; "
                 "use explicit edit package or edit target"
             )
         explicit_repo, selector, selector_profile = parse_full_spec_selector_text(query_text)
         if selector_profile is not None:
-            raise ValueError(
+            raise UsageError(
                 "edit query does not accept selector@profile syntax; "
                 "use explicit edit package or edit target"
             )
@@ -496,7 +498,7 @@ class EditResolver:
             return "package", explicit_repo, selector
         package_id, separator, target_name = selector.partition(".")
         if not separator or not package_id or not target_name:
-            raise ValueError(
+            raise UsageError(
                 f"invalid edit target query '{query_text}'; "
                 "expected [<repo>:]<package>.<target>"
             )

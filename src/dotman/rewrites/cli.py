@@ -4,6 +4,7 @@ import os
 import sys
 from pathlib import Path
 
+from dotman.errors import UsageError
 from dotman.rewrites.home import active_home_path, collapse_home_paths, expand_home_paths
 
 
@@ -25,7 +26,7 @@ def _read_input(input_path: str | None) -> tuple[bytes, Path | None]:
     try:
         return path.read_bytes(), path
     except FileNotFoundError as error:
-        raise HomeRewriteError("input file does not exist", path=path) from error
+        raise UsageError(f"input file does not exist: {path}") from error
     except PermissionError as error:
         raise HomeRewriteError("input file is not readable", path=path) from error
     except OSError as error:
@@ -33,10 +34,7 @@ def _read_input(input_path: str | None) -> tuple[bytes, Path | None]:
 
 
 def run_home_rewrite(*, action: str, input_path: str | None, bare_tilde: bool) -> int:
-    try:
-        home = active_home_path(os.environ)
-    except ValueError as error:
-        raise HomeRewriteError(str(error)) from error
+    home = active_home_path(os.environ)
 
     source_bytes, source_path = _read_input(input_path)
     try:

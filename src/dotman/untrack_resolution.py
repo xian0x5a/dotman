@@ -6,7 +6,9 @@ from typing import TypeAlias, TypeVar
 
 from dotman import cli_style
 from dotman.engine import DotmanEngine
+from dotman.errors import UsageError
 from dotman.interaction import ChoiceOption, ChoiceRequest, Interaction
+from dotman.interaction_policy import InteractionRequiredError
 from dotman.models import FullSpecSelector, TrackedPackageDetail, package_ref_text
 from dotman.package_resolution import parse_full_spec_selector_text
 from dotman.resolver import (
@@ -205,7 +207,7 @@ class UntrackResolver:
         if len(exact_entries) == 1:
             return UntrackEntryRequest(record=exact_entries[0])
         if len(exact_entries) > 1:
-            raise ValueError(
+            raise UsageError(
                 f"tracked package entry '{binding_label}' is ambiguous: "
                 + ", ".join(self._binding_text(record.package_entry) for record in exact_entries)
             )
@@ -215,16 +217,16 @@ class UntrackResolver:
                     f"{package.repo}:{package.package_ref}"
                     for package in filtered_package_matches
                 )
-                raise ValueError(
+                raise UsageError(
                     f"tracked package entry '{binding_label}' is ambiguous: tracked packages: "
                     f"{package_candidates}"
                 )
             if len(partial_entries) == 1:
-                raise ValueError(
+                raise UsageError(
                     f"no exact match for '{binding_label}'; use exact name "
                     f"'{self._binding_text(partial_entries[0].package_entry)}'"
                 )
-            raise ValueError(
+            raise UsageError(
                 f"tracked package entry '{binding_label}' is ambiguous: "
                 + ", ".join(
                     self._binding_text(record.package_entry) for record in partial_entries
@@ -232,7 +234,7 @@ class UntrackResolver:
             )
         if filtered_package_matches:
             if len(filtered_package_matches) > 1:
-                raise ValueError(
+                raise UsageError(
                     f"tracked package entry '{binding_label}' is ambiguous: tracked packages: "
                     + ", ".join(
                         f"{package.repo}:{package.package_ref}"
@@ -244,7 +246,7 @@ class UntrackResolver:
                 explicit_repo=explicit_repo,
                 profile=profile,
             )
-        raise ValueError(
+        raise UsageError(
             f"tracked package entry '{binding_label}' is not currently tracked"
         )
 
@@ -313,7 +315,7 @@ class UntrackResolver:
             if resolved_profile is None or binding.profile == resolved_profile
         )
         if not removal_bindings:
-            raise ValueError(
+            raise UsageError(
                 f"tracked group '{repo.config.name}:{resolved_selector}@{resolved_profile}' "
                 "has no tracked package entries"
             )
@@ -336,7 +338,7 @@ class UntrackResolver:
         if requested_profile is not None:
             available_profiles = self._engine.list_profiles(repo_name)
             if not available_profiles:
-                raise ValueError(f"repo '{repo_name}' does not define any profiles")
+                raise UsageError(f"repo '{repo_name}' does not define any profiles")
             partial_profiles = [
                 profile for profile in available_profiles if requested_profile in profile
             ]
@@ -371,7 +373,7 @@ class UntrackResolver:
                 ),
             )
         if not tracked_bindings:
-            raise ValueError(
+            raise UsageError(
                 f"tracked group '{repo_name}:{selector}' has no tracked package entries"
             )
         profiles_by_package: dict[str, set[str]] = {}
@@ -406,7 +408,7 @@ class UntrackResolver:
             )
             for package_id, profiles in sorted(ambiguous_packages.items())
         )
-        raise ValueError(
+        raise UsageError(
             f"tracked group '{repo_name}:{selector}' is ambiguous across package instances: "
             f"{ambiguous_package_text}"
         )
@@ -432,7 +434,7 @@ class UntrackResolver:
             package_first=True,
             include_repo_context=True,
         )
-        return ValueError(
+        return UsageError(
             f"cannot untrack '{required_ref}': required by tracked package entries: {owners}"
         )
 
@@ -550,11 +552,11 @@ class UntrackResolver:
         if ranked_partial:
             if self._interaction is None:
                 if len(ranked_partial) == 1:
-                    raise ValueError(
+                    raise InteractionRequiredError(
                         f"no exact match for '{query_text}'; use exact name "
                         f"'{value_resolver(ranked_partial[0])}'"
                     )
-                raise ValueError(partial_error_text)
+                raise InteractionRequiredError(partial_error_text)
             return self._choose(
                 ranked_partial,
                 header_text=partial_header_text,
@@ -562,7 +564,7 @@ class UntrackResolver:
                 value_resolver=value_resolver,
                 noninteractive_error=partial_error_text,
             )
-        raise ValueError(not_found_text)
+        raise UsageError(not_found_text)
 
     def _choose(
         self,
@@ -574,7 +576,7 @@ class UntrackResolver:
         noninteractive_error: str,
     ) -> Match:
         if self._interaction is None:
-            raise ValueError(noninteractive_error)
+            raise InteractionRequiredError(noninteractive_error)
         values = {value_resolver(match): match for match in matches}
         options: list[ChoiceOption[str]] = []
         for match in matches:

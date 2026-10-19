@@ -4,6 +4,8 @@ import re
 import unicodedata
 from collections.abc import Mapping
 
+from dotman.errors import UsageError
+
 
 _HOME_SHORTHAND = re.compile(r"~")
 _WORD_CHARACTER = re.compile(r"\w")
@@ -33,7 +35,7 @@ def active_home_path(environment: Mapping[str, str]) -> str:
     home = environment.get("HOME", "")
     trimmed_home = home.rstrip("/")
     if not trimmed_home.startswith("/"):
-        raise ValueError("$HOME must be a non-root absolute POSIX path")
+        raise UsageError("$HOME must be a non-root absolute POSIX path")
     return trimmed_home
 
 

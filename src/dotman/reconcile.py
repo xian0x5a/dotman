@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Mapping
 
 from dotman.atomic_files import write_text_atomic
+from dotman.errors import UsageError
 from dotman.models import AdditionalSource, EditorSpec
 from dotman.command_runtime import ArgvCommand, CommandRequest, CommandResult, current_command_runtime
 from dotman.file_access import chmod, read_bytes, write_bytes_atomic as sudo_write_bytes_atomic
@@ -88,7 +89,7 @@ def _normalize_editor_command(editor_command: list[str]) -> list[str]:
 def _resolve_existing_path(path_value: str, *, label: str) -> Path:
     resolved = Path(path_value).expanduser().resolve()
     if not resolved.exists():
-        raise ValueError(f"{label} does not exist: {resolved}")
+        raise UsageError(f"{label} does not exist: {resolved}")
     return resolved
 
 
@@ -289,7 +290,7 @@ def resolve_editor_additional_sources(
         try:
             source_path.relative_to(root)
         except ValueError as exc:
-            raise ValueError(f"editor additional source escapes declaring package root: {entry.path}") from exc
+            raise UsageError(f"editor additional source escapes declaring package root: {entry.path}") from exc
         source_paths.append(source_path)
     return source_paths
 
@@ -319,10 +320,10 @@ def run_basic_reconcile(
     if not resolved_repo_path.exists() and (
         source_bytes is None or resolved_repo_path not in source_bytes
     ):
-        raise ValueError(f"repo path does not exist: {resolved_repo_path}")
+        raise UsageError(f"repo path does not exist: {resolved_repo_path}")
     resolved_live_path = Path(live_path).expanduser().resolve()
     if not resolved_live_path.exists() and review_live_bytes is None:
-        raise ValueError(f"live path does not exist: {resolved_live_path}")
+        raise UsageError(f"live path does not exist: {resolved_live_path}")
     resolved_review_repo_path = (
         _resolve_existing_path(review_repo_path, label="review repo path")
         if review_repo_path is not None

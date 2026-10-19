@@ -375,7 +375,7 @@ def test_stdin_with_invalid_utf8_fails_like_file_input(transform_format, content
 
     monkeypatch.setattr("sys.stdin", io.TextIOWrapper(io.BytesIO(content)))
 
-    assert cli.main(["transform", transform_format, "-", "-", "--mode", "cleanup", "--selectors", "zzz"]) == 2
+    assert cli.main(["transform", transform_format, "-", "-", "--mode", "cleanup", "--selectors", "zzz"]) == 1
     assert "utf-8" in capsys.readouterr().err.lower()
 
 
@@ -413,7 +413,7 @@ def test_file_system_errors_are_clean_cli_errors(tmp_path, capsys) -> None:
     output_directory = tmp_path / "directory"
     output_directory.mkdir()
 
-    assert cli.main(["transform", "json", str(base), str(output_directory), "--mode", "cleanup"]) == 2
+    assert cli.main(["transform", "json", str(base), str(output_directory), "--mode", "cleanup"]) == 1
     assert str(output_directory) in capsys.readouterr().err
 
 
@@ -446,7 +446,7 @@ def test_malformed_values_are_clean_cli_errors_like_other_invalid_input(
     exit_code = cli.main(["transform", transform_format, str(base), "--stdout", "--mode", "cleanup", "--selectors", "a"])
 
     error_output = capsys.readouterr().err
-    assert exit_code == 2
+    assert exit_code == 1
     assert "detail:" in error_output
     if expected_message is not None:
         assert expected_message.format(base=base) in error_output

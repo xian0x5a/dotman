@@ -268,7 +268,7 @@ def test_add_cli_refuses_source_nested_in_another_targets_source_for_unrelated_l
     manifest_path = repo_root / "packages" / "shell" / "package.toml"
     manifest_before = manifest_path.read_text(encoding="utf-8")
 
-    assert main([*base_argv, "add", str(home / "config" / "foo" / "bar"), "fixture:shell"]) == 1
+    assert main([*base_argv, "add", str(home / "config" / "foo" / "bar"), "fixture:shell"]) == 2
 
     error = capsys.readouterr().err
     assert "incompatible nested targets" in error
@@ -302,7 +302,7 @@ def test_add_cli_refuses_a_target_nested_inside_another_targets_live_directory(
     manifest_path = repo_root / "packages" / "shell" / "package.toml"
     manifest_before = manifest_path.read_text(encoding="utf-8")
 
-    assert main([*base_argv, "add", str(home / ".config" / "foo" / "bar"), "fixture:shell"]) == 1
+    assert main([*base_argv, "add", str(home / ".config" / "foo" / "bar"), "fixture:shell"]) == 2
 
     error = capsys.readouterr().err
     assert "incompatible nested targets" in error
@@ -320,7 +320,7 @@ def test_add_cli_refuses_a_directory_containing_another_targets_live_path(
     assert main([*base_argv, "add", str(home / ".config" / "foo" / "bar"), "fixture:shell"]) == 0
     capsys.readouterr()
 
-    assert main([*base_argv, "add", str(home / ".config" / "foo"), "fixture:shell"]) == 1
+    assert main([*base_argv, "add", str(home / ".config" / "foo"), "fixture:shell"]) == 2
 
     assert "incompatible nested targets" in capsys.readouterr().err
 

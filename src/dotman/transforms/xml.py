@@ -9,6 +9,7 @@ import re
 
 from lxml import etree
 
+from dotman.errors import UsageError
 from dotman.transforms.cli import run_engine_cli
 from dotman.transforms.framework import (
     STDIN_PATH,
@@ -457,7 +458,7 @@ def render_xml_output(
 
     if base_root is None:
         if overlay_root is None:
-            raise ValueError(f"base XML file not found: {base_path}")
+            raise UsageError(f"base XML file not found: {base_path}")
         root = etree.Element(overlay_root.tag)
     else:
         root = build_tree_with_selector_action(
@@ -558,7 +559,7 @@ class XmlTransformEngine(BaseTransformEngine):
             not parse_node_matchers(request.selector_values("node_matcher"))
             and not request.selector_values("node_regex")
         ):
-            raise ValueError("node matchers must not be empty")
+            raise UsageError("node matchers must not be empty")
 
     def transform(self, request: TransformRequest) -> TransformOutput:
         self.validate_request(request)

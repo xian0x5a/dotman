@@ -12,6 +12,7 @@ from dotman.collisions import (
     resolve_tracked_target_winners,
 )
 from dotman.command_runtime import CommandRuntime
+from dotman.errors import UsageError
 from dotman.manifest import deep_merge, infer_profile_os
 from dotman.package_resolution import (
     resolve_package_ids,
@@ -70,7 +71,7 @@ class PlanningContext:
         return self.projection.command_runtime
 
 
-class TrackedPackageProfileConflictError(ValueError):
+class TrackedPackageProfileConflictError(UsageError):
     def __init__(
         self,
         *,
@@ -99,7 +100,7 @@ def get_repository(context: PlanningContext, repo_name: str) -> Repository:
     try:
         return context.repositories[repo_name]
     except KeyError as exc:
-        raise ValueError(f"unknown repo '{repo_name}'") from exc
+        raise UsageError(f"unknown repo '{repo_name}'") from exc
 
 
 def _merge_selection(
@@ -293,7 +294,7 @@ def resolve_tracked_package_entry(
 ) -> list[ResolvedPackageSelection]:
     repo = get_repository(planning_context, entry.repo)
     if entry.package_id not in repo.packages:
-        raise ValueError(f"unknown package '{entry.package_id}' in repo '{repo.config.name}'")
+        raise UsageError(f"unknown package '{entry.package_id}' in repo '{repo.config.name}'")
     return _resolved_package_selections_from_roots(
         repo,
         root_package_ids=[entry.package_id],

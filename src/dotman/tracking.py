@@ -11,7 +11,8 @@ from typing import Mapping, TYPE_CHECKING
 import tomlkit
 
 from dotman.atomic_files import write_text_atomic
-from dotman.toml_utils import load_toml_file
+from dotman.errors import UsageError
+from dotman.toml_utils import TomlLoadError, load_toml_file
 from dotman.models import (
     FullSpecSelector,
     TrackableCatalogEntry,
@@ -55,7 +56,7 @@ def get_repository(context: TrackedStateContext, repo_name: str) -> Repository:
     try:
         return context.repositories[repo_name]
     except KeyError as exc:
-        raise ValueError(f"unknown repo '{repo_name}'") from exc
+        raise UsageError(f"unknown repo '{repo_name}'") from exc
 
 
 def candidate_repositories(
@@ -323,7 +324,12 @@ def tracked_packages_file_path(state_dir: Path) -> Path:
 def read_tracked_packages_file(state_path: Path) -> list[TrackedPackageEntry]:
     if not state_path.exists():
         return []
-    payload = load_toml_file(state_path, context="tracked packages file")
+    try:
+        payload = load_toml_file(state_path, context="tracked packages file")
+    except TomlLoadError as exc:
+        # dotman wrote this file, so corruption is a runtime failure (exit 1), not
+        # the user's TOML to fix like a manifest or config (TomlLoadError, exit 2).
+        raise TrackedPackagesFileError(state_path, f"must be valid TOML: {exc.detail}") from exc
     schema_version = payload.get("schema_version")
     if schema_version != TRACKED_PACKAGES_SCHEMA_VERSION:
         raise TrackedPackagesFileError(state_path, f"must declare schema_version = {TRACKED_PACKAGES_SCHEMA_VERSION}")
@@ -757,7 +763,7 @@ def remove_persisted_tracked_package_entry(
             )
         except TrackedTargetConflictError as exc:
             binding_label = f"{record.package_entry.repo}:{record.package_entry.selector}@{record.package_entry.profile}"
-            raise ValueError(
+            raise UsageError(
                 f"cannot {operation} '{binding_label}': removing this binding would expose {exc}"
             ) from None
     write_tracked_package_entries_file(record.state_dir, remaining)
@@ -804,7 +810,7 @@ def remove_tracked_package_entries(
         )
     except TrackedTargetConflictError as exc:
         label = operation_label or ", ".join(f"{binding.repo}:{binding.selector}@{binding.profile}" for binding in removed)
-        raise ValueError(
+        raise UsageError(
             f"cannot {operation} '{label}': removing these bindings would expose {exc}"
         ) from None
 

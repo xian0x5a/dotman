@@ -7,12 +7,14 @@ from typing import Literal, TypeVar
 from dotman import cli_style
 from dotman.collisions import TrackedTargetConflictError
 from dotman.engine import DotmanEngine
+from dotman.errors import UsageError
 from dotman.interaction import (
     ChoiceOption,
     ChoiceRequest,
     ConfirmationRequest,
     Interaction,
 )
+from dotman.interaction_policy import InteractionRequiredError
 from dotman.models import FullSpecSelector, ResolvedSelector, SelectorKind
 from dotman.package_resolution import parse_full_spec_selector_text
 from dotman.repository import Repository
@@ -153,7 +155,7 @@ class TrackResolver:
         if self._interaction is None:
             if len(replacements) == 1:
                 existing, replacement = replacements[0]
-                raise ValueError(
+                raise InteractionRequiredError(
                     f"refusing to replace tracked package entry '{existing.repo}:{existing.selector}@"
                     f"{existing.profile}' with '{replacement.repo}:{replacement.selector}@{replacement.profile}' "
                     "in non-interactive mode"
@@ -163,7 +165,7 @@ class TrackResolver:
                 f"{replacement.repo}:{replacement.selector}@{replacement.profile}"
                 for existing, replacement in replacements
             )
-            raise ValueError(
+            raise InteractionRequiredError(
                 f"refusing to replace tracked package entries for "
                 f"'{binding.repo}:{binding.selector}@{binding.profile}' in non-interactive mode: "
                 f"{replacement_labels}"
@@ -342,7 +344,7 @@ class TrackResolver:
                 self._message_sink(rendered_message)
             return True
         if self._interaction is None:
-            raise ValueError(
+            raise InteractionRequiredError(
                 f"refusing to let '{binding.repo}:{binding.selector}@{binding.profile}' "
                 "explicitly override implicitly tracked targets in non-interactive mode"
             )
@@ -432,12 +434,12 @@ class TrackResolver:
     ) -> str:
         available_profiles = self._engine.list_profiles(repo_name)
         if not available_profiles:
-            raise ValueError(f"repo '{repo_name}' does not define any profiles")
+            raise UsageError(f"repo '{repo_name}' does not define any profiles")
         if requested_profile is None:
             if len(available_profiles) == 1:
                 return available_profiles[0]
             if self._interaction is None:
-                raise ValueError("profile is required in non-interactive mode")
+                raise InteractionRequiredError("profile is required in non-interactive mode")
             return self._interaction.choose(
                 ChoiceRequest(
                     header_text=f"Select a profile for {repo_name}:{selector}:",
@@ -522,10 +524,10 @@ class TrackResolver:
         if ranked_partial:
             if self._interaction is None:
                 if len(ranked_partial) == 1:
-                    raise ValueError(
+                    raise InteractionRequiredError(
                         f"no exact match for '{query_text}'; use exact name '{value_resolver(ranked_partial[0])}'"
                     )
-                raise ValueError(partial_error_text)
+                raise InteractionRequiredError(partial_error_text)
             return self._choose(
                 ranked_partial,
                 header_text=partial_header_text,
@@ -533,7 +535,7 @@ class TrackResolver:
                 value_resolver=value_resolver,
                 noninteractive_error=partial_error_text,
             )
-        raise ValueError(not_found_text)
+        raise UsageError(not_found_text)
 
     def _choose(
         self,
@@ -545,7 +547,7 @@ class TrackResolver:
         noninteractive_error: str,
     ) -> Match:
         if self._interaction is None:
-            raise ValueError(noninteractive_error)
+            raise InteractionRequiredError(noninteractive_error)
         values = {value_resolver(match): match for match in matches}
         selected_value = self._interaction.choose(
             ChoiceRequest(

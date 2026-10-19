@@ -14,16 +14,20 @@ from dotman.command_runtime import (
     install_sigint_recorder,
     sigint_received,
 )
-from dotman.interaction_policy import InteractionRequiredError, interaction_scope
+from dotman.errors import UsageError
+from dotman.interaction_policy import interaction_scope
 from dotman.standalone_commands import StandaloneCommandRunner
 from dotman.terminal import colors_enabled, emit_interrupt_notice
 
 if TYPE_CHECKING:
     from dotman.interaction import Interaction
 
+# Exit codes: 0 ok, 1 runtime failure, 2 usage/config error, 130 interrupt (see docs/cli.md).
+RUNTIME_FAILURE_EXIT_CODE = 1
+USAGE_ERROR_EXIT_CODE = 2
 
 
-class RootUnderSudoError(ValueError):
+class RootUnderSudoError(UsageError):
     def __init__(self, invoking_user: str) -> None:
         self.detail = f"dotman does not run as root under sudo (started by {invoking_user})"
         self.hint = f"Run dotman as {invoking_user}; it asks for sudo itself when a protected path needs it."
@@ -35,29 +39,29 @@ def main(
     *,
     interaction: Interaction | None = None,
 ) -> int:
-    no_confirm = False
     try:
         raw_argv = list(argv) if argv is not None else sys.argv[1:]
         args = build_parser().parse_args(normalize_edit_query_argv(raw_argv))
-        no_confirm = args.no_confirm
         if args.command in StandaloneCommandRunner.command_names:
             selected_runner = StandaloneCommandRunner()
             skipped_entries_warning = nullcontext()
         else:
             _refuse_root_under_sudo()
-            selected_runner = _repo_command_runner(args, None if no_confirm else interaction)
+            selected_runner = _repo_command_runner(args, None if args.no_confirm else interaction)
             skipped_entries_warning = _warn_about_skipped_entries()
         with command_operation(), interaction_scope(no_confirm=args.no_confirm), skipped_entries_warning:
             return selected_runner.run(args)
-    except InteractionRequiredError as exc:
-        _emit_error(exc, use_color=colors_enabled(sys.stderr))
-        return 1
     except KeyboardInterrupt:
         emit_interrupt_notice()
         return INTERRUPTED_EXIT_CODE
-    except ValueError as exc:
+    except UsageError as exc:
         _emit_error(exc, use_color=colors_enabled(sys.stderr))
-        return 1 if no_confirm else 2
+        return USAGE_ERROR_EXIT_CODE
+    except ValueError as exc:
+        # Runtime failures, including InteractionRequiredError (a decision dotman
+        # would prompt for but cannot), are not misuse: exit 1 whatever --no-confirm says.
+        _emit_error(exc, use_color=colors_enabled(sys.stderr))
+        return RUNTIME_FAILURE_EXIT_CODE
     except RuntimeError as exc:
         # Imported here because only repo commands load the Sync Base store.
         from dotman.sync_base_store import SyncBaseStoreError
@@ -65,7 +69,7 @@ def main(
         if not isinstance(exc, SyncBaseStoreError):
             raise
         _emit_error(exc, use_color=colors_enabled(sys.stderr))
-        return 1 if no_confirm else 2
+        return RUNTIME_FAILURE_EXIT_CODE
 
 
 def console_main() -> NoReturn:

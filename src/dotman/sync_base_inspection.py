@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, replace
 import hashlib
 
+from dotman.errors import UsageError
 from dotman.models import ResolvedSyncTarget
 from dotman.operation_lock import OperationLock
 from dotman.sync_base_lifecycle import (
@@ -27,13 +28,13 @@ def _identity(text: str) -> ResolvedSyncTarget:
     parsed = _parse_scope_selector(text)
     # Identities never glob: `*?[]` are literal name characters, matched exactly.
     if parsed.target_name is None:
-        raise ValueError("Sync Base requires one exact repo-qualified file or directory-child identity")
+        raise UsageError("Sync Base requires one exact repo-qualified file or directory-child identity")
     identity = ResolvedSyncTarget(
         repo=parsed.repo, package_id=parsed.package_id, target_name=parsed.target_name,
         bound_profile=parsed.bound_profile, child_path=parsed.child_path,
     )
     if identity.canonical != text:
-        raise ValueError("Sync Base identity must be canonical")
+        raise UsageError("Sync Base identity must be canonical")
     sync_unit_identity_bytes(identity)
     return identity
 
@@ -41,13 +42,13 @@ def _identity(text: str) -> ResolvedSyncTarget:
 def _unit(inputs, identity):
     entry = inputs.get(replace(identity, child_path=None))
     if entry is None:
-        raise ValueError(f"Sync Unit '{identity.canonical}' is not currently tracked")
+        raise UsageError(f"Sync Unit '{identity.canonical}' is not currently tracked")
     _item, metadata = entry
     directory = metadata.target.target_type == "directory"
     if metadata.target.probe is not None:
-        raise ValueError("Probe Work is not a Sync Unit")
+        raise UsageError("Probe Work is not a Sync Unit")
     if directory != (identity.child_path is not None):
-        raise ValueError("Sync Base requires a file target or an exact directory child")
+        raise UsageError("Sync Base requires a file target or an exact directory child")
     if directory:
         metadata = child_metadata(metadata, identity.child_path)
     return _base_unit(identity, metadata)
@@ -240,7 +241,7 @@ def reset_unusable_sync_bases(context, repo_name: str | None):
         if repo_name in (None, repo_config.name)
     ]
     if repo_name is not None and not repos:
-        raise ValueError(f"unknown repo '{repo_name}'")
+        raise UsageError(f"unknown repo '{repo_name}'")
     with OperationLock.acquire(context.tracked_state.state_root):
         inputs = _static_inputs(context)
         censuses = {}

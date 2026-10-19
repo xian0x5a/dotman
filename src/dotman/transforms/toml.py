@@ -27,6 +27,7 @@ from tomlkit.items import (
 )
 from tomlkit.toml_document import TOMLDocument
 
+from dotman.errors import UsageError
 from dotman.transforms.cli import run_engine_cli
 from dotman.transforms.framework import (
     BaseTransformEngine,
@@ -195,7 +196,7 @@ def split_toml_key(raw_key: str) -> list[str]:
         current.append(char)
 
     if open_quote is not None:
-        raise ValueError(f"unterminated quoted TOML key: {raw_key}")
+        raise UsageError(f"unterminated quoted TOML key: {raw_key}")
 
     raw_segments.append("".join(current))
     return [parse_key_part(raw_segment, raw_key) for raw_segment in raw_segments]
@@ -204,22 +205,22 @@ def split_toml_key(raw_key: str) -> list[str]:
 def parse_key_part(raw_segment: str, raw_key: str) -> str:
     segment = raw_segment.strip()
     if not segment:
-        raise ValueError(
+        raise UsageError(
             f"empty segment in TOML key path {raw_key!r}; use \"\" for an empty key"
         )
     if segment.startswith("'"):
         if not LITERAL_STRING_KEY_SEGMENT.fullmatch(segment):
-            raise ValueError(f"quoted TOML key segment must be one literal string: {raw_key}")
+            raise UsageError(f"quoted TOML key segment must be one literal string: {raw_key}")
         return segment[1:-1]
     if not segment.startswith('"'):
         return segment
     if not BASIC_STRING_KEY_SEGMENT.fullmatch(segment):
-        raise ValueError(f"quoted TOML key segment must be one basic string: {raw_key}")
+        raise UsageError(f"quoted TOML key segment must be one basic string: {raw_key}")
     try:
         # Decode escapes with TOML's own basic-string rules; `""` is the empty key.
         return tomllib.loads(f"key = {segment}")["key"]
     except tomllib.TOMLDecodeError as error:
-        raise ValueError(
+        raise UsageError(
             f"quoted TOML key segment is not a valid basic string: {segment}"
         ) from error
 

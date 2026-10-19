@@ -6,12 +6,13 @@ from pathlib import Path
 from typing import Any, Callable
 
 from dotman.config import expand_path
+from dotman.errors import UsageError
 from dotman.ignore import GitIgnoreChain, IgnoreMatcher, collect_gitignore_chain
 from dotman.models import PackageSpec, ResolvedPackageSelection, TrackedTargetSummary
 from dotman.templates import render_template_string
 
 
-class TrackedTargetConflictError(ValueError):
+class TrackedTargetConflictError(UsageError):
     def __init__(
         self,
         *,
@@ -139,19 +140,19 @@ def validate_target_collisions(
             other = claims[other_index]
             other_path, other_path_text = write_paths[other_index], write_path_texts[other_index]
             if path_text == other_path_text:
-                raise ValueError(
+                raise UsageError(
                     f"conflicting target ownership: {claim.label} and {other.label} both map to {path}"
                 )
             if _contains_path_text(path_text, other_path_text):
                 relative = other_path.relative_to(path).as_posix()
                 parent_ignore = parent_matcher(claim.repo_path, claim.live_path, relative, claim.ignore_patterns)
                 if not parent_ignore.matches(relative):
-                    raise ValueError(f"incompatible nested targets: {claim.label} contains {other.label}")
+                    raise UsageError(f"incompatible nested targets: {claim.label} contains {other.label}")
             elif _contains_path_text(other_path_text, path_text):
                 relative = path.relative_to(other_path).as_posix()
                 parent_ignore = parent_matcher(other.repo_path, other.live_path, relative, other.ignore_patterns)
                 if not parent_ignore.matches(relative):
-                    raise ValueError(f"incompatible nested targets: {other.label} contains {claim.label}")
+                    raise UsageError(f"incompatible nested targets: {other.label} contains {claim.label}")
 
 
 def operation_write_path(*, repo_path: Path, live_path: Path, operation: str) -> Path:
@@ -159,7 +160,7 @@ def operation_write_path(*, repo_path: Path, live_path: Path, operation: str) ->
         return live_path
     if operation == "pull":
         return repo_path
-    raise ValueError(f"unsupported operation '{operation}'")
+    raise UsageError(f"unsupported operation '{operation}'")
 
 
 
@@ -190,7 +191,7 @@ def validate_reserved_path_claims(
             if owner == claim.owner:
                 continue
             if paths_conflict(reserved_path, claim.live_path):
-                raise ValueError(
+                raise UsageError(
                     f"reserved path conflict: {owner} reserves {reserved_path} "
                     f"and {claim.label} maps to {claim.live_path}"
                 )
@@ -200,7 +201,7 @@ def validate_reserved_path_claims(
             if owner == other_owner:
                 continue
             if paths_conflict(reserved_path, other_reserved_path):
-                raise ValueError(
+                raise UsageError(
                     f"reserved path conflict: {owner} reserves {reserved_path} "
                     f"and {other_owner} reserves {other_reserved_path}"
                 )

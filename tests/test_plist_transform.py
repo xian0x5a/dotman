@@ -368,7 +368,7 @@ def test_malformed_xml_plist_is_a_clean_cli_error(tmp_path: Path, capsys) -> Non
     input_path = tmp_path / "input.plist"
     input_path.write_text("<plist><dict><key>a</key>", encoding="utf-8")
 
-    assert cli.main(["transform", "plist", str(input_path), "-", "--mode", "cleanup"]) == 2
+    assert cli.main(["transform", "plist", str(input_path), "-", "--mode", "cleanup"]) == 1
     assert str(input_path) in capsys.readouterr().err
 
 
@@ -378,5 +378,5 @@ def test_value_unsupported_by_output_format_is_a_clean_cli_error(tmp_path: Path,
     input_path = tmp_path / "input.plist"
     write_plist(input_path, {"archived": plistlib.UID(1)}, fmt=plistlib.FMT_BINARY)
 
-    assert cli.main(["transform", "plist", str(input_path), "-", "--mode", "cleanup", "--output-format", "xml"]) == 2
+    assert cli.main(["transform", "plist", str(input_path), "-", "--mode", "cleanup", "--output-format", "xml"]) == 1
     assert "xml" in capsys.readouterr().err

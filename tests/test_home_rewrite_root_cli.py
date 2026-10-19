@@ -132,7 +132,7 @@ def test_root_rewrite_home_invalid_utf8_is_atomic(
     monkeypatch.setenv("HOME", "/home/alice")
     monkeypatch.setattr("sys.stdin", io.TextIOWrapper(io.BytesIO(b"~/valid\nlate=\xff")))
 
-    assert cli.main(["rewrite", "home", "expand"]) == 2
+    assert cli.main(["rewrite", "home", "expand"]) == 1
     captured = capsysbinary.readouterr()
     assert captured.out == b""
     assert b"input is not valid UTF-8" in captured.err
@@ -171,7 +171,7 @@ def test_root_rewrite_home_unreadable_file_fails_without_stdout(
 
     monkeypatch.setattr(Path, "read_bytes", deny_read)
 
-    assert cli.main(["rewrite", "home", "expand", str(source)]) == 2
+    assert cli.main(["rewrite", "home", "expand", str(source)]) == 1
     captured = capsysbinary.readouterr()
     assert captured.out == b""
     assert b"input file is not readable" in captured.err
@@ -189,7 +189,7 @@ def test_root_rewrite_home_unreadable_stdin_fails_without_stdout(
     monkeypatch.setenv("HOME", "/home/alice")
     monkeypatch.setattr("sys.stdin", SimpleNamespace(buffer=UnreadableInput()))
 
-    assert cli.main(["rewrite", "home", "expand"]) == 2
+    assert cli.main(["rewrite", "home", "expand"]) == 1
     captured = capsysbinary.readouterr()
     assert captured.out == b""
     assert b"could not read stdin: input/output error" in captured.err

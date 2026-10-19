@@ -17,6 +17,7 @@ from dotman.command_runtime import (
 )
 from dotman.collisions import TargetClaim, validate_reserved_path_conflicts, validate_target_collisions
 from dotman.config import expand_path
+from dotman.errors import UsageError
 from dotman.file_access import needs_sudo_for_read, read_bytes
 from dotman.ignore import GitIgnoreChain, collect_gitignore_chain
 from dotman.manifest import (
@@ -112,7 +113,7 @@ def validate_probe_target_config(*, repo_name: str, package: PackageSpec, target
         return
     target_label = repo_qualified_target_text(repo_name=repo_name, package_id=package.id, target_name=target.name)
     if resolve_sync_policy(package=package, target=target) == "push-only-delete":
-        raise ValueError(f"target '{target_label}' uses probe and cannot use push-only-delete; use push-only")
+        raise UsageError(f"target '{target_label}' uses probe and cannot use push-only-delete; use push-only")
     forbidden_probe_fields = {
         "source": target.source,
         "path": target.path,
@@ -131,7 +132,7 @@ def validate_probe_target_config(*, repo_name: str, package: PackageSpec, target
     }
     forbidden = sorted(name for name, value in forbidden_probe_fields.items() if value is not None)
     if forbidden:
-        raise ValueError(
+        raise UsageError(
             f"target '{target_label}' uses probe and must not define: "
             + ", ".join(forbidden)
         )
@@ -219,7 +220,7 @@ def build_target_metadata(
                 continue
             if target.source is None or target.path is None:
                 target_label = repo_qualified_target_text(repo_name=repo.config.name, package_id=package.id, target_name=target.name)
-                raise ValueError(f"target '{target_label}' must define source and path")
+                raise UsageError(f"target '{target_label}' must define source and path")
             rendered_source = render_template_string(
                 target.source,
                 context,

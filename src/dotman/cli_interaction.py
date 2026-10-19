@@ -27,7 +27,8 @@ from dotman.diff_review import (
 )
 from dotman.engine import DotmanEngine
 from dotman.interaction import Interaction, choose_with_fzf
-from dotman.interaction_policy import no_confirm_enabled
+from dotman.errors import UsageError
+from dotman.interaction_policy import InteractionRequiredError, no_confirm_enabled
 from dotman.models import (
     FullSpecSelector,
     SelectorKind,
@@ -548,7 +549,7 @@ def resolve_candidate_match(
         return ranked_exact_matches[0]
     if len(exact_matches) > 1:
         if not interactive:
-            raise ValueError(exact_error_text)
+            raise InteractionRequiredError(exact_error_text)
         resolved_options = [option_resolver(match) for match in ranked_exact_matches]
         selected_index = select_menu_option(
             header_text=exact_header_text,
@@ -561,8 +562,8 @@ def resolve_candidate_match(
         partial_option = option_resolver(partial_match)
         if not interactive:
             if single_partial_error_text is not None:
-                raise ValueError(single_partial_error_text)
-            raise ValueError(
+                raise InteractionRequiredError(single_partial_error_text)
+            raise InteractionRequiredError(
                 f"no exact match for '{query_text}'; use exact name '{exact_name_resolver(partial_match)}'"
             )
         if single_partial_mode == "menu":
@@ -579,7 +580,7 @@ def resolve_candidate_match(
         return partial_match
     if len(partial_matches) > 1:
         if not interactive:
-            raise ValueError(partial_error_text)
+            raise InteractionRequiredError(partial_error_text)
         resolved_options = [option_resolver(match) for match in ranked_partial_matches]
         selected_index = select_menu_option(
             header_text=partial_header_text,
@@ -587,7 +588,7 @@ def resolve_candidate_match(
             option_display_fields=[option.display_fields or (option.display_label,) for option in resolved_options],
         )
         return ranked_partial_matches[selected_index]
-    raise ValueError(not_found_text)
+    raise UsageError(not_found_text)
 
 
 def resolve_tracked_package_text(
@@ -653,7 +654,7 @@ def resolve_trackable_selector_text(
 ) -> tuple[Repository, str, SelectorKind]:
     explicit_repo, selector, selector_profile = parse_full_spec_selector_text(query_text)
     if selector_profile is not None:
-        raise ValueError("trackable lookup does not accept selector@profile syntax")
+        raise UsageError("trackable lookup does not accept selector@profile syntax")
     exact_matches, partial_matches = engine.find_selector_matches(selector, explicit_repo)
     return resolve_candidate_match(
         exact_matches=exact_matches,
@@ -885,11 +886,11 @@ def resolve_snapshot_record(snapshot_root: Path, snapshot_ref: str | None, *, js
     if not matches:
         if snapshot_ref is None or snapshot_ref == "latest":
             raise ValueError("no snapshots are available")
-        raise ValueError(f"snapshot '{snapshot_ref}' did not match any available snapshot")
+        raise UsageError(f"snapshot '{snapshot_ref}' did not match any available snapshot")
     if len(matches) == 1:
         return matches[0]
     if not interactive_mode_enabled(json_output=json_output):
-        raise ValueError(
+        raise InteractionRequiredError(
             f"snapshot '{snapshot_ref}' is ambiguous: " + ", ".join(snapshot.snapshot_id for snapshot in matches)
         )
     selected_index = select_menu_option(

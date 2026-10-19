@@ -274,7 +274,7 @@ def emit_doctor_summary(*, engine: Any, summary: Any, json_output: bool, use_col
     payload = summary.to_dict()
     if json_output:
         print(json.dumps(payload, indent=2, sort_keys=True))
-        return 0 if summary.ok else 2
+        return 0 if summary.ok else 1
 
     _print_payload_header("Doctor", use_color=use_color)
     print(f"  {cli_style.render_error_metadata_label('status:', use_color=use_color)} {'ok' if summary.ok else 'failed'}")
@@ -306,7 +306,7 @@ def emit_doctor_summary(*, engine: Any, summary: Any, json_output: bool, use_col
             )
     if summary.ok:
         print("  no issues found")
-    return 0 if summary.ok else 2
+    return 0 if summary.ok else 1
 
 
 def emit_search_matches(*, matches: Sequence[Any], query: str, json_output: bool, use_color: bool) -> int:

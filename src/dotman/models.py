@@ -4,6 +4,8 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any, Literal
 
+from dotman.errors import UsageError
+
 if TYPE_CHECKING:
     from dotman.planning import PackagePlanningInput
 
@@ -44,7 +46,7 @@ def target_separator_index(package_text: str, text: str) -> int:
     if profile_start >= 0 and (separator < 0 or profile_start < separator):
         profile_end = package_text.find(">", profile_start + 1)
         if profile_end < 0:
-            raise ValueError(f"sync scope '{text}' is not canonical")
+            raise UsageError(f"sync scope '{text}' is not canonical")
         separator = package_text.find(".", profile_end + 1)
     return separator
 
@@ -54,7 +56,7 @@ def sync_unit_target_identity(canonical: str) -> str:
     repo, colon, remainder = canonical.partition(":")
     separator = target_separator_index(remainder, canonical) if colon else -1
     if not repo or separator < 0:
-        raise ValueError(f"'{canonical}' is not a canonical Sync Unit identity")
+        raise UsageError(f"'{canonical}' is not a canonical Sync Unit identity")
     # Target names never contain `/`, so the first one after the separator starts the child path.
     child = remainder.find("/", separator)
     return canonical if child < 0 else f"{repo}:{remainder[:child]}"

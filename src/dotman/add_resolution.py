@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from dotman import cli_style
 from dotman.engine import DotmanEngine
+from dotman.errors import UsageError
 from dotman.interaction import (
     ChoiceOption,
     ChoiceRequest,
@@ -12,6 +13,7 @@ from dotman.interaction import (
     Interaction,
     TextInputRequest,
 )
+from dotman.interaction_policy import InteractionRequiredError
 from dotman.manifest import validate_package_id
 from dotman.package_resolution import parse_full_spec_selector_text
 
@@ -39,7 +41,7 @@ class AddResolver:
     def resolve(self, package_query: str | None) -> AddDestination:
         if package_query is None:
             if self._interaction is None:
-                raise ValueError("package query is required in non-interactive mode")
+                raise InteractionRequiredError("package query is required in non-interactive mode")
             package_destinations = [
                 AddDestination(repo_name=repo_config.name, package_id=package_id)
                 for repo_config in self._engine.config.ordered_repos
@@ -91,7 +93,7 @@ class AddResolver:
             )
 
         if len(ranked_exact_matches) > 1:
-            raise ValueError(
+            raise InteractionRequiredError(
                 f"package '{package_query}' is ambiguous: "
                 + ", ".join(self._destination_label(destination) for destination in ranked_exact_matches)
             )
@@ -100,22 +102,22 @@ class AddResolver:
         # no existing package creates it, whatever other package IDs contain the text.
         if repo_query is None:
             if len(ranked_partial_matches) == 1:
-                raise ValueError(
+                raise InteractionRequiredError(
                     f"no exact match for '{package_query}'; "
                     f"use exact name '{self._destination_label(ranked_partial_matches[0])}', "
                     "or a repo-qualified query to create a new package"
                 )
             if len(ranked_partial_matches) > 1:
-                raise ValueError(
+                raise InteractionRequiredError(
                     f"package '{package_query}' is ambiguous: "
                     + ", ".join(self._destination_label(destination) for destination in ranked_partial_matches)
                 )
-            raise ValueError(
+            raise InteractionRequiredError(
                 f"package '{package_query}' did not match any package; "
                 "use an explicit repo-qualified query to create one in non-interactive mode"
             )
         if repo_query not in self._engine.config.repos:
-            raise ValueError(
+            raise InteractionRequiredError(
                 f"package '{package_query}' did not match any package and cannot create "
                 "non-interactively without an exact repo"
             )
@@ -142,7 +144,7 @@ class AddResolver:
     def _parse_package_query(self, package_query: str) -> tuple[str | None, str]:
         explicit_repo, selector, profile = parse_full_spec_selector_text(package_query)
         if profile is not None:
-            raise ValueError("add package query expects a package selector, not a binding")
+            raise UsageError("add package query expects a package selector, not a binding")
         return explicit_repo, selector
 
     def _find_package_matches(
