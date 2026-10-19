@@ -3,7 +3,8 @@
 Package, group, profile and target names, and repo names in the manager config, are
 rejected at load when `str.isprintable()` fails. The rejection is a usage error
 (exit 2), names the file and field, and shows the name escaped: the raw character
-never reaches the terminal.
+never reaches the terminal. Only unprintable characters are escaped; a backslash is
+shown as written, and tab and newline stay as layout.
 """
 
 from __future__ import annotations
@@ -53,6 +54,7 @@ def write_repo(
     profile: str = "work",
     target: str = "conf",
     repo_name: str = "fixture",
+    state_key: str | None = None,
 ) -> Path:
     """Write a one-repo fixture whose authored names are chosen by the caller; return the config path."""
     repo_root = tmp_path / "repo"
@@ -74,8 +76,9 @@ def write_repo(
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
     config_path = tmp_path / "config.toml"
+    state_key_line = "" if state_key is None else f"state_key = {json.dumps(state_key)}\n"
     config_path.write_text(
-        f"[repos.{json.dumps(repo_name)}]\npath = {json.dumps(str(repo_root))}\norder = 10\n",
+        f"[repos.{json.dumps(repo_name)}]\npath = {json.dumps(str(repo_root))}\norder = 10\n{state_key_line}",
         encoding="utf-8",
     )
     return config_path
@@ -131,3 +134,39 @@ def test_printable_non_ascii_names_and_profile_spaces_load(
     exit_code, output = run_list_tracked(config_path, capsys)
 
     assert exit_code == 0, output
+
+
+@pytest.mark.parametrize(
+    ("kind", "name"),
+    [
+        pytest.param("package", "a\\b", id="backslash-package"),
+        pytest.param("group", "a\\b", id="backslash-group"),
+        pytest.param("package", "a\tb", id="tab"),
+        pytest.param("package", "a\nb", id="newline"),
+    ],
+)
+def test_error_text_escapes_only_unprintable_characters_other_than_tab_and_newline(
+    kind: str, name: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The escaped form is for what a terminal misreads: a backslash is ordinary text, and tab and newline are layout."""
+    config_path = write_repo(tmp_path, **{kind: name})
+
+    exit_code, output = run_list_tracked(config_path, capsys)
+
+    assert exit_code == 2, output
+    assert f"invalid {kind} id '{name}'" in output
+
+
+@pytest.mark.parametrize("character", [NBSP, BIDI_OVERRIDE, ESCAPE_CONTROL], ids=lambda c: f"U+{ord(c):04X}")
+def test_unprintable_state_key_is_rejected_at_load(
+    character: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Mid-name: a leading or trailing NBSP is stripped before the key is checked.
+    config_path = write_repo(tmp_path, state_key=f"work{character}laptop")
+
+    exit_code, output = run_list_tracked(config_path, capsys)
+
+    assert exit_code == 2, output
+    assert "config.toml" in output
+    assert "state_key" in output
+    assert character not in output

@@ -67,8 +67,7 @@ def test_repo_name_with_selector_delimiter_or_path_part_is_rejected(
     assert exit_code == 2, output
     assert "config.toml" in output
     # A blank name has nothing visible to look for; stripping it makes that check vacuous.
-    # A backslash may be shown doubled, the injective escaped form of an authored name.
-    assert name.strip() in output or name.replace("\\", "\\\\") in output
+    assert name.strip() in output
 
 
 def test_repo_name_that_selectors_cannot_address_rejects_the_whole_config(
