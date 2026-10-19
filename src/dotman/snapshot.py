@@ -472,7 +472,7 @@ def execute_restore_action(action: RestoreAction) -> RestoreActionResult:
                 raise ValueError(f"Restore directory must not be a symlink: {target_path}")
             if target_path.exists() and not target_path.is_dir():
                 file_access.delete_path_and_prune_empty_parents(target_path, root=target_path.parent)
-            target_path.mkdir(parents=True, exist_ok=True)
+            file_access.make_directories(target_path)
             if action.desired_mode is not None:
                 file_access.chmod(target_path, action.desired_mode)
         elif action.after_link_target is not None:

@@ -9,6 +9,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
+from dotman.atomic_files import create_directories_durably
 from dotman.atomic_files import write_bytes_atomic as atomic_write_bytes_atomic
 from dotman.atomic_files import write_symlink_atomic as atomic_write_symlink_atomic
 from dotman.command_runtime import (
@@ -286,6 +287,18 @@ def delete_path_and_prune_empty_parents(path: Path, *, root: Path) -> None:
 
 
 
+def make_directories(path: Path) -> None:
+    try:
+        create_directories_durably(path)
+    except PermissionError:
+        request_sudo(f"create protected directory: {path}")
+        result = _run_privileged_operation("make-directories", str(path))
+        if result.exit_code != 0:
+            stderr = result.stderr.decode("utf-8", errors="replace").strip()
+            raise PermissionError(stderr or f"permission denied for {path}")
+
+
+
 def chmod(path: Path, mode: int) -> None:
     if not path.exists():
         return
@@ -302,6 +315,7 @@ def chmod(path: Path, mode: int) -> None:
 __all__ = [
     "chmod",
     "delete_path_and_prune_empty_parents",
+    "make_directories",
     "needs_sudo_for_read",
     "needs_sudo_for_write",
     "read_bytes",

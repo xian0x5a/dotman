@@ -148,6 +148,7 @@ chmod = "600"
 - `chmod` is optional and should usually be omitted unless the target needs a non-default live mode.
 - For file targets, `chmod` is the source of truth for the installed file mode when present.
 - Replacing an existing file keeps its owner and group. When the invoking user cannot keep them, dotman writes through sudo instead of taking the file over. Every replacement is flushed to disk before dotman records it.
+- A missing live directory, such as a new directory target's root, is created through sudo when the invoking user cannot write its parent, the same way protected files are written.
 - For directory targets, `chmod` applies to the live directory root only; child files mirror Git semantics and carry only the executable bit, not full permission bits such as `600` vs `644`.
 - Directory targets may define target-level `render` and `capture`; for directory targets these apply as defaults for every child file.
 - Sync discovers directory children through one symmetric control-aware census, then resolves named Path Rules even for repository-only or live-only children. Each child has canonical identity `repo:package.target/<relative/child>`. Controls, ignored paths and directory nodes are not Sync Units; see [Sync lifecycle](sync.md#directory-census-and-child-capability) for the current Observation and convergence boundary.

@@ -28,7 +28,7 @@ def _new_atomic_temp_path(directory: Path) -> Path:
 
 
 def write_bytes_atomic(path: Path, content: bytes, *, mode: int | None = None) -> None:
-    _create_parent_directories_durably(path)
+    create_directories_durably(path.parent)
     cleanup_stale_atomic_temp_files(path.parent)
     replacement_mode = mode if mode is not None else target_replacement_mode(path)
     replaced_owner = _replaced_regular_file_owner(path)
@@ -71,7 +71,7 @@ def write_text_atomic(
 
 
 def write_symlink_atomic(path: Path, target: str | Path) -> None:
-    _create_parent_directories_durably(path)
+    create_directories_durably(path.parent)
     cleanup_stale_atomic_temp_files(path.parent)
     candidate_temp_path = _new_atomic_temp_path(path.parent)
     temp_path: Path | None = None
@@ -119,15 +119,14 @@ def _keep_owner_and_group(file_descriptor: int, replaced_status: os.stat_result)
 
 
 
-def _create_parent_directories_durably(path: Path) -> None:
+def create_directories_durably(directory: Path) -> None:
     missing_directories: list[Path] = []
-    directory = path.parent
     while not directory.exists():
         missing_directories.append(directory)
         directory = directory.parent
     for directory in reversed(missing_directories):
         directory.mkdir(exist_ok=True)
-        # The new file is durable only if the entries leading to it are.
+        # A new entry is durable only if the directories leading to it are.
         _fsync_directory(directory.parent)
 
 
@@ -189,6 +188,7 @@ __all__ = [
     "atomic_temp_file_owner_is_definitely_absent",
     "cleanup_atomic_temp_file",
     "cleanup_stale_atomic_temp_files",
+    "create_directories_durably",
     "default_created_file_mode",
     "target_replacement_mode",
     "write_bytes_atomic",
