@@ -8,13 +8,15 @@ Two kinds of stored text can hold characters a terminal misreads:
 - Package descriptions, which are free text rather than names.
 
 Escaping is `\\uNNNN` per unprintable character, so a profile `work<NBSP>laptop`
-shows as `work\\u00a0laptop`.
+shows as `work\\u00a0laptop`. Tab and newline are unprintable too: a name never
+carries layout, while free text such as a description keeps its line breaks.
 """
 
 from __future__ import annotations
 
 import json
 import re
+import shlex
 import tomllib
 from pathlib import Path
 
@@ -30,6 +32,8 @@ OTHER_PROFILE = "basic"
 
 NBSP_PROFILE = "work\xa0laptop"
 ESCAPE_PROFILE = "work\x1b[31mred"
+LAYOUT_PROFILE = "x\nerror: forged line\ty"
+ESCAPED_LAYOUT_PROFILE = "x\\u000aerror: forged line\\u0009y"
 
 # (profile an older dotman stored, the raw character in it, how it must be shown)
 LEGACY_PROFILES = [
@@ -164,21 +168,85 @@ def test_untrack_result_line_shows_the_removed_legacy_profile_escaped(
     assert_shown_escaped(stdout, stderr, raw_character=raw_character, escaped_profile=escaped_profile)
 
 
-@pytest.mark.parametrize("legacy_profile", [NBSP_PROFILE, ESCAPE_PROFILE], ids=["nbsp", "esc"])
-def test_the_untrack_command_the_warning_advertises_removes_the_legacy_row(
+def advertised_untrack_arguments(warning_text: str) -> list[str]:
+    """The arguments of the `dotman untrack ...` command a stale-row warning advertises, split as a shell splits them."""
+    stale_row_lines = [line for line in warning_text.splitlines() if "skipped stale tracked row" in line]
+    assert len(stale_row_lines) == 1, warning_text
+    line = stale_row_lines[0]
+    advertised = re.search(r"dotman untrack .*$", line)
+    assert advertised, f"the stale-row warning must advertise 'dotman untrack <selector>': {warning_text!r}"
+    command = advertised.group(0)
+    # The command ends the line. It may sit inside a wrapper that opens just before `dotman`
+    # ('dotman untrack ...' or `dotman untrack ...`); that wrapper is not part of the command.
+    opener = line[advertised.start() - 1 : advertised.start()]
+    if opener in {"'", "`", '"'} and command.endswith(opener):
+        command = command[:-1]
+    try:
+        words = shlex.split(command)
+    except ValueError as shell_error:  # e.g. an unbalanced quote
+        pytest.fail(f"the advertised command is not valid shell ({shell_error}): {command!r}")
+    assert words[:2] == ["dotman", "untrack"], words
+    return words[2:]
+
+
+@pytest.mark.parametrize(
+    "legacy_profile",
+    [
+        pytest.param(NBSP_PROFILE, id="nbsp"),
+        pytest.param(ESCAPE_PROFILE, id="esc"),
+        # Printable, but a shell would split it or strip the quote.
+        pytest.param("work laptop", id="space"),
+        pytest.param("it's mine", id="apostrophe"),
+    ],
+)
+def test_the_untrack_command_the_warning_advertises_removes_the_legacy_row_when_pasted_into_a_shell(
     legacy_profile: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Escaping the warning must not leave the user a command that matches nothing."""
+    """Escaping the warning must not leave the user a command that matches nothing, or splits into two arguments."""
     config_path = write_repo_with_legacy_row(tmp_path, legacy_profile)
     _code, _stdout, warning_text = run_cli(config_path, capsys, "list", "vars")
-    advertised = re.search(r"'dotman untrack ([^']+)'", warning_text)
-    assert advertised, f"the stale-row warning must advertise 'dotman untrack <selector>': {warning_text!r}"
 
-    # The selector goes in as one argument, exactly as a user's shell would pass the text they copied.
-    code, stdout, stderr = run_cli(config_path, capsys, "untrack", advertised.group(1))
+    # A shell hands the program what `shlex.split` yields, so the advertised text must survive that.
+    code, stdout, stderr = run_cli(config_path, capsys, "untrack", *advertised_untrack_arguments(warning_text))
 
     assert code == 0, stdout + stderr
     assert read_tracked_rows(tmp_path) == [(OTHER_PACKAGE, OTHER_PROFILE)]
+
+
+def test_untracking_by_the_escaped_spelling_leaves_look_alike_sibling_rows(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    config_path = write_repo_with_legacy_row(tmp_path, NBSP_PROFILE)
+    write_tracked_rows(
+        tmp_path,
+        [(LEGACY_PACKAGE, NBSP_PROFILE), (LEGACY_PACKAGE, "work laptop"), (LEGACY_PACKAGE, OTHER_PROFILE)],
+    )
+
+    code, stdout, stderr = run_cli(config_path, capsys, "untrack", f"{REPO_NAME}:{LEGACY_PACKAGE}@work\\u00a0laptop")
+
+    assert code == 0, stdout + stderr
+    assert sorted(read_tracked_rows(tmp_path)) == [(LEGACY_PACKAGE, OTHER_PROFILE), (LEGACY_PACKAGE, "work laptop")]
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        pytest.param(["list", "tracked"], id="list-tracked"),
+        # Any command that walks tracked state skips the stale row with a warning; `list vars` only reads.
+        pytest.param(["list", "vars"], id="stale-row-warning"),
+    ],
+)
+def test_a_legacy_profile_with_a_line_break_and_a_tab_cannot_forge_an_output_line(
+    argv: list[str], tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    config_path = write_repo_with_legacy_row(tmp_path, LAYOUT_PROFILE)
+
+    code, stdout, stderr = run_cli(config_path, capsys, *argv)
+
+    output = stdout + stderr
+    assert code == 0, output
+    assert ESCAPED_LAYOUT_PROFILE in output
+    assert [line for line in output.splitlines() if line.startswith("error: forged line")] == []
 
 
 @pytest.mark.parametrize(
@@ -208,8 +276,46 @@ def test_rewriting_tracked_state_keeps_a_legacy_control_character_row_readable(
     assert (LEGACY_PACKAGE, ESCAPE_PROFILE) in read_tracked_rows(tmp_path), "the legacy row must survive the rewrite"
 
 
+# tomlkit writes ESC as `\e` (#304) and a literal backslash as `\\`, so `\e` also occurs inside
+# `\\e`. A fix that replaces every `\e` in the file with `\u001b` corrupts a profile holding a backslash then `e`.
+BACKSLASH_PROFILES = [
+    pytest.param("a\\eb", id="backslash-then-e"),
+    pytest.param("\\\x1b", id="backslash-then-esc"),
+    pytest.param("\\\\e", id="two-backslashes-then-e"),
+]
+
+
+@pytest.mark.parametrize("profile", BACKSLASH_PROFILES)
+def test_a_rewritten_tracked_state_reads_back_the_profile_exactly(
+    profile: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    config_path = write_repo_with_legacy_row(tmp_path, profile)
+
+    # Untracking the other row makes dotman rewrite the whole file, legacy row included.
+    code, stdout, stderr = run_cli(config_path, capsys, "untrack", f"{REPO_NAME}:{OTHER_PACKAGE}")
+
+    assert code == 0, stdout + stderr
+    assert read_tracked_rows(tmp_path) == [(LEGACY_PACKAGE, profile)]
+
+
 DESCRIPTION_WITH_UNPRINTABLE = "safe\xa0text\N{RIGHT-TO-LEFT OVERRIDE}!\x1b[31m"
 ESCAPED_DESCRIPTION_PARTS = ("safe\\u00a0text", "\\u202e", "\\u001b[31m")
+
+
+def write_repo_with_description(tmp_path: Path, description: str) -> Path:
+    """Write a repo whose one package `app` carries `description`; return the config path."""
+    repo_root = tmp_path / "repo"
+    (repo_root / "profiles").mkdir(parents=True)
+    (repo_root / "profiles" / "default.toml").write_text("", encoding="utf-8")
+    package_root = repo_root / "packages" / "app"
+    (package_root / "files").mkdir(parents=True)
+    (package_root / "files" / "a.conf").write_text("a\n", encoding="utf-8")
+    (package_root / "package.toml").write_text(
+        f"description = {json.dumps(description)}\n"
+        '[targets.conf]\nsource = "files/a.conf"\npath = "~/a.conf"\n',
+        encoding="utf-8",
+    )
+    return write_named_manager_config(tmp_path, {REPO_NAME: repo_root})
 
 
 @pytest.mark.parametrize(
@@ -225,18 +331,7 @@ ESCAPED_DESCRIPTION_PARTS = ("safe\\u00a0text", "\\u202e", "\\u001b[31m")
 def test_package_description_is_shown_escaped(
     setup_argv: list[str] | None, argv: list[str], tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    repo_root = tmp_path / "repo"
-    (repo_root / "profiles").mkdir(parents=True)
-    (repo_root / "profiles" / "default.toml").write_text("", encoding="utf-8")
-    package_root = repo_root / "packages" / "app"
-    (package_root / "files").mkdir(parents=True)
-    (package_root / "files" / "a.conf").write_text("a\n", encoding="utf-8")
-    (package_root / "package.toml").write_text(
-        f"description = {json.dumps(DESCRIPTION_WITH_UNPRINTABLE)}\n"
-        '[targets.conf]\nsource = "files/a.conf"\npath = "~/a.conf"\n',
-        encoding="utf-8",
-    )
-    config_path = write_named_manager_config(tmp_path, {REPO_NAME: repo_root})
+    config_path = write_repo_with_description(tmp_path, DESCRIPTION_WITH_UNPRINTABLE)
     if setup_argv is not None:
         setup_code, setup_stdout, setup_stderr = run_cli(config_path, capsys, *setup_argv)
         assert setup_code == 0, setup_stdout + setup_stderr
@@ -248,3 +343,13 @@ def test_package_description_is_shown_escaped(
         assert escaped_part in stdout
     for raw_character in ("\xa0", "\N{RIGHT-TO-LEFT OVERRIDE}", "\x1b"):
         assert raw_character not in stdout + stderr, f"raw U+{ord(raw_character):04X} reached the terminal"
+
+
+def test_package_description_keeps_its_line_breaks_and_tabs(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """A description is free text written to be read, so only its unprintable characters are escaped, unlike a name."""
+    config_path = write_repo_with_description(tmp_path, "first line\n\tsecond line\x1b[31m")
+
+    code, stdout, stderr = run_cli(config_path, capsys, "info", "trackable", f"{REPO_NAME}:app")
+
+    assert code == 0, stdout + stderr
+    assert "first line\n\tsecond line\\u001b[31m" in stdout

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from dotman.engine import DotmanEngine
-from dotman.models import ResolvedSyncScope
+from dotman.errors import UsageError
+from dotman.models import ResolvedSyncScope, ResolvedSyncTarget
 from dotman.sync_scope import sync_unit_identity_bytes
 from tests.helpers import write_named_manager_config, write_tracked_packages_state
 
@@ -472,3 +474,42 @@ def test_on_demand_targets_leave_package_scope_including_dependencies_unless_nam
     assert [item.canonical for item in scope.targets] == ["main:app.config", "main:app.settings"]
     named = engine.resolve_sync_scope(["main:base.update"])
     assert [item.canonical for item in named.targets] == ["main:base.update"]
+
+
+# An identity naming a directory child of a multi-instance package, so every component is present.
+SYNC_IDENTITY = ResolvedSyncTarget(
+    repo="main", package_id="app", target_name="settings", bound_profile="work", child_path="sub/nested.conf"
+)
+
+
+@pytest.mark.parametrize(
+    ("component", "unprintable_value"),
+    [
+        pytest.param("repo", "ma\x1bin", id="repo"),
+        pytest.param("package_id", "ap\xa0p", id="package"),
+        pytest.param("bound_profile", "wo\u202erk", id="profile"),
+        pytest.param("target_name", "set\u200dtings", id="target"),
+        pytest.param("child_path", "sub/nes\x1bted.conf", id="child-path"),
+    ],
+)
+def test_sync_identity_with_an_unprintable_component_is_not_a_storage_key(component: str, unprintable_value: str) -> None:
+    identity = replace(SYNC_IDENTITY, **{component: unprintable_value})
+
+    with pytest.raises(UsageError):
+        sync_unit_identity_bytes(identity)
+
+
+@pytest.mark.parametrize(
+    ("component", "printable_value"),
+    [
+        pytest.param("repo", "café", id="repo"),
+        pytest.param("package_id", "café", id="package"),
+        pytest.param("bound_profile", "café", id="profile"),
+        pytest.param("target_name", "café", id="target"),
+        pytest.param("child_path", "日本/café with space.conf", id="child-path"),
+    ],
+)
+def test_sync_identity_with_printable_non_ascii_components_is_a_storage_key(component: str, printable_value: str) -> None:
+    identity = replace(SYNC_IDENTITY, **{component: printable_value})
+
+    assert sync_unit_identity_bytes(identity) == identity.canonical.encode("utf-8")
