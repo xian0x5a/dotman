@@ -243,6 +243,58 @@ def test_add_cli_keeps_package_trackable_when_live_files_derive_the_same_source(
     assert main(["--config", str(config_path), "--no-confirm", "track", "fixture:shell@default"]) == 0
 
 
+def test_add_cli_refuses_source_nested_in_another_targets_source_for_unrelated_live_paths(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    # Dropped leading dots give `~/.config/foo` the source `files/config/foo` and
+    # `~/config/foo/bar` the source `files/config/foo/bar`: nested sources for live paths
+    # that do not nest, which push and pull reject as incompatible nested targets.
+    home = tmp_path / "home"
+    (home / ".config" / "foo").mkdir(parents=True)
+    (home / "config" / "foo").mkdir(parents=True)
+    (home / "config" / "foo" / "bar").write_text("bar\n", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(home))
+
+    repo_root = tmp_path / "repo"
+    (repo_root / "profiles").mkdir(parents=True)
+    (repo_root / "profiles" / "default.toml").write_text("", encoding="utf-8")
+    config_path = write_named_manager_config(tmp_path, {"fixture": repo_root})
+    base_argv = ["--config", str(config_path), "--no-confirm"]
+
+    assert main([*base_argv, "add", str(home / ".config" / "foo"), "fixture:shell"]) == 0
+    capsys.readouterr()
+    manifest_path = repo_root / "packages" / "shell" / "package.toml"
+    manifest_before = manifest_path.read_text(encoding="utf-8")
+
+    assert main([*base_argv, "add", str(home / "config" / "foo" / "bar"), "fixture:shell"]) == 1
+
+    error = capsys.readouterr().err
+    assert "files/config/foo/bar" in error
+    assert "files/config/foo" in error
+    assert manifest_path.read_text(encoding="utf-8") == manifest_before
+
+
+def test_add_cli_still_adds_a_target_nested_inside_another_targets_live_directory(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    home = tmp_path / "home"
+    (home / ".config" / "foo").mkdir(parents=True)
+    (home / ".config" / "foo" / "bar").write_text("bar\n", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(home))
+
+    repo_root = tmp_path / "repo"
+    (repo_root / "profiles").mkdir(parents=True)
+    config_path = write_named_manager_config(tmp_path, {"fixture": repo_root})
+
+    for live_path in (home / ".config" / "foo", home / ".config" / "foo" / "bar"):
+        assert main(["--config", str(config_path), "--no-confirm", "add", str(live_path), "fixture:shell"]) == 0
+    capsys.readouterr()
+
+
 def test_add_cli_strips_leading_dots_from_source_components_outside_home(
     tmp_path: Path,
     monkeypatch,

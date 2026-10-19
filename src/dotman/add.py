@@ -11,6 +11,7 @@ from pathlib import Path, PurePosixPath
 import tomlkit
 
 from dotman.atomic_files import write_text_atomic
+from dotman.collisions import paths_conflict
 from dotman.command_runtime import ArgvCommand, CommandRequest, current_command_runtime
 from dotman.manifest import PACKAGE_MANIFEST_FILE_NAME, discover_package_manifests, validate_package_id, validate_target_name
 from dotman.toml_utils import load_toml_text
@@ -65,7 +66,8 @@ class AddOperationResult:
 class ExistingTargetMetadata:
     names: set[str]
     paths: set[str]
-    sources: set[str]
+    # Each declared `source` with the live `path` of the target that declares it.
+    source_paths: dict[str, str | None]
 
 
 @dataclass(frozen=True)
@@ -196,7 +198,12 @@ def prepare_add_to_package(*, repo_root: Path, repo_name: str, package_id: str, 
             f"package '{repo_name}:{package_id}' already declares target path '{live_spec.config_path}'"
         )
     target_name = next_available_target_name(live_spec.target_name_base, existing_targets.names)
-    source_path = next_available_source_path(live_spec.source_path, existing_targets.sources)
+    source_path = next_available_source_path(live_spec.source_path, set(existing_targets.source_paths))
+    ensure_source_does_not_nest_unrelated_source(
+        source_path=source_path,
+        config_path=live_spec.config_path,
+        existing_source_paths=existing_targets.source_paths,
+    )
     target_block = render_target_block(
         target_name=target_name,
         source_path=source_path,
@@ -260,7 +267,7 @@ def read_existing_target_metadata(
     package_id: str | None = None,
 ) -> ExistingTargetMetadata:
     if not manifest_text.strip():
-        return ExistingTargetMetadata(names=set(), paths=set(), sources=set())
+        return ExistingTargetMetadata(names=set(), paths=set(), source_paths={})
     payload = load_toml_text(
         manifest_text,
         context=_manifest_context(manifest_path=manifest_path, repo_name=repo_name, package_id=package_id),
@@ -268,7 +275,7 @@ def read_existing_target_metadata(
     )
     targets_payload = payload.get("targets")
     if not isinstance(targets_payload, dict):
-        return ExistingTargetMetadata(names=set(), paths=set(), sources=set())
+        return ExistingTargetMetadata(names=set(), paths=set(), source_paths={})
     target_names = set(targets_payload)
     for target_name in target_names:
         validate_target_name(target_name)
@@ -277,8 +284,8 @@ def read_existing_target_metadata(
         names=target_names,
         paths={target_payload["path"] for target_payload in target_payloads if isinstance(target_payload.get("path"), str)},
         # Normalized so `./files/x` and `files/x/` count as the source `add` derives as `files/x`.
-        sources={
-            PurePosixPath(target_payload["source"]).as_posix()
+        source_paths={
+            PurePosixPath(target_payload["source"]).as_posix(): target_payload.get("path")
             for target_payload in target_payloads
             if isinstance(target_payload.get("source"), str)
         },
@@ -319,6 +326,31 @@ def next_available_source_path(base_source: str, existing_sources: set[str]) -> 
     while (candidate := base_path.with_stem(f"{base_path.stem}_{suffix}").as_posix()) in existing_sources:
         suffix += 1
     return candidate
+
+
+def ensure_source_does_not_nest_unrelated_source(
+    *,
+    source_path: str,
+    config_path: str,
+    existing_source_paths: dict[str, str | None],
+) -> None:
+    # Dropped leading dots let live paths that do not nest (`~/.config/foo`, `~/config/foo/bar`)
+    # derive nested sources, which push and pull reject as incompatible nested targets.
+    # Nested live paths may share nested sources; the existing target's ignore rules decide that.
+    new_source = PurePosixPath(source_path)
+    for existing_source, existing_config_path in existing_source_paths.items():
+        existing = PurePosixPath(existing_source)
+        if existing not in new_source.parents and new_source not in existing.parents:
+            continue
+        if isinstance(existing_config_path, str) and paths_conflict(
+            Path(os.path.expanduser(config_path)), Path(os.path.expanduser(existing_config_path))
+        ):
+            continue
+        raise ValueError(
+            f"cannot add '{config_path}': its source '{source_path}' would nest with the source "
+            f"'{existing_source}' of unrelated path '{existing_config_path}', which push and pull "
+            "reject; give one of the targets a different source in the package manifest"
+        )
 
 
 def render_target_block(*, target_name: str, source_path: str, config_path: str, chmod: str | None) -> str:
