@@ -11,8 +11,6 @@ from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, Template, TemplateNotFound, TemplateSyntaxError, Undefined, UndefinedError, meta, nodes
 
-from dotman.errors import UsageError
-
 
 class DotmanUndefined(Undefined):
     def __bool__(self) -> bool:
@@ -31,14 +29,6 @@ class JinjaRenderError(ValueError):
 
     def __str__(self) -> str:
         return format_jinja_render_error(self)
-
-
-class JinjaVarsError(JinjaRenderError, UsageError):
-    """A `[vars]` template is invalid (syntax error or reference cycle): a manifest or config mistake.
-
-    A subclass rather than a UsageError raised at the CLI boundary because the error
-    surfaces deep in planning, and callers and tests handle it as a JinjaRenderError.
-    """
 
 
 def _shell_args(value: Any) -> str:
@@ -145,7 +135,7 @@ def _template_references(source: str) -> tuple[VarPath, ...]:
     try:
         parsed = _string_environment(Path(".")).parse(source)
     except TemplateSyntaxError as exc:
-        raise JinjaVarsError(path=None, detail=str(exc)) from exc
+        raise JinjaRenderError(path=None, detail=str(exc)) from exc
     context_names = meta.find_undeclared_variables(parsed)
     return tuple(chain for chain in _lookup_chains(parsed) if chain[0] in context_names)
 
@@ -215,7 +205,7 @@ def _resolve_vars_templates(variables: dict[str, Any]) -> dict[str, Any]:
         render_order = tuple(TopologicalSorter(dependencies).static_order())
     except CycleError as exc:
         cycle = " -> ".join(_format_var_path(path) for path in exc.args[1])
-        raise JinjaVarsError(path=None, detail=f"vars reference each other in a cycle: {cycle}") from exc
+        raise JinjaRenderError(path=None, detail=f"vars reference each other in a cycle: {cycle}") from exc
 
     resolved = copy.deepcopy(variables)
     for path in render_order:

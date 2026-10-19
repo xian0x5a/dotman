@@ -88,6 +88,14 @@ def _unrenderable_target_path(tmp_path, monkeypatch):
     return config_path
 
 
+def _vars_template_syntax_error(tmp_path, monkeypatch):
+    # Every template render failure is a runtime failure, including one in [vars].
+    config_path = _sync_repo()(tmp_path, monkeypatch)
+    manifest = tmp_path / "repo/packages/app/package.toml"
+    manifest.write_text('[vars]\nbroken = "{{ unclosed"\n' + manifest.read_text())
+    return config_path
+
+
 def _malformed_transform_stdin(tmp_path, monkeypatch):
     monkeypatch.setattr("sys.stdin", io.TextIOWrapper(io.BytesIO(b"{not json")))
     return None
@@ -137,6 +145,7 @@ CASES = [
         "json-preflight-runtime-failure", _unrenderable_target_path, ("--json", "push", "--dry-run"), 1, (True,),
         stdout_is_json_document=True,
     ),
+    Case("vars-template-syntax-error", _vars_template_syntax_error, ("push", "--dry-run"), 1, (True,)),
     Case("malformed-transform-input", _malformed_transform_stdin, ("transform", "json", "-", "-", "--mode", "cleanup"), 1),
     Case("unreadable-rewrite-stdin", _unreadable_rewrite_stdin, ("rewrite", "home", "expand"), 1),
     Case(

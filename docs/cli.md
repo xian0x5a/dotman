@@ -60,13 +60,13 @@ See [Sync lifecycle](sync.md) for convergence semantics and
 
 ## Exit status
 
-Exit codes do not depend on `--no-confirm` or `--json`.
+The same failure cause always gives the same code, whatever `--no-confirm` or `--json` say. Without a terminal, a prompt dotman cannot show is its own cause (exit 1).
 
 | Code | Meaning |
 | --- | --- |
 | `0` | Success. |
-| `1` | Runtime failure: a command, hook, or render failed; `doctor` found failed checks; a Sync Base store, dotman-written state file, or path dotman derives itself (state, live targets, repo files) could not be read; a file the user named exists but cannot be read, decoded, or parsed (for example a malformed document given to `transform` or `rewrite`); or dotman needed a decision it could not ask for (no terminal, or `--no-confirm`), including ambiguous matches a prompt could have resolved. |
-| `2` | Usage or configuration error: invalid command-line syntax or option combination, a path named on the command line that does not exist, an unknown, ambiguous or invalid selector or Sync scope, an invalid or conflicting manifest or manager config (including a missing config file and invalid `[vars]` templates), an unusable environment setting such as an invalid `$HOME` for `rewrite home`, or running as root under `sudo`. |
+| `1` | Runtime failure: a command, hook, or template render failed (wherever the template lives: `[vars]`, manifest fields, template files); `doctor` found failed checks; a Sync Base store, dotman-written state file, or path dotman derives itself (state, live targets, repo files) could not be read; a file the user named exists but cannot be read, decoded, or parsed (for example a malformed document given to `transform` or `rewrite`); or dotman needed a decision it could not ask for (no terminal, or `--no-confirm`), including ambiguous matches a prompt could have resolved. |
+| `2` | Usage or configuration error: invalid command-line syntax or option combination, a path named on the command line that does not exist, an unknown, ambiguous or invalid selector or Sync scope, an invalid or conflicting manifest or manager config (including a missing config file), an unusable environment setting such as an invalid `$HOME` for `rewrite home`, or running as root under `sudo`. |
 | `130` | Interruption or explicit abort. |
 
 Code `2` means the user's own input is wrong and no prompt would fix it; code `1` covers everything else. With `--json`, a failed Sync still prints its one JSON document under either code.
