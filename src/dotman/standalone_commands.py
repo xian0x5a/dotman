@@ -19,7 +19,9 @@ class StandaloneCommandRunner:
         if args.command == "rewrite" and args.rewrite_name == "home":
             from dotman.rewrites.cli import run_home_rewrite
 
-            return run_home_rewrite(action=args.rewrite_action, input_path=args.input_path)
+            return run_home_rewrite(
+                action=args.rewrite_action, input_path=args.input_path, bare_tilde=args.bare_tilde
+            )
         if args.command == "transform":
             from dotman.transforms.cli import run_parsed_engine
 

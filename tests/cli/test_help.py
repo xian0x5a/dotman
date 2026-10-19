@@ -251,14 +251,14 @@ def test_rewrite_home_help_lists_expand_and_collapse(capsys) -> None:
     output = capture_parser_help(capsys, "rewrite", "home")
     assert "usage: dotman rewrite home [-h] <action> ..." in output
     assert "actions:" in output
-    assert "Expand standalone '~' fragments to the active $HOME" in output
-    assert "Collapse active $HOME fragments to '~'" in output
+    assert "Expand standalone '~/' fragments to the active $HOME" in output
+    assert "Collapse paths under the active $HOME to '~/'" in output
 
 
 @pytest.mark.parametrize("action", ["expand", "collapse"])
 def test_rewrite_home_action_help_is_stdout_only(capsys, action: str) -> None:
     output = capture_parser_help(capsys, "rewrite", "home", action)
-    assert f"usage: dotman rewrite home {action} [-h] [<input>]" in output
+    assert f"usage: dotman rewrite home {action} [-h] [--bare-tilde] [<input>]" in output
     assert "omit or use '-' to read stdin" in output
     assert "write to stdout" in output
     assert "--stdout" not in output

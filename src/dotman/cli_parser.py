@@ -646,9 +646,17 @@ def build_parser() -> argparse.ArgumentParser:
     rewrite_home_subparsers = rewrite_home_parser.add_subparsers(
         dest="rewrite_action", required=True, title="actions", metavar="<action>"
     )
-    for action, help_text in (
-        ("expand", "Expand standalone '~' fragments to the active $HOME"),
-        ("collapse", "Collapse active $HOME fragments to '~'"),
+    for action, help_text, bare_tilde_help in (
+        (
+            "expand",
+            "Expand standalone '~/' fragments to the active $HOME",
+            "Also expand a standalone bare '~'; not for YAML, where '~' is null",
+        ),
+        (
+            "collapse",
+            "Collapse paths under the active $HOME to '~/'",
+            "Also collapse the exact active home path to '~'; not for YAML, where '~' is null",
+        ),
     ):
         action_parser = rewrite_home_subparsers.add_parser(
             action,
@@ -660,6 +668,11 @@ def build_parser() -> argparse.ArgumentParser:
             nargs="?",
             metavar="<input>",
             help="UTF-8 input file; omit or use '-' to read stdin",
+        )
+        action_parser.add_argument(
+            "--bare-tilde",
+            action="store_true",
+            help=bare_tilde_help,
         )
 
     transform_parser = subparsers.add_parser(

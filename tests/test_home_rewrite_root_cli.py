@@ -37,10 +37,48 @@ def test_root_rewrite_home_accepts_explicit_stdin_operand(
     capsysbinary,
 ) -> None:
     monkeypatch.setenv("HOME", "/home/alice")
-    monkeypatch.setattr("sys.stdin", io.TextIOWrapper(io.BytesIO(b"~")))
+    monkeypatch.setattr("sys.stdin", io.TextIOWrapper(io.BytesIO(b"~/project")))
 
     assert cli.main(["rewrite", "home", "expand", "-"]) == 0
-    assert capsysbinary.readouterr().out == b"/home/alice"
+    assert capsysbinary.readouterr().out == b"/home/alice/project"
+
+
+@pytest.mark.parametrize(
+    ("arguments", "source", "expected"),
+    [
+        pytest.param(["expand"], b"proxy: ~\n", b"proxy: ~\n", id="expand-default"),
+        pytest.param(
+            ["expand", "--bare-tilde", "-"],
+            b"proxy: ~\n",
+            b"proxy: /home/alice\n",
+            id="expand-bare-tilde",
+        ),
+        pytest.param(
+            ["collapse"],
+            b"dir: /home/alice\n",
+            b"dir: /home/alice\n",
+            id="collapse-default",
+        ),
+        pytest.param(
+            ["collapse", "-", "--bare-tilde"],
+            b"dir: /home/alice\n",
+            b"dir: ~\n",
+            id="collapse-bare-tilde",
+        ),
+    ],
+)
+def test_root_rewrite_home_bare_tilde_flag_opts_into_bare_home_rewrites(
+    arguments: list[str],
+    source: bytes,
+    expected: bytes,
+    monkeypatch,
+    capsysbinary,
+) -> None:
+    monkeypatch.setenv("HOME", "/home/alice")
+    monkeypatch.setattr("sys.stdin", io.TextIOWrapper(io.BytesIO(source)))
+
+    assert cli.main(["rewrite", "home", *arguments]) == 0
+    assert capsysbinary.readouterr() == (expected, b"")
 
 
 def test_root_rewrite_home_preserves_all_unmatched_utf8_bytes(
@@ -59,8 +97,8 @@ def test_root_rewrite_home_preserves_byte_fidelity_around_matches(
     monkeypatch,
     capsysbinary,
 ) -> None:
-    source = b"\xef\xbb\xbf first=~\r\nsecond=~/two\n  last=~"
-    expected = b"\xef\xbb\xbf first=/home/alice\r\nsecond=/home/alice/two\n  last=/home/alice"
+    source = b"\xef\xbb\xbf first=~/one\r\nsecond=~/two\n  last=~/"
+    expected = b"\xef\xbb\xbf first=/home/alice/one\r\nsecond=/home/alice/two\n  last=/home/alice/"
     monkeypatch.setenv("HOME", "/home/alice")
     monkeypatch.setattr("sys.stdin", io.TextIOWrapper(io.BytesIO(source)))
 

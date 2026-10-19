@@ -800,7 +800,9 @@ profile = "personal"
 
 ## Home Path Rewrites
 
-`dotman rewrite home expand [INPUT|-]` replaces standalone `~` and `~/...` fragments with the active `$HOME`. `dotman rewrite home collapse [INPUT|-]` replaces the exact active home path and its descendants with `~`.
+`dotman rewrite home expand [--bare-tilde] [INPUT|-]` replaces standalone `~/...` fragments with the active `$HOME`. `dotman rewrite home collapse [--bare-tilde] [INPUT|-]` replaces descendants of the active home path with `~/...`.
+
+By default a bare `~` and the exact home path stay unchanged, because a bare `~` is not a home path in every format: in YAML it means null. `--bare-tilde` also expands a standalone bare `~` and collapses the exact home path to `~`; use it only for files where a bare `~` means home, and pass it to both commands of a `render`/`capture` pair so the round trip stays stable.
 
 The optional input is a UTF-8 file. Omit it or use `-` to read stdin. Rewritten content is written only to stdout; the command has no output operand, in-place mode, or `--stdout` flag. Dotman reads and strictly decodes the complete input before emitting anything, so invalid UTF-8 and input errors cannot produce partial output. Unmatched bytes, including a UTF-8 BOM, line endings, whitespace, final-newline state, ordering, and Unicode normalization, remain unchanged.
 
@@ -811,6 +813,8 @@ Home Path Rewrites run without repository discovery, configuration, profile reso
 ```console
 dotman rewrite home collapse settings.conf
 cat portable.conf | dotman rewrite home expand > settings.conf
+dotman rewrite home collapse --bare-tilde kitty.conf > portable-kitty.conf
+dotman rewrite home expand --bare-tilde portable-kitty.conf > kitty.conf
 ```
 
 ## Structured JSON transforms
