@@ -661,12 +661,18 @@ def test_no_confirm_sync_json_lists_no_base_skips(tmp_path, monkeypatch, capsys)
     assert not units["main:app.fresh"]["selected"] and units["main:app.owned"]["selected"]
 
 
-def test_no_confirm_sync_json_reports_an_unreadable_base_apart_from_an_absent_one(tmp_path, monkeypatch, capsys):
+@pytest.mark.parametrize(("established", "reason"), [(True, "unreadable"), (False, "absent")])
+def test_no_confirm_sync_json_reports_an_unreadable_base_apart_from_an_absent_one(
+        tmp_path, monkeypatch, capsys, established, reason):
     engine = no_base_engine(tmp_path, monkeypatch)
+    if established:
+        assert runner_for(engine).run(arguments(dry_run=False)) == 0
+        capsys.readouterr()
     store_directory = tmp_path / "state/dotman/repos/main"
     store_directory.rename(tmp_path / "relocated-store")
-    # Opening fails closed on a symlinked store directory, so the Base cannot be read.
+    # Opening fails closed on a symlinked store directory. A store that was
+    # never created still holds no Base, so only an established one is unreadable.
     store_directory.symlink_to(tmp_path / "relocated-store")
     assert runner_for(engine).run(arguments(dry_run=False)) == 0
     payload = json.loads(capsys.readouterr().out)
-    assert payload["no_base_skips"] == [{"identity": "main:app.fresh", "reason": "unreadable"}]
+    assert payload["no_base_skips"] == [{"identity": "main:app.fresh", "reason": reason}]
