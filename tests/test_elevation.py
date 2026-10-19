@@ -3,12 +3,16 @@ from __future__ import annotations
 import json
 import os
 import pty
+import select
 import signal
 import socket
 import subprocess
 import sys
+import termios
 import time
 from pathlib import Path
+
+import pytest
 
 from dotman import elevation, file_access
 from dotman.command_runtime import CommandResult, MemoryCommandRuntime, command_runtime_session
@@ -232,3 +236,85 @@ def test_concurrent_sudo_requests_prompt_for_a_password_once(monkeypatch) -> Non
         second.join(5)
 
     assert [request.io for request in runtime.requests].count("tty") == 1
+
+
+_KEEPALIVE_CHILD_SCRIPT = """
+import sys
+import time
+from pathlib import Path
+
+from dotman import file_access
+
+# Tick right away so one is in flight whenever the test changes the terminal.
+file_access._SUDO_KEEPALIVE_INTERVAL_SECONDS = 0.01
+finished = Path(sys.argv[1])
+with file_access.sudo_session():
+    file_access.request_sudo("keepalive test")
+    deadline = time.monotonic() + 30
+    while not finished.exists() and time.monotonic() < deadline:
+        time.sleep(0.01)
+"""
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="request_sudo does nothing as root, so no keepalive runs")
+def test_sudo_keepalive_tick_does_not_undo_terminal_mode_changes_made_while_it_runs(tmp_path) -> None:
+    # A tty hook (password prompt, full-screen tool) owns the terminal during
+    # the session; a keepalive tick in flight must not put old modes back (#226).
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    tick_started = tmp_path / "tick-started"
+    tick_ended = tmp_path / "tick-ended"
+    finished = tmp_path / "finished"
+    fake_sudo = fake_bin / "sudo"
+    fake_sudo.write_text(
+        "#!/bin/sh\n"
+        'if [ "$2" = "-v" ]; then exit 0; fi\n'
+        f': > "{tick_started}"\n'
+        "sleep 0.5\n"
+        f': > "{tick_ended}"\n',
+        encoding="utf-8",
+    )
+    fake_sudo.chmod(0o755)
+    env = {
+        **os.environ,
+        "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+        "HOME": str(tmp_path / "home"),
+        "XDG_CONFIG_HOME": str(tmp_path / "xdg-config"),
+        "XDG_STATE_HOME": str(tmp_path / "xdg-state"),
+        "XDG_DATA_HOME": str(tmp_path / "xdg-data"),
+    }
+
+    def wait_for(path: Path, process: subprocess.Popen) -> None:
+        deadline = time.monotonic() + 15
+        while not path.exists():
+            # Keep the pty drained so the child never blocks on its output.
+            if select.select([master], [], [], 0.01)[0]:
+                os.read(master, 65536)
+            assert process.poll() is None, f"child exited before {path.name}"
+            assert time.monotonic() < deadline, f"timed out waiting for {path.name}"
+
+    master, slave = pty.openpty()
+    process = subprocess.Popen(
+        [sys.executable, "-c", _KEEPALIVE_CHILD_SCRIPT, str(finished)],
+        stdin=slave, stdout=slave, stderr=slave, env=env,
+    )
+    try:
+        wait_for(tick_started, process)
+        # Stand in for the foreground changing modes: turn off echo on the pty.
+        modes = termios.tcgetattr(master)
+        modes[3] &= ~termios.ECHO
+        termios.tcsetattr(master, termios.TCSANOW, modes)
+        wait_for(tick_ended, process)
+        # The tick restores the terminal after its child exits.
+        time.sleep(0.3)
+        echo_after_tick = termios.tcgetattr(master)[3] & termios.ECHO
+        assert echo_after_tick == 0, "keepalive tick restored the terminal's old ECHO setting"
+    finally:
+        finished.touch()
+        try:
+            process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+        os.close(master)
+        os.close(slave)
