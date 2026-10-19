@@ -108,7 +108,7 @@ under `examples/repo/`.
 - Lists replace the earlier value; they do not merge.
 - Packages may define `remove = [...]` with dotted paths to delete inherited fields or keyed entries explicitly.
 - `remove` and `append` paths use the same keys you write in `package.toml`, for example `targets.config.type`, `targets.config.compare.live`, `targets.config.ignore.patterns`, or `targets.config.path_rules.secrets`.
-- Removing a field resets it to dotman's built-in default and clears whatever the chain set. A target field falls back to the built-in default, and a target `preset` is not re-applied. A path rule field falls back to its target's value. A path rule field that no manifest in the chain sets always follows its target's resolved value, so removing or overriding a target field also changes those rule fields. Removing a table such as `compare` or `ignore` clears every field in it.
+- Removing a field resets it to dotman's built-in default and clears whatever the chain set. A target field falls back to the built-in default, and a target `preset` is not re-applied. A path rule field falls back to its target's value. A path rule `render`, `capture`, `compare` side, `editor` or `sync_policy` that no manifest in the chain sets always follows its target's resolved value, so removing or overriding a target field also changes those rule fields. Removing a table such as `compare` or `ignore` clears every field in it.
 - `preset` and the editor's `type`, `run`, `io` and `elevation` can't be removed one by one. Remove the whole `editor`, or `editor.additional_sources`, instead.
 - Packages may define `append` to append to inherited list-valued fields without replacing the whole list.
 - `append` should mirror the object shape it targets, for example:
