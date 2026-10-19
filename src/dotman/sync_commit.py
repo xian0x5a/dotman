@@ -146,11 +146,15 @@ def _changes_to_record(
     is still on disk, with no untracked entry beside it, is one too: the user ran
     `git rm --cached` on an ignored file. The commit names files, not `paths`,
     because `git commit --only` would re-add that file from disk.
+
+    A nested git repository is another repository's content: git status lists it
+    as one directory entry (trailing slash) where `git add` fails or records a
+    gitlink, so it is left out like an ignored source.
     """
     status = _git(runtime, root, "status", "--porcelain", "-z", "--no-renames", "--untracked-files=all",
                   "--", *map(str, paths))
     # Each -z entry is "XY <path>", relative to the work tree root.
-    entries = [(entry[0], root / entry[3:]) for entry in status.split("\0") if entry]
+    entries = [(entry[0], root / entry[3:]) for entry in status.split("\0") if entry and not entry.endswith("/")]
     to_stage = tuple(dict.fromkeys(path for index_status, path in entries if index_status != "D"))
     # A staged deletion is already in the index; it needs recording, not staging.
     staged_deletions = tuple(path for index_status, path in entries
