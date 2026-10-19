@@ -183,14 +183,13 @@ def validate_reserved_path_claims(
     reserved_claims: list[tuple[str, Path]],
 ) -> None:
     """Reject claims inside another package's reserved paths, within one repo."""
-    package_label = lambda package_id: f"{repo_name}:{package_id}"
     for package_id, reserved_path in reserved_claims:
         for claim in target_claims:
             if package_id == claim.package_id:
                 continue
             if paths_conflict(reserved_path, claim.live_path):
                 raise ValueError(
-                    f"reserved path conflict: {package_label(package_id)} reserves {reserved_path} "
+                    f"reserved path conflict: {repo_name}:{package_id} reserves {reserved_path} "
                     f"and {claim.label} maps to {claim.live_path}"
                 )
 
@@ -200,8 +199,8 @@ def validate_reserved_path_claims(
                 continue
             if paths_conflict(reserved_path, other_reserved_path):
                 raise ValueError(
-                    f"reserved path conflict: {package_label(package_id)} reserves {reserved_path} "
-                    f"and {package_label(other_package_id)} reserves {other_reserved_path}"
+                    f"reserved path conflict: {repo_name}:{package_id} reserves {reserved_path} "
+                    f"and {repo_name}:{other_package_id} reserves {other_reserved_path}"
                 )
 
 

@@ -709,7 +709,9 @@ def build_target_spec(
         inherited_editor=editor, inherited_sync_policy=sync_policy)
     if probe is not None:
         if sync_policy == "push-only-delete":
-            raise ValueError(f"Probe {target_name} cannot use push-only-delete; use push-only")
+            raise ValueError(
+                f"package manifest {manifest_path} target '{target_name}' uses probe and cannot use push-only-delete; use push-only"
+            )
         forbidden = sorted(name for name, item in {
             "source": source, "path": path, "type": target_type, "chmod": chmod,
             "render": None if render == "raw" else render, "capture": None if capture == "raw" else capture,

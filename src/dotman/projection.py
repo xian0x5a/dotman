@@ -109,7 +109,7 @@ def validate_probe_target_config(*, repo_name: str, package: PackageSpec, target
         return
     target_label = repo_qualified_target_text(repo_name=repo_name, package_id=package.id, target_name=target.name)
     if resolve_sync_policy(package=package, target=target) == "push-only-delete":
-        raise ValueError(f"Probe {target_label} cannot use push-only-delete; use push-only")
+        raise ValueError(f"target '{target_label}' uses probe and cannot use push-only-delete; use push-only")
     forbidden_probe_fields = {
         "source": target.source,
         "path": target.path,

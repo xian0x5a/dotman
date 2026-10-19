@@ -332,9 +332,15 @@ def test_record_binding_rejects_pull_only_same_repo_path_when_live_paths_do_not_
         engine.record_tracked_package_entry(selector)
 
 
+@pytest.mark.parametrize(
+    ("beta_binding_mode", "beta_label"),
+    [("singleton", r"fixture:beta\.beta"), ("multi_instance", r"fixture:beta<default>\.beta")],
+)
 def test_package_reserved_paths_conflict_with_other_package_target(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    beta_binding_mode: str,
+    beta_label: str,
 ) -> None:
     home = tmp_path / "home"
     home.mkdir()
@@ -363,7 +369,7 @@ def test_package_reserved_paths_conflict_with_other_package_target(
     (repo_root / "packages" / "beta" / "package.toml").write_text(
         "\n".join(
             [
-                "",
+                f'binding_mode = "{beta_binding_mode}"',
                 "[targets.beta]",
                 'source = "files/beta.conf"',
                 'path = "~/.config/shared/beta.conf"',
@@ -379,7 +385,7 @@ def test_package_reserved_paths_conflict_with_other_package_target(
 
     with pytest.raises(
         ValueError,
-        match=r"reserved path conflict: fixture:alpha reserves .+shared and fixture:beta\.beta maps to .+shared/beta\.conf",
+        match=rf"reserved path conflict: fixture:alpha reserves .+shared and {beta_label} maps to .+shared/beta\.conf",
     ):
         engine.resolve_sync_scope()
 
@@ -693,3 +699,25 @@ def test_remove_binding_rejects_resulting_singleton_dependency_profile_ambiguity
         untrack_entry(engine, "fixture:shared@direct")
 
     assert (state_dir / "tracked-packages.toml").read_text(encoding="utf-8") == original_state
+
+
+def test_info_names_the_package_instance_in_live_path_type_errors(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    home = tmp_path / "home"
+    (home / ".config" / "app.conf").mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(home))
+    repo_root = tmp_path / "repo"
+    (repo_root / "profiles").mkdir(parents=True)
+    (repo_root / "profiles" / "default.toml").write_text("", encoding="utf-8")
+    (repo_root / "packages" / "app" / "files").mkdir(parents=True)
+    (repo_root / "packages" / "app" / "files" / "app.conf").write_text("x\n", encoding="utf-8")
+    # Pull-only skips the push ownership check, so info's own target summary reports the mismatch.
+    (repo_root / "packages" / "app" / "package.toml").write_text(
+        'binding_mode = "multi_instance"\n[targets.cfg]\nsource = "files/app.conf"\n'
+        'path = "~/.config/app.conf"\ntype = "file"\nsync_policy = "pull-only"\n',
+        encoding="utf-8",
+    )
+    write_tracked_packages_state(tmp_path / "state", repo_name="fixture", entries=[("app", "default")])
+    engine = DotmanEngine.from_config_path(write_single_repo_config(tmp_path, repo_name="fixture", repo_path=repo_root))
+
+    with pytest.raises(ValueError, match=r"target 'fixture:app<default>\.cfg' declares type"):
+        engine.describe_tracked_package("fixture:app")
