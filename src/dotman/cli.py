@@ -72,8 +72,9 @@ def _refuse_root_under_sudo() -> None:
     # root run started by sudo would strand root-owned files the user can no
     # longer edit (#171). dotman elevates protected paths itself instead.
     # Standalone helpers skip this check: elevated hooks may pipe through them.
+    # Root calling sudo (SUDO_USER=root, e.g. provisioning scripts) owns its files anyway.
     invoking_user = os.environ.get("SUDO_USER")
-    if invoking_user and os.geteuid() == 0:
+    if invoking_user and invoking_user != "root" and os.geteuid() == 0:
         raise RootUnderSudoError(invoking_user)
 
 

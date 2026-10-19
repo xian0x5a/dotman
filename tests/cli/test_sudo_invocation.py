@@ -17,6 +17,7 @@ from tests.helpers import write_manager_config
     [
         pytest.param(0, "alice", True, id="root-started-by-sudo"),
         pytest.param(0, None, False, id="plain-root-login"),
+        pytest.param(0, "root", False, id="root-calling-sudo"),
         pytest.param(1000, "alice", False, id="user-started-by-sudo-u"),
     ],
 )
