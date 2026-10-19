@@ -193,6 +193,14 @@ def overlay_with_base_slots(
     return result
 
 
+def drop_indentation_of_emptied_parent(parent: XmlNode) -> None:
+    # Call after removing children: whitespace before the first one was
+    # indentation, and left on a parent with no children it would read as a
+    # whitespace-only value.
+    if not len(parent) and parent.text is not None and not parent.text.strip():
+        parent.text = None
+
+
 def retain_nodes(
     root: XmlNode,
     node_matchers: list[str],
@@ -207,9 +215,11 @@ def retain_nodes(
         for child in child_elements(current):
             if retain_matching_descendants(child, f"{cur_path}/{child.tag}"):
                 retained_nodes.update(element_with_leading_nodes(child))
-        for child in list(current):
-            if child not in retained_nodes:
-                current.remove(child)
+        removed_nodes = [child for child in current if child not in retained_nodes]
+        for child in removed_nodes:
+            current.remove(child)
+        if removed_nodes:
+            drop_indentation_of_emptied_parent(current)
         return bool(retained_nodes)
 
     retain_matching_descendants(root, root.tag)
@@ -239,6 +249,7 @@ def strip_nodes(
             if matches_node_path(child_path, node_matchers, node_regexes):
                 for node in element_with_leading_nodes(child):
                     remove_child_keeping_following_text(current, node)
+                drop_indentation_of_emptied_parent(current)
             else:
                 strip_matching_descendants(child, child_path)
 
@@ -281,20 +292,12 @@ def sort_xml_attributes(root: XmlNode) -> None:
         elem.attrib.update(sorted_attributes)
 
 
-def strip_whitespace_text_nodes(root: XmlNode) -> None:
-    for node in root.iter():
-        # A comment's or instruction's text is its content, not layout.
-        if is_element(node) and node.text is not None and node.text.strip() == "":
-            node.text = None
-        if node.tail is not None and node.tail.strip() == "":
-            node.tail = None
-
-
 def canonical_xml_sort_key(element: XmlNode) -> str:
     normalized = copy.deepcopy(element)
-    strip_whitespace_text_nodes(normalized)
+    # Same layout rule as compare: only whitespace between child elements is layout.
+    indent_element_only_content(normalized)
     sort_xml_attributes(normalized)
-    return etree.tostring(normalized, encoding="unicode")
+    return etree.tostring(normalized, encoding="unicode", with_tail=False)
 
 
 def sort_selected_children(root: XmlNode, parent_matchers: list[str]) -> None:
@@ -321,10 +324,13 @@ def normalized_xml_for_compare(
     child_sort_parent_matchers: list[str] | None = None,
 ) -> str:
     normalized = copy_document(root)
-    strip_whitespace_text_nodes(normalized)
     sort_xml_attributes(normalized)
     if child_sort_parent_matchers:
         sort_selected_children(normalized, child_sort_parent_matchers)
+    # Re-indent after sorting, since sorted children carry their old tails. The
+    # writer keeps leaf and mixed-content text, so only whitespace between child
+    # elements is layout; `<sep> </sep>` and `<sep/>` hold different values.
+    indent_element_only_content(normalized)
     # The whole document, so the doctype and comments around the root count too.
     return etree.tostring(normalized.getroottree(), encoding="unicode")
 
