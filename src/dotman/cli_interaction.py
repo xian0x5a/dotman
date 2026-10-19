@@ -93,25 +93,6 @@ def repo_qualified_selector_text(*, repo_name: str, selector: str) -> str:
     return cli_style.repo_qualified_selector_text(repo_name=repo_name, selector=selector)
 
 
-def package_label_text(
-    *,
-    repo_name: str,
-    package_id: str,
-    bound_profile: str | None = None,
-    target_name: str | None = None,
-    package_first: bool = False,
-    include_repo_context: bool = False,
-) -> str:
-    return cli_style.package_label_text(
-        repo_name=repo_name,
-        package_id=package_id,
-        bound_profile=bound_profile,
-        target_name=target_name,
-        package_first=package_first,
-        include_repo_context=include_repo_context,
-    )
-
-
 def render_package_label(
     *,
     repo_name: str,

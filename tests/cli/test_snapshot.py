@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import replace
 from pathlib import Path
 
@@ -13,6 +14,8 @@ from dotman.models import SnapshotConfig, TargetPlan
 from dotman.snapshot import build_restore_actions, create_push_snapshot, list_snapshots
 from dotman.sync_session import AuthorizeSymlinkReplacement, SetApproval
 from tests.helpers import capture_parser_help, make_package_plan, write_named_manager_config
+
+ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
 
 
 def test_create_push_snapshot_skips_probe_targets(tmp_path: Path) -> None:
@@ -750,13 +753,15 @@ def _push_snapshot_then_mutate_live(tmp_path: Path, monkeypatch) -> tuple[Path, 
     return config_path, live_path
 
 
+@pytest.mark.parametrize("use_color", [False, True])
 @pytest.mark.parametrize(
     ("strip_provenance", "label"),
     [(False, "fixture:app.config"), (True, "~/.../app/config.txt")],
 )
 def test_restore_review_labels_items_by_recorded_target_or_live_path(
-    tmp_path: Path, monkeypatch, capsys, strip_provenance: bool, label: str,
+    tmp_path: Path, monkeypatch, capsys, strip_provenance: bool, label: str, use_color: bool,
 ) -> None:
+    monkeypatch.setattr(cli_interaction, "colors_enabled", lambda: use_color)
     _push_snapshot_then_mutate_live(tmp_path, monkeypatch)
     snapshot = list_snapshots(tmp_path / "snapshots")[0]
     if strip_provenance:
@@ -770,7 +775,7 @@ def test_restore_review_labels_items_by_recorded_target_or_live_path(
     cli_interaction.print_review_menu_items(review_items, operation="restore")
     cli_interaction.print_review_diff_header(review_items[0], index=1, total=1)
 
-    output = capsys.readouterr().out
+    output = ANSI_ESCAPE.sub("", capsys.readouterr().out)
     assert f"[update] {label}:" in output
     assert f"Diff 1/1: {label} [update]" in output
     assert "snapshot:" not in output

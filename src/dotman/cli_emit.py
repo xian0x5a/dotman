@@ -1018,7 +1018,9 @@ def emit_restore_payload(
 
 
 def _print_restore_header(title: str, *, snapshot: Any, action_count: int, use_color: bool) -> None:
-    label = lambda text: cli_style.render_snapshot_metadata_label(text, use_color=use_color)
+    def label(text: str) -> str:
+        return cli_style.render_snapshot_metadata_label(text, use_color=use_color)
+
     _print_payload_header(title, use_color=use_color)
     print(f"  {label('snapshot:')} {cli_style.render_snapshot_ref(snapshot.snapshot_id, use_color=use_color)}")
     print(f"  {label('created:')}  {cli_style.format_snapshot_timestamp(snapshot.created_at)}")
