@@ -30,7 +30,8 @@ def _new_atomic_temp_path(directory: Path) -> Path:
 def write_bytes_atomic(path: Path, content: bytes, *, mode: int | None = None) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     cleanup_stale_atomic_temp_files(path.parent)
-    replacement_mode = mode if mode is not None else target_replacement_mode(path)
+    replaced_status = _replaced_file_status(path)
+    replacement_mode = mode if mode is not None else _permission_bits(replaced_status)
     candidate_temp_path = _new_atomic_temp_path(path.parent)
     temp_path: Path | None = None
     # With a known replacement mode the temp file starts owner-only, so its
@@ -44,10 +45,15 @@ def write_bytes_atomic(path: Path, content: bytes, *, mode: int | None = None) -
         temp_path = candidate_temp_path
         with os.fdopen(file_descriptor, "wb") as temp_file:
             temp_file.write(content)
+            temp_file.flush()
+            if replaced_status is not None:
+                # Before fchmod: a chown clears setuid/setgid bits.
+                _keep_owner_and_group(temp_file.fileno(), replaced_status)
             if replacement_mode is not None:
-                temp_file.flush()
                 os.fchmod(temp_file.fileno(), replacement_mode)
+            os.fsync(temp_file.fileno())
         temp_path.replace(path)
+        _fsync_directory(path.parent)
     finally:
         cleanup_atomic_temp_file(temp_path)
 
@@ -73,18 +79,50 @@ def write_symlink_atomic(path: Path, target: str | Path) -> None:
         candidate_temp_path.symlink_to(target)
         temp_path = candidate_temp_path
         temp_path.replace(path)
+        _fsync_directory(path.parent)
     finally:
         cleanup_atomic_temp_file(temp_path)
 
 
 
-def target_replacement_mode(path: Path) -> int | None:
+def _replaced_file_status(path: Path) -> os.stat_result | None:
     try:
-        return stat.S_IMODE(path.stat().st_mode)
+        return path.stat()
     except FileNotFoundError:
+        return None
+
+
+
+def _permission_bits(replaced_status: os.stat_result | None) -> int | None:
+    if replaced_status is None:
         # Exclusive creation already applies the process umask. Leaving that
         # mode intact avoids mutating the process-global umask during writes.
         return None
+    return stat.S_IMODE(replaced_status.st_mode)
+
+
+
+def _keep_owner_and_group(file_descriptor: int, replaced_status: os.stat_result) -> None:
+    # The rename installs a new inode owned by the writer. A service that reads
+    # its config through the old owner or group (root:grafana 0640) would lose
+    # access. An unprivileged writer gets PermissionError here, which callers
+    # in file_access answer by retrying through sudo.
+    created_status = os.fstat(file_descriptor)
+    uid = replaced_status.st_uid if replaced_status.st_uid != created_status.st_uid else -1
+    gid = replaced_status.st_gid if replaced_status.st_gid != created_status.st_gid else -1
+    if uid != -1 or gid != -1:
+        os.fchown(file_descriptor, uid, gid)
+
+
+
+def _fsync_directory(directory: Path) -> None:
+    # The rename is durable only once its directory entry is on disk; Sync Base
+    # records and snapshot manifests acknowledge content written here.
+    directory_descriptor = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(directory_descriptor)
+    finally:
+        os.close(directory_descriptor)
 
 
 
@@ -135,7 +173,6 @@ __all__ = [
     "cleanup_atomic_temp_file",
     "cleanup_stale_atomic_temp_files",
     "default_created_file_mode",
-    "target_replacement_mode",
     "write_bytes_atomic",
     "write_symlink_atomic",
     "write_text_atomic",

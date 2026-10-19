@@ -279,3 +279,99 @@ def test_atomic_write_keeps_setuid_and_setgid_bits(
 
     assert target_path.read_bytes() == b"new\n"
     assert stat.S_IMODE(target_path.stat().st_mode) == expected_mode
+
+
+def _a_supplementary_group_of_the_current_user(primary_gid: int) -> int:
+    for gid in os.getgroups():
+        if gid != primary_gid:
+            return gid
+    pytest.skip("the current user belongs to no group besides the file's group")
+
+
+def test_write_bytes_atomic_preserves_the_group_of_the_replaced_file(tmp_path: Path) -> None:
+    # A service often reads its config through the file's group (root:grafana
+    # 0640); a replace that resets the group locks the service out.
+    target_path = tmp_path / "service.conf"
+    target_path.write_bytes(b"before\n")
+    target_path.chmod(0o640)
+    shared_gid = _a_supplementary_group_of_the_current_user(target_path.stat().st_gid)
+    os.chown(target_path, -1, shared_gid)
+
+    write_bytes_atomic(target_path, b"after\n")
+
+    assert target_path.read_bytes() == b"after\n"
+    assert target_path.stat().st_gid == shared_gid
+    assert stat.S_IMODE(target_path.stat().st_mode) == 0o640
+
+
+def test_write_bytes_atomic_refuses_to_replace_a_file_whose_owner_it_cannot_keep(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    # An unprivileged writer cannot give a file to another user. The write must
+    # fail, so the caller escalates through sudo, instead of silently taking the
+    # file over.
+    target_path = tmp_path / "service.conf"
+    target_path.write_bytes(b"before\n")
+    real_stat = Path.stat
+    foreign_uid = os.getuid() + 1
+
+    def stat_reporting_a_foreign_owner(path: Path, *args, **kwargs) -> os.stat_result:
+        result = real_stat(path, *args, **kwargs)
+        if path != target_path:
+            return result
+        fields = list(result)
+        fields[stat.ST_UID] = foreign_uid
+        return os.stat_result(fields)
+
+    def unprivileged_fchown(file_descriptor: int, uid: int, gid: int) -> None:
+        if uid not in (-1, os.getuid()):
+            raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr(Path, "stat", stat_reporting_a_foreign_owner)
+    monkeypatch.setattr(os, "fchown", unprivileged_fchown)
+
+    with pytest.raises(PermissionError):
+        write_bytes_atomic(target_path, b"after\n")
+
+    monkeypatch.undo()
+    assert target_path.read_bytes() == b"before\n"
+    assert list(tmp_path.glob(".dotman-*.tmp")) == []
+
+
+@pytest.mark.parametrize(
+    "write",
+    [
+        lambda path: write_bytes_atomic(path, b"payload\n"),
+        lambda path: write_symlink_atomic(path, "destination"),
+    ],
+    ids=["file", "symlink"],
+)
+def test_atomic_write_is_durable_before_it_returns(tmp_path: Path, monkeypatch, write) -> None:
+    # A Sync Base record acknowledges these writes. Without fsync a crash can
+    # leave the acknowledged path empty or still pointing at the old content.
+    target_path = tmp_path / "config"
+    target_path.write_bytes(b"before\n")
+    events: list[str] = []
+    real_fsync = os.fsync
+    real_replace = Path.replace
+
+    def recording_fsync(file_descriptor: int) -> None:
+        synced = os.fstat(file_descriptor)
+        if stat.S_ISDIR(synced.st_mode):
+            events.append("fsync-directory" if synced.st_ino == tmp_path.stat().st_ino else "fsync-other-directory")
+        else:
+            events.append("fsync-file")
+        real_fsync(file_descriptor)
+
+    def recording_replace(source: Path, destination: Path) -> Path:
+        events.append("replace")
+        return real_replace(source, destination)
+
+    monkeypatch.setattr(os, "fsync", recording_fsync)
+    monkeypatch.setattr(Path, "replace", recording_replace)
+
+    write(target_path)
+
+    expected = ["replace", "fsync-directory"] if target_path.is_symlink() else ["fsync-file", "replace", "fsync-directory"]
+    assert events == expected
