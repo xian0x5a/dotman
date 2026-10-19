@@ -16,7 +16,7 @@ from threading import Thread
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Callable, Iterable, Iterator, Literal, Mapping, NoReturn, Protocol, Sequence, TextIO, TypeAlias, TypeVar
 
-from dotman.terminal import preserve_terminal_state
+from dotman.terminal import own_terminal, preserve_terminal_state
 
 if TYPE_CHECKING:
     # Annotation-only: loading models costs every standalone helper call ~16ms.
@@ -72,9 +72,10 @@ class CommandRequest:
     elevation: ElevationMode = "none"
     isolate_process_group: bool = True
     # Pipe commands put the terminal modes back afterwards, in case a child that
-    # opened /dev/tty died mid-change. A command that never touches the terminal
-    # and may overlap a foreground terminal user (sudo keepalive) opts out, or
-    # its restore would undo that user's mode changes.
+    # opened /dev/tty died mid-change; they skip it if a tty command held the
+    # terminal meanwhile. A command that never touches the terminal and may
+    # overlap dotman's own prompt or Command Deck (sudo keepalive) opts out, or
+    # its restore would undo their mode changes.
     preserve_terminal: bool = True
 
     def __post_init__(self) -> None:
@@ -415,7 +416,7 @@ class ProductionCommandRuntime(_CancellationLatch):
         command: Command,
         environment: dict[str, str],
     ) -> CommandResult:
-        with preserve_terminal_state():
+        with own_terminal():
             previous_sigint_handler = signal.getsignal(signal.SIGINT)
             main_thread = threading.current_thread() is threading.main_thread()
             process: subprocess.Popen[bytes] | None = None

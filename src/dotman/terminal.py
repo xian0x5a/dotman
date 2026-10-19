@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
 from contextlib import contextmanager
 from typing import Iterator, Sequence, TextIO
 
@@ -21,13 +22,48 @@ def colors_enabled(stream: TextIO) -> bool:
     return stream.isatty() and os.environ.get("NO_COLOR") is None
 
 
+# Foreground terminal commands (a sudo password prompt, a tty Editor) and
+# background commands run on different threads. A background command's snapshot
+# goes stale once a foreground command takes the terminal: restoring it would
+# undo that command's modes, e.g. turn echo back on under a password prompt.
+_terminal_ownership_lock = threading.Lock()
+_foreground_owner_count = 0
+# Bumped whenever a foreground command takes or releases the terminal.
+_foreground_ownership_changes = 0
+
+
 @contextmanager
-def preserve_terminal_state(*, streams: Sequence[object] | None = None) -> Iterator[None]:
-    snapshots = _capture_terminal_state(streams=streams)
+def own_terminal(*, streams: Sequence[object] | None = None) -> Iterator[None]:
+    """Hold the terminal for a foreground command; always put its modes back afterwards."""
+    global _foreground_owner_count, _foreground_ownership_changes
+    with _terminal_ownership_lock:
+        snapshots = _capture_terminal_state(streams=streams)
+        _foreground_owner_count += 1
+        _foreground_ownership_changes += 1
     try:
         yield
     finally:
-        _restore_terminal_state(snapshots)
+        with _terminal_ownership_lock:
+            _restore_terminal_state(snapshots)
+            _foreground_owner_count -= 1
+            _foreground_ownership_changes += 1
+
+
+@contextmanager
+def preserve_terminal_state(*, streams: Sequence[object] | None = None) -> Iterator[None]:
+    """Put back the modes of a background command's run unless a foreground command held the terminal meanwhile."""
+    with _terminal_ownership_lock:
+        snapshots = _capture_terminal_state(streams=streams)
+        captured_without_owner = _foreground_owner_count == 0
+        changes_at_capture = _foreground_ownership_changes
+    try:
+        yield
+    finally:
+        # Check and restore under one lock, so no foreground command can take
+        # the terminal in between.
+        with _terminal_ownership_lock:
+            if captured_without_owner and _foreground_ownership_changes == changes_at_capture:
+                _restore_terminal_state(snapshots)
 
 
 def read_prompt_line(
