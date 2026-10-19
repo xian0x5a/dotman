@@ -106,7 +106,8 @@ the mode tightening above.
 
 During Push, Pull, or Sync, unavailable/corrupt Base reads and checkpoint-save
 failures are warnings. They do not turn successful required effects into failure
-or stop later units. A failed read uses normal no-Base resolution; explicit Merge
+or stop later units. A failed read uses normal no-Base resolution and reports
+Base reason `unreadable`, distinct from `absent` (no Base recorded yet); explicit Merge
 remains blocked without a usable Base. A save rejected before atomic replacement
 leaves the previous authoritative checkpoint rather than rolling back repository
 or live changes. A post-replacement flush warning instead reports the new Base

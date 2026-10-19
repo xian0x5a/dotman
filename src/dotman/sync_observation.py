@@ -558,12 +558,12 @@ def observe_scope(
             effective = child_policies.get(identity, _effective_policy(unit.configured_policy, push, pull))
             lifecycle = lifecycles.get(identity.repo)
             # Store failures only matter to units that keep a Sync Base.
-            warning = checkpoint_warnings.get(identity) or (
-                store_warnings.get(identity.repo) if unit.eligible else None
-            )
+            store_failure = store_warnings.get(identity.repo) if unit.eligible else None
+            warning = checkpoint_warnings.get(identity) or store_failure
             base = BaseEvidence(
                 "unavailable" if unit.eligible else "not-applicable",
-                "absent" if unit.eligible else "ineligible",
+                # A Base that could not be read may still exist; never call it absent.
+                ("unreadable" if store_failure else "absent") if unit.eligible else "ineligible",
                 deleted=maintenance.get(identity, False),
             )
             if lifecycle is not None:
@@ -577,6 +577,7 @@ def observe_scope(
                         warning = Diagnostic("base-unavailable", str(inspection.failure), "warning")
                 except (OSError, ValueError, SyncBaseStoreError) as exc:
                     warning = Diagnostic("base-unavailable", str(exc), "warning")
+                    base = replace(base, reason="unreadable")
             if child_failures.get(identity):
                 failed = Observation(
                     identity, "observation-failed", unit.configured_policy, effective,

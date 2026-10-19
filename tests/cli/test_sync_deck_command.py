@@ -659,3 +659,14 @@ def test_no_confirm_sync_json_lists_no_base_skips(tmp_path, monkeypatch, capsys)
     assert payload["no_base_skips"] == [{"identity": "main:app.fresh", "reason": "absent"}]
     units = {unit["identity"]: unit for unit in payload["sync_units"]}
     assert not units["main:app.fresh"]["selected"] and units["main:app.owned"]["selected"]
+
+
+def test_no_confirm_sync_json_reports_an_unreadable_base_apart_from_an_absent_one(tmp_path, monkeypatch, capsys):
+    engine = no_base_engine(tmp_path, monkeypatch)
+    store_directory = tmp_path / "state/dotman/repos/main"
+    store_directory.rename(tmp_path / "relocated-store")
+    # Opening fails closed on a symlinked store directory, so the Base cannot be read.
+    store_directory.symlink_to(tmp_path / "relocated-store")
+    assert runner_for(engine).run(arguments(dry_run=False)) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["no_base_skips"] == [{"identity": "main:app.fresh", "reason": "unreadable"}]
