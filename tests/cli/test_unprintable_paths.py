@@ -2,10 +2,13 @@
 
 An authored target `source` and `path` in package.toml and a repo `path` in config.toml
 are checked at load (tests/cli/test_unprintable_names.py), so they print as written.
-These paths come from outside the manifest and are escaped where they enter output:
+They are checked as written, so what `~`, `$VAR` and `{{ var }}` expand to is outside
+text too. These paths come from outside the manifest and are escaped where they enter output:
 
 - A live file or directory whose name holds a control character, such as a child of
   a directory target.
+- A target or repo path that expanded to a value holding one: a Jinja var in a target
+  `path`, an environment variable in a repo `path`.
 - The config file's own location, which the user chose.
 
 Escaping is `\\uNNNN` per unprintable character, newline and tab included: a path is
@@ -78,6 +81,65 @@ def test_a_live_child_name_with_line_breaks_cannot_forge_a_row(
     assert [line for line in output.splitlines() if line.startswith(":: completed — approved: 0")] == []
 
 
+# A value a template or the environment supplies; its line break fakes the start of a row.
+EXPANDED_VALUE = "bad\x1b[31m\nFORGED: expanded"
+SHOWN_EXPANDED_VALUE = "bad\\u001b[31m\\u000aFORGED: expanded"
+
+
+def write_repo_with_templated_target_path(tmp_path: Path) -> Path:
+    """Write a repo whose target `path` is `~/{{ vars.x }}` and whose var `x` is `EXPANDED_VALUE`."""
+    repo_root = tmp_path / "repo"
+    (repo_root / "profiles").mkdir(parents=True)
+    (repo_root / "profiles" / "default.toml").write_text("", encoding="utf-8")
+    package_root = repo_root / "packages" / "app"
+    (package_root / "files").mkdir(parents=True)
+    (package_root / "files" / "a.conf").write_text("a\n", encoding="utf-8")
+    (package_root / "package.toml").write_text(
+        f'[vars]\nx = {json.dumps(EXPANDED_VALUE)}\n[targets.conf]\nsource = "files/a.conf"\npath = "~/{{{{ vars.x }}}}"\n',
+        encoding="utf-8",
+    )
+    return write_named_manager_config(tmp_path, {REPO_NAME: repo_root})
+
+
+def write_config_with_expanded_repo_path(tmp_path: Path) -> Path:
+    """Write a config whose one repo `path` is `$EVIL/repo2`, with `EVIL` set to `EXPANDED_VALUE` by the caller."""
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(f'[repos.{REPO_NAME}]\npath = "$EVIL/repo2"\norder = 10\n', encoding="utf-8")
+    return config_path
+
+
+@pytest.mark.parametrize(
+    ("write_config", "setup_argv", "argv"),
+    [
+        pytest.param(
+            write_repo_with_templated_target_path,
+            ["track", f"{REPO_NAME}:app@default"],
+            ["info", "tracked", f"{REPO_NAME}:app"],
+            id="info-tracked-templated-target-path",
+        ),
+        pytest.param(write_config_with_expanded_repo_path, None, ["list", "repo"], id="list-repo-expanded-repo-path"),
+    ],
+)
+def test_a_path_that_expanded_to_unprintable_characters_is_shown_escaped_on_one_line(
+    write_config, setup_argv: list[str] | None, argv: list[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The authored text is printable, so it loads; the expansion is the user's own environment, and is not."""
+    monkeypatch.setenv("EVIL", EXPANDED_VALUE)
+    config_path = write_config(tmp_path)
+    if setup_argv is not None:
+        setup_code, setup_stdout, setup_stderr = run_cli(config_path, capsys, *setup_argv)
+        assert setup_code == 0, setup_stdout + setup_stderr
+
+    code, stdout, stderr = run_cli(config_path, capsys, *argv)
+
+    output = stdout + stderr
+    assert code == 0, output
+    assert SHOWN_EXPANDED_VALUE in output
+    assert "\x1b" not in output
+    assert [line for line in output.splitlines() if line.startswith("FORGED:")] == []
+
+
 def test_the_config_location_in_doctor_cannot_forge_a_row(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     config_dir = tmp_path / "cfg\nforged: config\x1b[31m"
     config_dir.mkdir()
@@ -118,4 +180,6 @@ def test_add_refuses_a_path_with_unprintable_characters_and_writes_nothing(
     assert code == 2, stdout + stderr
     assert list(repo_root.rglob("*")) == []
     assert "we\\u001bird" in stderr, "the error must tell which name is the problem"
+    # The user can rename the file or track a directory above it, and the error should say so.
+    assert [line for line in stderr.splitlines() if line.strip().startswith("hint:") and "renam" in line.lower()], stderr
     assert "\x1b" not in stdout + stderr, "raw ESC reached the terminal"

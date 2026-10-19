@@ -1,12 +1,16 @@
 """Identity fields the user writes must be printable (issue #295, same rule as #272 for live file names).
 
 Package, group, profile and target names, repo names in the manager config, target
-`source` and `path` in package.toml, and repo `path` in config.toml are rejected at
-load when `str.isprintable()` fails. The rejection is a usage error (exit 2), names
-the file and field, and shows the value escaped: the raw character never reaches the
-terminal. Every unprintable character is escaped, tab and newline included, so the
-error never carries layout; a backslash is shown as written. A field that passes
-the check is printed as written elsewhere, so no other test pins its escaping.
+`source`, `path`, path rule `pattern` and `additional_sources` entries in package.toml,
+and repo `path` in config.toml are rejected at load when `str.isprintable()` fails.
+Paths are checked as written: `~`, `$VAR` and `{{ var }}` expand later, and the
+paths printed from those expansions are escaped where they are shown.
+
+The rejection is a usage error (exit 2), names the file and field, and shows the value
+escaped: the raw character never reaches the terminal. Every unprintable character is
+escaped, tab and newline included, so the error never carries layout; a backslash is
+shown as written. A field that passes the check is printed as written elsewhere, so no
+other test pins its escaping.
 """
 
 from __future__ import annotations
@@ -61,18 +65,24 @@ def write_repo(
     target_source: str = "files/a",
     target_path: str = "~/a",
     repo_dirname: str = "repo",
+    target_extra: str = "",
+    manifest_prefix: str = "",
 ) -> Path:
     """Write a one-repo fixture whose authored names and paths are chosen by the caller; return the config path.
 
     `repo_dirname` is the last component of the repo `path` in config.toml; the repo is created there.
+    `target_extra` is more TOML for the target table, and `manifest_prefix` is TOML placed before it
+    (for example a `[vars]` table).
     """
     repo_root = tmp_path / repo_dirname
     # `json.dumps` writes a TOML-compatible quoted key or string, escaping control
     # characters that TOML forbids raw.
     package_manifest = (
+        f"{manifest_prefix}"
         f"[targets.{json.dumps(target)}]\n"
         f"source = {json.dumps(target_source)}\n"
         f"path = {json.dumps(target_path)}\n"
+        f"{target_extra}"
     )
     files = {
         "profiles/default.toml": "",
@@ -133,6 +143,17 @@ AUTHORED_PATH_FIELDS = {
     "target-source": ("package.toml", "source", lambda value: {"target_source": f"files/{value}"}),
     "target-path": ("package.toml", "path", lambda value: {"target_path": f"~/{value}"}),
     "repo-path": ("config.toml", "path", lambda value: {"repo_dirname": value}),
+    "path-rule-pattern": (
+        "package.toml",
+        "pattern",
+        lambda value: {"target_extra": f'type = "directory"\n[targets.conf.path_rules.r]\npattern = {json.dumps(value)}\n'},
+    ),
+    # "additional" matches both `additional_sources` and `additional source` in the message.
+    "additional-source": (
+        "package.toml",
+        "additional",
+        lambda value: {"target_extra": f'editor = {{ run = "ed", additional_sources = [{json.dumps(value)}] }}\n'},
+    ),
 }
 
 
@@ -157,9 +178,11 @@ def test_unprintable_authored_path_is_rejected_at_load_and_shown_escaped(
     assert [line for line in output.splitlines() if field_text in line and shown_value in line], output
 
 
-def test_printable_non_ascii_names_paths_and_profile_spaces_load(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+def test_printable_non_ascii_names_and_paths_load_and_paths_are_checked_as_written(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """`~`, `$VAR` and `{{ vars.where }}` in a path are expanded afterwards, so only the text as written is checked."""
+    monkeypatch.setenv("DOTMAN_PROBE_DIR", "café")
     config_path = write_repo(
         tmp_path,
         package="café",
@@ -168,8 +191,15 @@ def test_printable_non_ascii_names_paths_and_profile_spaces_load(
         target="日本",
         repo_name="café",
         target_source="files/café",
-        target_path="~/café",
+        target_path="~/$DOTMAN_PROBE_DIR/{{ vars.where }}/café",
         repo_dirname="répo café",
+        manifest_prefix='[vars]\nwhere = "café"\n\n',
+        target_extra=(
+            'type = "directory"\n'
+            'editor = { run = "ed", additional_sources = ["café"] }\n'
+            '[targets.conf.path_rules.r]\n'
+            'pattern = "café/*"\n'
+        ),
     )
 
     exit_code, output = run_list_tracked(config_path, capsys)
