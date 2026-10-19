@@ -44,16 +44,34 @@ def validate_supported_keys(
         raise ValueError(f"{context} has unsupported keys: {unsupported_text}")
 
 
-def validate_package_id(package_id: str) -> None:
-    if not package_id.strip():
-        raise ValueError("package id must not be empty")
-    if package_id.startswith("/") or package_id.endswith("/"):
-        raise ValueError(f"invalid package id '{package_id}'")
-    if any(character in package_id for character in ("\\", ":", "@", "<", ">", ".")):
-        raise ValueError(f"invalid package id '{package_id}'")
-    parts = package_id.split("/")
+def _validate_namespaced_id(selector_id: str, *, kind: str, reserved_characters: tuple[str, ...]) -> None:
+    if not selector_id.strip():
+        raise ValueError(f"{kind} id must not be empty")
+    if any(character in selector_id for character in reserved_characters):
+        raise ValueError(f"invalid {kind} id '{selector_id}'")
+    parts = selector_id.split("/")
     if any(not part or part in {".", ".."} or any(character.isspace() for character in part) for part in parts):
-        raise ValueError(f"invalid package id '{package_id}'")
+        raise ValueError(f"invalid {kind} id '{selector_id}'")
+
+
+# Package and group IDs are selectors in `repo:selector@profile` and
+# `repo:package<profile>.target`, so they can't hold any of that syntax.
+SELECTOR_ID_RESERVED_CHARACTERS = ("\\", ":", "@", "<", ">", ".")
+# Profile IDs sit inside `@profile` and `<profile>`, where dots and other
+# punctuation are allowed; only the characters that delimit them are reserved.
+PROFILE_ID_RESERVED_CHARACTERS = ("@", "<", ">")
+
+
+def validate_package_id(package_id: str) -> None:
+    _validate_namespaced_id(package_id, kind="package", reserved_characters=SELECTOR_ID_RESERVED_CHARACTERS)
+
+
+def validate_group_id(group_id: str) -> None:
+    _validate_namespaced_id(group_id, kind="group", reserved_characters=SELECTOR_ID_RESERVED_CHARACTERS)
+
+
+def validate_profile_id(profile_id: str) -> None:
+    _validate_namespaced_id(profile_id, kind="profile", reserved_characters=PROFILE_ID_RESERVED_CHARACTERS)
 
 
 def discover_package_manifests(packages_root: Path) -> list[Path]:
@@ -112,14 +130,32 @@ def deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]
     return merged
 
 
-def normalize_string_list(value: Any) -> tuple[str, ...] | None:
+# Shared field validators take the owner label (`context`, e.g. "package
+# manifest <path> target 'a'") and the manifest key, so every error names the
+# file and field that are wrong.
+def normalize_string_list(value: Any, *, context: str, key: str) -> tuple[str, ...] | None:
     if value is None:
         return None
     if isinstance(value, str):
         return (value,)
-    if isinstance(value, list) and all(isinstance(item, str) for item in value):
-        return tuple(value)
-    raise ValueError(f"expected string or list[str], got {type(value).__name__}")
+    if not isinstance(value, list):
+        raise ValueError(f"{context} {key} must be a string or list of strings, got {type(value).__name__}")
+    for index, item in enumerate(value):
+        if not isinstance(item, str):
+            raise ValueError(f"{context} {key}[{index}] must be a string, got {type(item).__name__}")
+    return tuple(value)
+
+
+def require_optional_string(value: Any, *, context: str, key: str) -> str | None:
+    if value is not None and not isinstance(value, str):
+        raise ValueError(f"{context} {key} must be a string, got {type(value).__name__}")
+    return value
+
+
+def require_optional_table(value: Any, *, context: str, key: str) -> dict[str, Any] | None:
+    if value is not None and not isinstance(value, dict):
+        raise ValueError(f"{context} {key} must be a table, got {type(value).__name__}")
+    return value
 
 
 def normalize_hook_command_specs(
@@ -218,9 +254,13 @@ def _build_command_spec(
         raise ValueError(
             f"{manifest_kind} {manifest_path} {owner_label} {command_label} 'run' must not be empty"
         )
-    io_value = normalize_optional_string_enum(command_payload.get("io"), key="io", allowed=VALID_HOOK_IO_VALUES) or "pipe"
+    command_context = f"{manifest_kind} {manifest_path} {owner_label} {command_label}"
+    io_value = normalize_optional_string_enum(
+        command_payload.get("io"), context=command_context, key="io", allowed=VALID_HOOK_IO_VALUES
+    ) or "pipe"
     elevation_value = normalize_optional_string_enum(
         command_payload.get("elevation"),
+        context=command_context,
         key="elevation",
         allowed=VALID_ELEVATION_VALUES,
     ) or default_command_elevation
@@ -232,28 +272,27 @@ def _build_command_spec(
     return HookCommandSpec(run=run_value, io=io_value, elevation=elevation_value, run_noop=run_noop_value)
 
 
-def normalize_optional_string_enum(value: Any, *, key: str, allowed: tuple[str, ...]) -> str | None:
-    if value is None:
+def normalize_optional_string_enum(value: Any, *, context: str, key: str, allowed: tuple[str, ...]) -> str | None:
+    if require_optional_string(value, context=context, key=key) is None:
         return None
-    if not isinstance(value, str):
-        raise ValueError(f"expected string for '{key}', got {type(value).__name__}")
     if value not in allowed:
         allowed_text = ", ".join(allowed)
-        raise ValueError(f"unsupported {key} '{value}'; expected one of: {allowed_text}")
+        raise ValueError(f"{context} has unsupported {key} '{value}'; expected one of: {allowed_text}")
     return value
 
 
 def normalize_default_command_elevation(value: Any, *, manifest_path: Path) -> DefaultCommandElevationMode:
     normalized = normalize_optional_string_enum(
         value,
+        context=f"repo config {manifest_path}",
         key="default_command_elevation",
         allowed=VALID_DEFAULT_COMMAND_ELEVATION_VALUES,
     )
     return normalized or "none"
 
 
-def normalize_sync_policy(value: Any) -> str | None:
-    return normalize_optional_string_enum(value, key="sync_policy", allowed=VALID_SYNC_POLICY_VALUES)
+def normalize_sync_policy(value: Any, *, context: str) -> str | None:
+    return normalize_optional_string_enum(value, context=context, key="sync_policy", allowed=VALID_SYNC_POLICY_VALUES)
 
 
 # int(value, 8) alone also accepts "-755", "0o755" and modes beyond 0o7777,
@@ -265,25 +304,27 @@ def _invalid_chmod(value: str) -> bool:
     return CHMOD_PATTERN.fullmatch(value) is None
 
 
-def normalize_projection(value: Any, *, field_name: str, default: str, builtins: tuple[str, ...]) -> str:
+def normalize_projection(value: Any, *, context: str, key: str, default: str, builtins: tuple[str, ...]) -> str:
     """Resolve a scalar projection or an explicit {run = ...} command."""
     if value is None:
         return default
     if isinstance(value, str):
         if not value.strip():
-            raise ValueError(f"'{field_name}' must not be empty")
+            raise ValueError(f"{context} {key} must not be empty")
         return value
     if isinstance(value, dict):
-        validate_supported_keys(value, supported_keys={"run"}, context=field_name)
+        validate_supported_keys(value, supported_keys={"run"}, context=f"{context} {key}")
         run = value.get("run")
         if not isinstance(run, str) or not run.strip():
-            raise ValueError(f"{field_name} command object must define non-empty 'run'")
+            raise ValueError(f"{context} {key} command object must define non-empty 'run'")
         return f"{FORCED_COMMAND_PREFIX}{run}" if run in builtins else run
-    raise ValueError(f"{field_name} must be a string or table containing only 'run'")
+    raise ValueError(f"{context} {key} must be a string or table containing only 'run'")
 
 
 def normalize_additional_sources(value: Any, *, manifest_path: Path, target_name: str) -> tuple[str, ...]:
-    values = normalize_string_list(value) or ()
+    values = normalize_string_list(
+        value, context=f"package manifest {manifest_path} target '{target_name}' editor", key="additional_sources"
+    ) or ()
     result: list[str] = []
     for source in values:
         normalized = source.replace("\\", "/")
@@ -322,7 +363,7 @@ def normalize_compare_side(value: Any, *, side: str, field_name: str, default: s
             f'{context} compare.{side} = "{other_view}" is a compare.{other_side} view; '
             f'use compare = {{ {side} = "raw", {other_side} = "{other_view}" }}, or {{ run = "{other_view}" }} for a command named {other_view}'
         )
-    return normalize_projection(value, field_name=field_name, default=default,
+    return normalize_projection(value, context=context, key=field_name, default=default,
                                 builtins=("raw", COMPARE_SIDE_VIEWS[side], other_view))
 
 
@@ -348,8 +389,9 @@ def normalize_editor(value: Any, *, manifest_path: Path, target_name: str, defau
     run = value.get("run") if has_run else None
     if run is not None and (not isinstance(run, str) or not run.strip()):
         raise ValueError(f"package manifest {manifest_path} target '{target_name}' editor run must be a non-empty string")
-    io = normalize_optional_string_enum(value.get("io"), key="editor.io", allowed=VALID_COMMAND_IO_VALUES) or "tty"
-    elevation = normalize_optional_string_enum(value.get("elevation"), key="editor.elevation", allowed=VALID_ELEVATION_VALUES) or (default_elevation if provider_type is None else "none")
+    editor_context = f"package manifest {manifest_path} target '{target_name}'"
+    io = normalize_optional_string_enum(value.get("io"), context=editor_context, key="editor.io", allowed=VALID_COMMAND_IO_VALUES) or "tty"
+    elevation = normalize_optional_string_enum(value.get("elevation"), context=editor_context, key="editor.elevation", allowed=VALID_ELEVATION_VALUES) or (default_elevation if provider_type is None else "none")
     if provider_type is not None and elevation != "none":
         raise ValueError(f"package manifest {manifest_path} target '{target_name}' built-in editor cannot request elevation")
     sources = normalize_additional_sources(value.get("additional_sources"), manifest_path=manifest_path, target_name=target_name)
@@ -366,8 +408,8 @@ def normalize_editor(value: Any, *, manifest_path: Path, target_name: str, defau
     )
 
 
-def normalize_target_type(value: Any) -> str | None:
-    return normalize_optional_string_enum(value, key="target type", allowed=VALID_TARGET_TYPE_VALUES)
+def normalize_target_type(value: Any, *, context: str) -> str | None:
+    return normalize_optional_string_enum(value, context=context, key="type", allowed=VALID_TARGET_TYPE_VALUES)
 
 
 def normalize_target_command(value: Any, *, field_name: str, manifest_path: Path, target_name: str) -> str | None:
@@ -511,8 +553,9 @@ def normalize_target_path_rules(
         priority = val("priority", 0)
         if not isinstance(priority, int) or isinstance(priority, bool):
             raise ValueError(f"package manifest {manifest_path} target '{target_name}' path_rules.{name}.priority must be an integer")
-        render = normalize_projection(val("render", inherited_render), field_name="path rule render", default=inherited_render, builtins=("raw", "jinja"))
-        capture = normalize_projection(val("capture", inherited_capture), field_name="path rule capture", default=inherited_capture, builtins=("raw", "patch"))
+        rule_context = f"package manifest {manifest_path} target '{target_name}' path_rules.{name}"
+        render = normalize_projection(val("render", inherited_render), context=rule_context, key="render", default=inherited_render, builtins=("raw", "jinja"))
+        capture = normalize_projection(val("capture", inherited_capture), context=rule_context, key="capture", default=inherited_capture, builtins=("raw", "patch"))
         preset_compare = preset_payload.get("compare")
         rule_compare = payload.get("compare")
         if preset_compare is not None and not isinstance(preset_compare, dict):
@@ -527,10 +570,9 @@ def normalize_target_path_rules(
                                     context=f"package manifest {manifest_path} target '{target_name}' path_rules.{name}.compare")
         compare_payload = dict(preset_compare or {})
         compare_payload.update(rule_compare or {})
-        rule_context = f"package manifest {manifest_path} target '{target_name}' path_rules.{name}"
-        compare_repo = normalize_compare_side(compare_payload.get("repo"), side="repo", field_name="path rule compare.repo",
+        compare_repo = normalize_compare_side(compare_payload.get("repo"), side="repo", field_name="compare.repo",
                                               default=inherited_compare_repo, context=rule_context)
-        compare_live = normalize_compare_side(compare_payload.get("live"), side="live", field_name="path rule compare.live",
+        compare_live = normalize_compare_side(compare_payload.get("live"), side="live", field_name="compare.live",
                                               default=inherited_compare_live, context=rule_context)
         preset_editor_payload = preset_payload.get("editor")
         rule_editor_payload = payload.get("editor")
@@ -564,7 +606,7 @@ def normalize_target_path_rules(
         chmod = val("chmod", None)
         if chmod is not None and (not isinstance(chmod, str) or _invalid_chmod(chmod)):
             raise ValueError(f"package manifest {manifest_path} target '{target_name}' path_rules.{name}.chmod must be 3 or 4 octal digits")
-        sync_policy = normalize_sync_policy(payload.get("sync_policy", inherited_sync_policy))
+        sync_policy = normalize_sync_policy(payload.get("sync_policy", inherited_sync_policy), context=rule_context)
         hooks = normalize_path_rule_hooks(payload.get("hooks"), manifest_path=manifest_path, target_name=target_name, rule_index=name,
                                           default_command_elevation=default_command_elevation)
         rules.append(TargetPathRule(name=name, pattern=normalized_pattern, priority=priority, chmod=chmod,
@@ -616,16 +658,20 @@ def build_target_spec(
         validate_target_name(target_name)
     except ValueError as exc:
         raise ValueError(f"package manifest {manifest_path}: {exc}") from None
-    validate_supported_keys(target_payload, supported_keys=TARGET_MANIFEST_KEYS,
-                            context=f"package manifest {manifest_path} target '{target_name}'")
+    target_context = f"package manifest {manifest_path} target '{target_name}'"
+    # Check the shape before the keys: `[targets] a = "x"` is a wrong-typed
+    # target, not a target with an unsupported key "x".
+    if not isinstance(target_payload, dict):
+        raise ValueError(f"{target_context} must be a table, got {type(target_payload).__name__}")
+    validate_supported_keys(target_payload, supported_keys=TARGET_MANIFEST_KEYS, context=target_context)
     preset_payload = resolve_target_preset(target_payload=target_payload, manifest_path=manifest_path, target_name=target_name)
     def value(key: str, default: Any = None) -> Any:
         return target_payload[key] if key in target_payload else preset_payload.get(key, default)
-    source = value("source")
-    path = value("path")
+    source = require_optional_string(value("source"), context=target_context, key="source")
+    path = require_optional_string(value("path"), context=target_context, key="path")
     probe = normalize_target_command(value("probe"), field_name="probe", manifest_path=manifest_path, target_name=target_name)
-    target_type = normalize_target_type(value("type"))
-    sync_policy = normalize_sync_policy(value("sync_policy"))
+    target_type = normalize_target_type(value("type"), context=target_context)
+    sync_policy = normalize_sync_policy(value("sync_policy"), context=target_context)
     def boolean_value(field_name: str) -> bool:
         field_value = value(field_name, False)
         if not isinstance(field_value, bool):
@@ -637,8 +683,8 @@ def build_target_spec(
     chmod = value("chmod")
     if chmod is not None and (not isinstance(chmod, str) or _invalid_chmod(chmod)):
         raise ValueError(f"package manifest {manifest_path} target '{target_name}' chmod must be 3 or 4 octal digits")
-    render = normalize_projection(value("render"), field_name="render", default="raw", builtins=("raw", "jinja"))
-    capture = normalize_projection(value("capture"), field_name="capture", default="raw", builtins=("raw", "patch"))
+    render = normalize_projection(value("render"), context=target_context, key="render", default="raw", builtins=("raw", "jinja"))
+    capture = normalize_projection(value("capture"), context=target_context, key="capture", default="raw", builtins=("raw", "patch"))
     # Preset comparison sides are independently inherited: an explicit side
     # replaces only that side while the other side remains from the preset.
     preset_compare = preset_payload.get("compare")
@@ -684,7 +730,11 @@ def build_target_spec(
         )
     ignore_payload = read_target_ignore_table(target_payload=target_payload, preset_payload=preset_payload,
                                               manifest_path=manifest_path, target_name=target_name)
-    patterns = normalize_string_list(ignore_payload.get("patterns")) if ignore_payload is not None else None
+    patterns = (
+        normalize_string_list(ignore_payload.get("patterns"), context=f"{target_context} ignore", key="patterns")
+        if ignore_payload is not None
+        else None
+    )
     ignore_command = normalize_target_command(
         ignore_payload.get("command") if ignore_payload is not None else None,
         field_name="ignore command", manifest_path=manifest_path, target_name=target_name,
@@ -793,10 +843,10 @@ def merge_ignore_patterns(*pattern_sets: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(pattern for pattern_set in pattern_sets for pattern in pattern_set)
 
 
-def normalize_gitignore_enabled(value: Any) -> bool | None:
+def normalize_gitignore_enabled(value: Any, *, context: str) -> bool | None:
     """Absent package enablement inherits; an explicit boolean overrides."""
     if value is not None and not isinstance(value, bool):
-        raise ValueError(f"gitignore must be a boolean, got {type(value).__name__}")
+        raise ValueError(f"{context} gitignore must be a boolean, got {type(value).__name__}")
     return value
 
 
@@ -947,7 +997,7 @@ def _validate_resolved_package(package: PackageSpec, *, repo_name: str) -> Packa
         target_label = repo_qualified_target_text(repo_name=repo_name, package_id=package.id, target_name=target.name)
         for rule in target.path_rules:
             if not rule.pattern.strip():
-                raise ValueError(f"target '{target_label}' path rule '{rule.name}' must define pattern")
+                raise ValueError(f'target "{target_label}" path rule \'{rule.name}\' must define pattern')
         # Extends can split a valid combination across manifests, so only the
         # merged target is checked. Path Rules refine children, so planning
         # checks them per child once overlapping rules are folded together.
