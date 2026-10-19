@@ -122,7 +122,9 @@ def test_untrack_cli_removes_every_duplicate_state_row(
 
     assert exit_code == 0
     state_path = state_root / "dotman" / "repos" / "example" / "tracked-packages.toml"
-    assert f'package_id = "{package_id}"' not in state_path.read_text(encoding="utf-8")
+    remaining_state = state_path.read_text(encoding="utf-8")
+    assert f'package_id = "{package_id}"' not in remaining_state
+    assert 'package_id = "nvim"' in remaining_state
 
 
 def test_untrack_cli_allows_selector_only_when_unique(

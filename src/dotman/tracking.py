@@ -744,7 +744,14 @@ def remove_tracked_package_entries(
 
 
 def remove_tracked_package_entry_record(bindings: list[FullSpecSelector], target: FullSpecSelector) -> list[FullSpecSelector]:
-    return [binding for binding in bindings if binding != target]
+    removed = False
+    remaining: list[FullSpecSelector] = []
+    for binding in bindings:
+        if not removed and binding == target:
+            removed = True
+            continue
+        remaining.append(binding)
+    return remaining
 
 
 
