@@ -13,7 +13,7 @@ import re
 import signal
 import time
 
-from rich.console import Group
+from rich.console import Group, RenderableType
 from rich.padding import Padding
 from rich.rule import Rule
 from rich.style import Style
@@ -35,7 +35,7 @@ from dotman.diff_review import display_review_path
 from dotman.models import projection_display_text
 from dotman.cli_style import MENU_HEADER_MARKER, MENU_HEADER_MARKER_STYLE, MENU_HINT_STYLE, MENU_PROMPT_STYLE, render_annotation_parentheses, render_conflict_lines, render_diff_line, render_info_section_header, render_key_hint, render_key_hint_chip, render_key_hint_separator, render_payload_action, render_payload_section_label, render_sync_term, render_package_label, style_text, SYNC_TERM_STYLE_BY_NAME
 from dotman.sync_base_store import DirectoryChildPresent, FilePresent, Missing
-from dotman.sync_deck_command import selection_uses_inclusion, auxiliary_resolution, additional_label, guard_skip_explanation, guard_skip_label, set_all_selected, set_selected, row_diagnostics, auxiliary_label, review, edit_proposal, set_resolution_intent, retry_materialization, effect_summary, primary_change_summary, render_guess_annotation, render_resolution, resolution_label, live_counts, summary_stats
+from dotman.sync_deck_command import CommandDeckCrashed, selection_uses_inclusion, auxiliary_resolution, additional_label, guard_skip_explanation, guard_skip_label, set_all_selected, set_selected, row_diagnostics, auxiliary_label, review, edit_proposal, set_resolution_intent, retry_materialization, effect_summary, primary_change_summary, render_guess_annotation, render_resolution, resolution_label, live_counts, summary_stats
 from dotman.sync_session import AuthorizeSymlinkReplacement, AdditionalRow, AuxiliaryRow, CommandRejected, CommitOption, SessionRow, SetCommit, SyncSession, conflict_diagnostic
 
 
@@ -1056,6 +1056,12 @@ class SyncDeckApp(App[bool]):
         # Filters name Targets and searches find file text, so each keeps its own history.
         self._search_history: dict[str, list[str]] = {"filter": [], "search": []}
 
+    def exit(self, result: bool | None = None, return_code: int = 0, message: RenderableType | None = None) -> None:
+        # Textual's exit() overwrites the return code. After an unhandled error the
+        # Deck still exits as a dismissal once in-flight materialization drains,
+        # which would hide the crash from run_command_deck.
+        super().exit(result, return_code=return_code or self.return_code or 0, message=message)
+
     @property
     def busy(self) -> bool:
         # Completed dispatch has drained even before its done callback clears the handle.
@@ -1880,7 +1886,11 @@ def run_command_deck(session: SyncSession, *, use_color: bool) -> bool:
     previous = signal.getsignal(signal.SIGINT)
     signal.signal(signal.SIGINT, lambda signum, frame: app.action_abort())
     try:
-        return bool(app.run())
+        confirmed = app.run()
+        # An unhandled error exits the app with None, which would read as a dismissal.
+        if app.return_code:
+            raise CommandDeckCrashed(f"Command Deck exited with code {app.return_code}")
+        return bool(confirmed)
     finally:
         try:
             if app._materialization is not None:

@@ -112,6 +112,57 @@ def test_pull_cli_returns_130_when_command_deck_aborts(
         assert (pull_repo / f"repo/packages/app/{name}").read_bytes() == f"repository {name}".encode()
 
 
+def _crash_on_mount(app_class, monkeypatch):
+    def crash(self):
+        raise RuntimeError("deck bug")
+
+    monkeypatch.setattr(app_class, "on_mount", crash)
+
+
+def _crash_while_materializing(app_class, monkeypatch):
+    # The Deck's shutdown waits for in-flight materialization and then exits
+    # as a dismissal, which must not mask the UI error that started it.
+    import time
+
+    mount = app_class.on_mount
+
+    def mount_and_materialize(self):
+        mount(self)
+        self.materialize(lambda: time.sleep(0.5))
+
+    def crash(self):
+        raise RuntimeError("deck bug")
+
+    monkeypatch.setattr(app_class, "on_mount", mount_and_materialize)
+    monkeypatch.setattr(app_class, "_render_progress", crash)
+
+
+@pytest.mark.parametrize("crash", [_crash_on_mount, _crash_while_materializing], ids=["on-mount", "while-materializing"])
+def test_pull_cli_reports_command_deck_crash_as_failure_not_abort(
+    pull_repo, monkeypatch, capsys, crash,
+):
+    from dotman.sync_deck import SyncDeckApp
+
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    monkeypatch.setattr("sys.stdout.isatty", lambda: True)
+    # The real Deck runs; only the terminal driver is swapped for Textual's
+    # headless one, since pytest has no terminal to draw on.
+    run_on_terminal = SyncDeckApp.run
+    monkeypatch.setattr(SyncDeckApp, "run", lambda self, **kwargs: run_on_terminal(self, **{**kwargs, "headless": True}))
+
+    # Raising inside the app's event loop is how a Deck or provider bug surfaces.
+    crash(SyncDeckApp, monkeypatch)
+
+    assert main(["--config", str(pull_repo / "config.toml"), "pull"]) == 1
+    captured = capsys.readouterr()
+    summary = [line for line in captured.out.splitlines() if line.startswith(":: ") and line != ":: Pull"]
+    assert summary and summary[-1].startswith(":: failed"), summary
+    # Exact line match: the Textual traceback above it quotes test source lines.
+    assert "Pull aborted" not in captured.err.splitlines()
+    for name in ("first", "second"):
+        assert (pull_repo / f"repo/packages/app/{name}").read_bytes() == f"repository {name}".encode()
+
+
 def test_pull_cli_accepts_package_owned_by_tracked_root(pull_repo, capsys):
     root = pull_repo / "repo/packages/root"
     root.mkdir()
