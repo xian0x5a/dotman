@@ -112,7 +112,9 @@ include control characters such as ESC or CR, bidi and other format characters,
 and non-ASCII spaces such as NBSP or U+3000. Its row shows an escaped stand-in
 (`Icon\u000d`, `caf\xe9.txt`) and it never has a Sync Base. Rename such a file
 or exclude it with an ignore pattern. A Sync Base stored for such a name by an
-older dotman is ignored; `dotman doctor` counts it as corrupt. So is a Sync Base stored under an unprintable package, profile or target name, which older dotman accepted; `reset sync-base --unusable` drops both.
+older dotman is ignored; `dotman doctor` counts it as corrupt. So is a Sync Base
+stored under an unprintable package, profile or target name, which older dotman
+accepted; `reset sync-base --unusable` drops both.
 Repository directory links are never descended or used as ancestors for child
 endpoint reads. Live directory links fail locally in `fail` mode; `follow` mode retains lexical child identities and detects loops.
 Rejected traversal or unknown controls/discovery at an ancestor block every

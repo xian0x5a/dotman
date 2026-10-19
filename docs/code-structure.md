@@ -78,7 +78,11 @@ Current responsibility split:
 - `planning.py` — shared static planning primitives through `PlanningContext`: tracked selection resolution, target metadata and ownership candidates, and hook plans
 - `planning_guards.py` — repo/package-instance/target/path-rule planning eligibility and guard diagnostics
 - `collisions.py` — tracked-target winner resolution and conflict checks
-- `printable.py` — `printable_text`, the escaping behind the `str.isprintable()` rule that load-time name validation shares
+- `printable.py` — the `str.isprintable()` rule in one place: `validate_printable_name` rejects a bad name at load, and
+  three escapes show text safely. `printable_text` is injective (backslash doubled) for Sync identity stand-ins;
+  `terminal_safe_name` escapes every unprintable character, tab and newline included, for names and one-line
+  fields; `terminal_safe_text` keeps newline and tab for free text and paths. It also holds the selector reserved
+  characters that package, group and repo names share
 - `sync_directory.py` — symmetric control-aware census and identity-derived child metadata; no aggregate payload or publication
 - `projection.py` — shared Render, Capture and comparison providers over real endpoints or staged Proposals through `ProjectionContext`
 - `sync_scope.py` — static tracked scope resolution, ownership/collision/reserved-path validation, and canonical file/child identity keys
