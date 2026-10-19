@@ -89,11 +89,15 @@ class _SudoLease:
 
     def _ensure_keepalive(self) -> None:
         if self._keepalive_thread is None or not self._keepalive_thread.is_alive():
-            self._keepalive_thread = threading.Thread(target=self._keepalive_loop, daemon=True)
+            # The thread keeps its own stop event: close() waits only briefly and
+            # then installs a fresh one, which a slow tick must not pick up.
+            self._keepalive_thread = threading.Thread(
+                target=self._keepalive_loop, args=(self._stop_event,), daemon=True,
+            )
             self._keepalive_thread.start()
 
-    def _keepalive_loop(self) -> None:
-        while not self._stop_event.wait(_SUDO_KEEPALIVE_INTERVAL_SECONDS):
+    def _keepalive_loop(self, stop_event: threading.Event) -> None:
+        while not stop_event.wait(_SUDO_KEEPALIVE_INTERVAL_SECONDS):
             self._runtime.run(_sudo_request("-n", "true"))
 
     def close(self) -> None:

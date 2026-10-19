@@ -142,3 +142,28 @@ def test_target_input_runs_no_dependency_hooks(tmp_path, monkeypatch):
         assert [row.row_id for row in session.view.rows] == ["main:app.own"]
     with engine.open_push_session(engine.resolve_sync_scope(["main:app"]), preview=True) as session:
         assert "main:base (push-hooks)" in [row.row_id for row in session.view.rows]
+
+
+def test_push_authenticates_sudo_once_for_all_protected_writes(tmp_path, monkeypatch, capsys):
+    # The conftest sudo mock grants the ticket and runs the privileged helper
+    # unelevated, so protected writes still go through the sudo path.
+    import os
+
+    from dotman import file_access
+
+    if os.geteuid() == 0:
+        pytest.skip("root never requests sudo")
+    live_root = tmp_path / "live"
+    monkeypatch.setattr(file_access, "needs_sudo_for_write", lambda path: live_root in path.parents)
+    engine = make_engine(tmp_path, monkeypatch, [
+        ("first", "push-only", b"repo-first", b"live", ""),
+        ("second", "push-only", b"repo-second", b"live", ""),
+    ])
+
+    with engine.open_push_session(engine.resolve_sync_scope()) as session:
+        assert session.execute().result.status == "completed"
+
+    assert (live_root / "first").read_bytes() == b"repo-first"
+    assert (live_root / "second").read_bytes() == b"repo-second"
+    sudo_notices = [line for line in capsys.readouterr().err.splitlines() if "[sudo]" in line]
+    assert len(sudo_notices) == 1, sudo_notices
