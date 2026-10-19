@@ -373,6 +373,17 @@ def existing_target_path_kind(path: Path, *, follow_symlink: bool = False) -> st
     return None
 
 
+def rendered_target_is_directory(metadata: TargetMetadata) -> bool:
+    """The declared type, else whether either rendered side is a directory.
+
+    Scope selection and Observation share this so every child Observation reports
+    stays selectable by its own identity.
+    """
+    if metadata.target.target_type is not None:
+        return metadata.target.target_type == "directory"
+    return infer_target_kind(repo_path=metadata.repo_path, live_path=metadata.live_path) == "directory"
+
+
 def infer_target_kind(*, repo_path: Path, live_path: Path) -> str:
     if repo_path.is_dir():
         return "directory"
