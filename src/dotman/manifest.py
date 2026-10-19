@@ -7,7 +7,7 @@ from dataclasses import MISSING, fields, is_dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from dotman.models import AdditionalSource, DefaultCommandElevationMode, EditorSpec, HookCommandSpec, HookSpec, PackageSpec, TargetPathRule, TargetSpec
+from dotman.models import AdditionalSource, DefaultCommandElevationMode, EditorSpec, HookCommandSpec, HookSpec, PackageSpec, TargetPathRule, TargetSpec, repo_qualified_target_text
 from dotman.presets import BUILTIN_TARGET_PRESETS, get_builtin_target_preset
 
 
@@ -942,15 +942,14 @@ def validate_patch_capture(owner: str, *, render: str, capture: str, compare_rep
 
 def _validate_resolved_package(package: PackageSpec, *, repo_name: str) -> PackageSpec:
     for target in (package.targets or {}).values():
+        target_label = repo_qualified_target_text(repo_name=repo_name, package_id=package.id, target_name=target.name)
         for rule in target.path_rules:
             if not rule.pattern.strip():
-                raise ValueError(
-                    f"target '{package.id}:{target.name}' path rule '{rule.name}' must define pattern"
-                )
+                raise ValueError(f"target '{target_label}' path rule '{rule.name}' must define pattern")
         # Extends can split a valid combination across manifests, so only the
         # merged target is checked. Path Rules refine children, so planning
         # checks them per child once overlapping rules are folded together.
-        validate_patch_capture(f'target "{repo_name}:{package.id}.{target.name}"', render=target.render,
+        validate_patch_capture(f'target "{target_label}"', render=target.render,
                                capture=target.capture, compare_repo=target.compare_repo,
                                compare_live=target.compare_live)
     return package

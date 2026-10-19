@@ -7,7 +7,7 @@ from typing import Any
 
 from dotman.config import expand_path
 from dotman.ignore import GitIgnoreChain, IgnoreMatcher, collect_gitignore_chain
-from dotman.models import PackageSpec, ResolvedPackageSelection, TargetSpec, TrackedTargetSummary
+from dotman.models import PackageSpec, ResolvedPackageSelection, TrackedTargetSummary
 from dotman.templates import render_template_string
 
 
@@ -96,8 +96,20 @@ def resolve_tracked_target_winners(
 
 
 
+@dataclass(frozen=True)
+class TargetClaim:
+    """One path-claiming target, as ownership checks see it."""
+
+    package_id: str
+    # Canonical `repo:package.target` identity, for messages.
+    label: str
+    repo_path: Path
+    live_path: Path
+    ignore_patterns: tuple[str, ...]
+
+
 def validate_target_collisions(
-    rendered_targets: list[tuple[PackageSpec, TargetSpec, Path, Path, tuple[str, ...], bool, str | None]],
+    claims: list[TargetClaim],
     *,
     operation: str,
     gitignore_chains: dict[tuple[Path, Path], GitIgnoreChain | None] | None = None,
@@ -115,41 +127,29 @@ def validate_target_collisions(
         return IgnoreMatcher.from_patterns(patterns, gitignore=chain)
 
     write_paths = [
-        operation_write_path(repo_path=repo_path, live_path=live_path, operation=operation)
-        for _package, _target, repo_path, live_path, *_rest in rendered_targets
+        operation_write_path(repo_path=claim.repo_path, live_path=claim.live_path, operation=operation)
+        for claim in claims
     ]
     write_path_texts = [str(path) for path in write_paths]
-    for index, (package, target, repo_path, live_path, ignore_patterns, _live_path_is_symlink, _live_path_symlink_target) in enumerate(rendered_targets):
+    for index, claim in enumerate(claims):
         path, path_text = write_paths[index], write_path_texts[index]
-        for other_index in range(index + 1, len(rendered_targets)):
-            (
-                other_package,
-                other_target,
-                other_repo_path,
-                other_live_path,
-                other_ignore_patterns,
-                _other_live_path_is_symlink,
-                _other_live_path_symlink_target,
-            ) = rendered_targets[other_index]
+        for other_index in range(index + 1, len(claims)):
+            other = claims[other_index]
             other_path, other_path_text = write_paths[other_index], write_path_texts[other_index]
             if path_text == other_path_text:
                 raise ValueError(
-                    f"conflicting target ownership: {package.id}:{target.name} and {other_package.id}:{other_target.name} both map to {path}"
+                    f"conflicting target ownership: {claim.label} and {other.label} both map to {path}"
                 )
             if _contains_path_text(path_text, other_path_text):
                 relative = other_path.relative_to(path).as_posix()
-                parent_ignore = parent_matcher(repo_path, live_path, relative, ignore_patterns)
+                parent_ignore = parent_matcher(claim.repo_path, claim.live_path, relative, claim.ignore_patterns)
                 if not parent_ignore.matches(relative):
-                    raise ValueError(
-                        f"incompatible nested targets: {package.id}:{target.name} contains {other_package.id}:{other_target.name}"
-                    )
+                    raise ValueError(f"incompatible nested targets: {claim.label} contains {other.label}")
             elif _contains_path_text(other_path_text, path_text):
                 relative = path.relative_to(other_path).as_posix()
-                parent_ignore = parent_matcher(other_repo_path, other_live_path, relative, other_ignore_patterns)
+                parent_ignore = parent_matcher(other.repo_path, other.live_path, relative, other.ignore_patterns)
                 if not parent_ignore.matches(relative):
-                    raise ValueError(
-                        f"incompatible nested targets: {other_package.id}:{other_target.name} contains {package.id}:{target.name}"
-                    )
+                    raise ValueError(f"incompatible nested targets: {other.label} contains {claim.label}")
 
 
 def operation_write_path(*, repo_path: Path, live_path: Path, operation: str) -> Path:
@@ -162,36 +162,36 @@ def operation_write_path(*, repo_path: Path, live_path: Path, operation: str) ->
 
 
 def validate_reserved_path_conflicts(
+    repo_name: str,
     packages: list[PackageSpec],
-    rendered_targets: list[tuple[PackageSpec, TargetSpec, Path, Path, tuple[str, ...], bool, str | None]],
+    claims: list[TargetClaim],
     context: dict[str, Any],
 ) -> None:
-    target_claims = [
-        (package.id, f"{package.id}:{target.name}", live_path)
-        for package, target, _repo_path, live_path, _ignore_patterns, _live_path_is_symlink, _live_path_symlink_target in rendered_targets
-    ]
     reserved_claims: list[tuple[str, Path]] = []
     for package in packages:
         for reserved_path in package.reserved_paths or ():
             rendered_path = render_template_string(reserved_path, context, base_dir=package.package_root, source_path=package.package_root)
             reserved_claims.append((package.id, expand_path(rendered_path, dereference=False)))
 
-    validate_reserved_path_claims(target_claims=target_claims, reserved_claims=reserved_claims)
+    validate_reserved_path_claims(repo_name=repo_name, target_claims=claims, reserved_claims=reserved_claims)
 
 
 def validate_reserved_path_claims(
     *,
-    target_claims: list[tuple[str, str, Path]],
+    repo_name: str,
+    target_claims: list[TargetClaim],
     reserved_claims: list[tuple[str, Path]],
 ) -> None:
-
+    """Reject claims inside another package's reserved paths, within one repo."""
+    package_label = lambda package_id: f"{repo_name}:{package_id}"
     for package_id, reserved_path in reserved_claims:
-        for target_package_id, target_label, target_path in target_claims:
-            if package_id == target_package_id:
+        for claim in target_claims:
+            if package_id == claim.package_id:
                 continue
-            if paths_conflict(reserved_path, target_path):
+            if paths_conflict(reserved_path, claim.live_path):
                 raise ValueError(
-                    f"reserved path conflict: {package_id} reserves {reserved_path} and {target_label} maps to {target_path}"
+                    f"reserved path conflict: {package_label(package_id)} reserves {reserved_path} "
+                    f"and {claim.label} maps to {claim.live_path}"
                 )
 
     for index, (package_id, reserved_path) in enumerate(reserved_claims):
@@ -200,7 +200,8 @@ def validate_reserved_path_claims(
                 continue
             if paths_conflict(reserved_path, other_reserved_path):
                 raise ValueError(
-                    f"reserved path conflict: {package_id} reserves {reserved_path} and {other_package_id} reserves {other_reserved_path}"
+                    f"reserved path conflict: {package_label(package_id)} reserves {reserved_path} "
+                    f"and {package_label(other_package_id)} reserves {other_reserved_path}"
                 )
 
 

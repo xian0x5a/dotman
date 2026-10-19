@@ -233,7 +233,7 @@ def test_pull_rejects_nested_repo_paths_even_when_live_paths_do_not_conflict(
     write_nested_pull_only_repo(repo_root, nested_repo_paths=True)
     engine = DotmanEngine.from_config_path(write_single_repo_config(tmp_path, repo_name="fixture", repo_path=repo_root))
 
-    with pytest.raises(ValueError, match=r"incompatible nested targets: parent:config contains child:generated"):
+    with pytest.raises(ValueError, match=r"incompatible nested targets: fixture:parent\.config contains fixture:child\.generated"):
         open_tracked_pull_session(engine, tmp_path, entries=[("parent", "default"), ("child", "default")])
 
 
@@ -379,7 +379,7 @@ def test_package_reserved_paths_conflict_with_other_package_target(
 
     with pytest.raises(
         ValueError,
-        match=r"reserved path conflict: alpha reserves .+shared and beta:beta maps to .+shared/beta\.conf",
+        match=r"reserved path conflict: fixture:alpha reserves .+shared and fixture:beta\.beta maps to .+shared/beta\.conf",
     ):
         engine.resolve_sync_scope()
 
@@ -422,7 +422,7 @@ def test_package_reserved_paths_conflict_with_other_package_reserved_paths(
 
     with pytest.raises(
         ValueError,
-        match=r"reserved path conflict: alpha reserves .+shared and beta reserves .+shared/session",
+        match=r"reserved path conflict: fixture:alpha reserves .+shared and fixture:beta reserves .+shared/session",
     ):
         engine.resolve_sync_scope()
 

@@ -19,7 +19,7 @@ from dotman.collisions import (
     validate_target_collisions,
 )
 from dotman.config import expand_path
-from dotman.projection import rendered_target_is_directory
+from dotman.projection import rendered_target_is_directory, target_claim
 from dotman.templates import render_template_string
 
 
@@ -31,7 +31,7 @@ def _validate_reserved_paths(
     for repo_name in dict.fromkeys(item.repo.config.name for item in planning_inputs):
         repo_inputs = [item for item in planning_inputs if item.repo.config.name == repo_name]
         target_claims = [
-            (metadata.package_id, f"{metadata.package_id}:{metadata.target_name}", metadata.live_path)
+            target_claim(metadata)
             for item in repo_inputs
             for metadata in item.target_metadata
             if planning.target_claims_path(metadata.target)
@@ -47,7 +47,7 @@ def _validate_reserved_paths(
                     base_dir=package.package_root, source_path=package.package_root,
                 )
                 reserved_claims.append((package.id, expand_path(rendered_path, dereference=False)))
-        validate_reserved_path_claims(target_claims=target_claims, reserved_claims=reserved_claims)
+        validate_reserved_path_claims(repo_name=repo_name, target_claims=target_claims, reserved_claims=reserved_claims)
 
 
 @dataclass(frozen=True)
@@ -309,7 +309,7 @@ def resolve_sync_scope(
         # Validate path nesting after ownership has selected the winning target
         # at each live/repository write path.
         winning_target_keys = winner_keys_by_operation[operation]
-        rendered_targets = []
+        claims = []
         for planning_input in planning_inputs:
             for metadata in planning_input.target_metadata:
                 if not planning.target_claims_path(metadata.target):
@@ -328,21 +328,11 @@ def resolve_sync_scope(
                 )
                 if metadata_key not in winning_target_keys:
                     continue
-                rendered_targets.append(
-                    (
-                        metadata.package,
-                        metadata.target,
-                        metadata.repo_path,
-                        metadata.live_path,
-                        metadata.ignore_patterns,
-                        metadata.live_path_is_symlink,
-                        metadata.live_path_symlink_target,
-                    )
-                )
-                primary_targets[metadata_key] = rendered_targets[-1]
+                claims.append(target_claim(metadata))
+                primary_targets[metadata_key] = claims[-1]
                 primary_metadata[metadata_key] = metadata
                 primary_gitignore[(metadata.repo_path, metadata.live_path)] = metadata.gitignore
-        validate_target_collisions(rendered_targets, operation=operation, gitignore_chains={
+        validate_target_collisions(claims, operation=operation, gitignore_chains={
             (metadata.repo_path, metadata.live_path): metadata.gitignore
             for planning_input in planning_inputs for metadata in planning_input.target_metadata
         })
