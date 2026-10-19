@@ -66,6 +66,18 @@ def _fzf_available() -> bool:
 # user cancel. Any other failure is fzf's own error, such as an unknown option.
 _FZF_CANCEL_EXIT_CODES = frozenset({1, 130})
 
+# fzf prepends FZF_DEFAULT_OPTS to its arguments, and later options win. Reset
+# the user defaults that change how options are read or how the pick is printed,
+# so the output stays one "<index> <fields>" line, while theme and layout
+# defaults still apply. `--accept-nth` (fzf 0.60+) has no reset and is unsupported.
+_FZF_PINNED_RECORD_OPTIONS = (
+    "--no-multi",
+    "--no-print-query",
+    "--no-expect",
+    "--no-read0",
+    "--no-print0",
+)
+
 
 def choose_with_fzf(
     runtime: CommandRuntime,
@@ -90,6 +102,7 @@ def choose_with_fzf(
                     "--wrap",
                     "--with-nth=2..",
                     "--no-sort",
+                    *_FZF_PINNED_RECORD_OPTIONS,
                 )
             ),
             input=("\n".join(entries) + "\n").encode("utf-8"),
