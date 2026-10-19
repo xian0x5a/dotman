@@ -8,7 +8,7 @@ import threading
 import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import ExitStack, contextmanager
+from contextlib import ExitStack, contextmanager, nullcontext
 from contextvars import ContextVar, copy_context
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -71,6 +71,11 @@ class CommandRequest:
     stderr_sink: TextIO | None = field(default=None, compare=False, repr=False)
     elevation: ElevationMode = "none"
     isolate_process_group: bool = True
+    # Pipe commands put the terminal modes back afterwards, in case a child that
+    # opened /dev/tty died mid-change. A command that never touches the terminal
+    # and may overlap a foreground terminal user (sudo keepalive) opts out, or
+    # its restore would undo that user's mode changes.
+    preserve_terminal: bool = True
 
     def __post_init__(self) -> None:
         if self.io not in {"pipe", "tty"}:
@@ -79,6 +84,8 @@ class CommandRequest:
             raise ValueError("tty command input must come from the terminal")
         if self.io == "tty" and self.stream_output:
             raise ValueError("tty command output belongs to the terminal")
+        if self.io == "tty" and not self.preserve_terminal:
+            raise ValueError("tty commands always restore the terminal")
         object.__setattr__(self, "env", MappingProxyType(dict(self.env)))
 
 
@@ -327,7 +334,7 @@ class ProductionCommandRuntime(_CancellationLatch):
             finally:
                 stream.close()
 
-        with preserve_terminal_state():
+        with preserve_terminal_state() if request.preserve_terminal else nullcontext():
             # Elevated commands stay in the invoking terminal session so sudo's
             # tty-scoped lease remains usable. Ordinary pipe commands own a new
             # process group so interruption can stop the complete shell tree.

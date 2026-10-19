@@ -99,7 +99,8 @@ class _SudoLease:
 
     def _keepalive_loop(self, stop_event: threading.Event) -> None:
         while not stop_event.wait(_SUDO_KEEPALIVE_INTERVAL_SECONDS):
-            self._runtime.run(_sudo_request("-n", "true"))
+            # `-n` never prompts, and a tty hook may own the terminal meanwhile.
+            self._runtime.run(_sudo_request("-n", "true", preserve_terminal=False))
 
     def close(self) -> None:
         if not self._acquired:
