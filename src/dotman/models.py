@@ -263,8 +263,7 @@ class PackageSpec:
     id: str
     package_root: Path
     description: str | None = None
-    # None until resolution so extends can tell "unset" from an explicit value.
-    binding_mode: str | None = None
+    binding_mode: str = "singleton"
     sync_policy: str | None = None
     depends: tuple[str, ...] | None = None
     extends: tuple[str, ...] | None = None
@@ -276,6 +275,8 @@ class PackageSpec:
     hooks: dict[str, HookSpec] | None = None
     remove: tuple[str, ...] | None = None
     append: dict[str, Any] | None = None
+    # Lets extends tell an omitted binding_mode from an explicit "singleton".
+    binding_mode_explicit: bool = False
 
 
 @dataclass(frozen=True)

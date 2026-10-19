@@ -586,7 +586,11 @@ def test_package_binding_mode_inherits_through_extends(
         },
     )
     engine = DotmanEngine.from_config_path(config_path)
+    repo = engine.get_repo("fixture")
+    # Resolve the parents first: their cached results must not turn an unset binding_mode into an explicit one.
+    repo.resolve_package("plain")
+    repo.resolve_package("base")
 
-    assert engine.get_repo("fixture").resolve_package("child").binding_mode == expected_binding_mode
+    assert repo.resolve_package("child").binding_mode == expected_binding_mode
     catalog_modes = {entry.selector: entry.binding_mode for entry in engine.list_trackables() if entry.kind == "package"}
     assert catalog_modes == {"base": "multi_instance", "plain": "singleton", "child": expected_binding_mode}
