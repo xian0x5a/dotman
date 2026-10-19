@@ -407,7 +407,10 @@ repository sources only through deliberate Editor changes.
   and applied Additional Source Changes. dotman stages them with
   `git add -A -- <paths>` and commits with `git commit -- <paths>`, so unrelated
   staged or unstaged work stays out. Files a pull hook writes are not included,
-  and, as with `git add -A`, neither is an untracked source git ignores.
+  and, as with `git add -A`, neither is an untracked source git ignores. A git
+  repository nested inside a directory source is left out the same way: its
+  files belong to that repository, and `git add` would fail on it or record an
+  empty-directory gitlink.
   A repo with nothing left to commit reports `no-changes`.
 - The message comes from `[git] commit_message` ([config](config.md#git)). It
   names only the targets whose sources the commit records; the Deck's message

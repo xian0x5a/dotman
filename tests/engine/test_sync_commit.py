@@ -341,3 +341,37 @@ def test_commit_keeps_an_ignored_source_the_user_untracked_out_of_history(
         assert git(root, "show", "--name-status", "--format=", "HEAD").splitlines() == committed
     # The user's staged deletion is left as it was.
     assert git(root, "status", "--porcelain", "--", untracked).splitlines() == [f"D  {untracked}"]
+
+
+@pytest.mark.parametrize("nested_has_commit", [
+    # `git add` cannot index a repository with nothing checked out (#281).
+    pytest.param(False, id="nested-repo-without-commits"),
+    # `git add` would record a gitlink, which restores as an empty directory.
+    pytest.param(True, id="nested-repo-with-commit"),
+])
+def test_commit_leaves_a_nested_repository_out_of_a_directory_source(tmp_path, nested_has_commit):
+    root = staged_work_tree(tmp_path, {"src/a": "old"})
+    nested = root / "src/sub"
+    nested.mkdir()
+    git(nested, "init", "-q")
+    (nested / "f").write_text("nested")
+    if nested_has_commit:
+        git(nested, "add", "f")
+        git(nested, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-qm", "nested")
+    (root / "src/a").write_text("new")
+
+    assert commit_written_sources(root, ["src"]) is not None
+    assert git(root, "show", "--name-status", "--format=", "HEAD").splitlines() == ["M\tsrc/a"]
+    # The nested repository stays as it was: untracked, not a gitlink.
+    assert git(root, "status", "--porcelain", "--", "src").splitlines() == ["?? src/sub/"]
+
+
+def test_commit_finds_nothing_when_only_a_nested_repository_changed(tmp_path):
+    root = staged_work_tree(tmp_path, {"src/a": "same"})
+    (root / "src/sub").mkdir()
+    git(root / "src/sub", "init", "-q")
+    (root / "src/sub/f").write_text("nested")
+    head = git(root, "rev-parse", "HEAD")
+
+    assert commit_written_sources(root, ["src"]) is None
+    assert git(root, "rev-parse", "HEAD") == head
