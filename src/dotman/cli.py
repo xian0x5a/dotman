@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
@@ -17,6 +18,13 @@ if TYPE_CHECKING:
 INTERRUPTED_EXIT_CODE = 130
 
 
+class RootUnderSudoError(ValueError):
+    def __init__(self, invoking_user: str) -> None:
+        self.detail = f"dotman does not run as root under sudo (started by {invoking_user})"
+        self.hint = f"Run dotman as {invoking_user}; it asks for sudo itself when a protected path needs it."
+        super().__init__(self.detail)
+
+
 def main(
     argv: Sequence[str] | None = None,
     *,
@@ -30,6 +38,7 @@ def main(
         if args.command in StandaloneCommandRunner.command_names:
             selected_runner = StandaloneCommandRunner()
         else:
+            _refuse_root_under_sudo()
             selected_runner = _repo_command_runner(args, None if no_confirm else interaction)
         with command_operation(), interaction_scope(no_confirm=args.no_confirm):
             return selected_runner.run(args)
@@ -56,6 +65,17 @@ def _emit_error(exc: Exception, *, use_color: bool) -> None:
     from dotman.cli_emit import emit_error
 
     emit_error(exc, use_color=use_color)
+
+
+def _refuse_root_under_sudo() -> None:
+    # Repo commands write the repo, Sync Base and state as the running user, so a
+    # root run started by sudo would strand root-owned files the user can no
+    # longer edit (#171). dotman elevates protected paths itself instead.
+    # Standalone helpers skip this check: elevated hooks may pipe through them.
+    # Root calling sudo (SUDO_USER=root, e.g. provisioning scripts) owns its files anyway.
+    invoking_user = os.environ.get("SUDO_USER")
+    if invoking_user and invoking_user != "root" and os.geteuid() == 0:
+        raise RootUnderSudoError(invoking_user)
 
 
 def _repo_command_runner(args: Any, interaction: Interaction | None) -> Any:
