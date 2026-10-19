@@ -241,21 +241,13 @@ def test_commit_leaves_out_ignored_untracked_sources(tmp_path, monkeypatch):
     assert result.status == "completed", result
     assert [(commit.repo, commit.status) for commit in result.commits] == [("main", "committed")]
     assert git(repo, "show", "--name-only", "--format=", "HEAD").split() == ["packages/app/first"]
-    assert (repo / "packages/app/second").read_bytes() == b"live second"
-    # Nothing stays staged, and the ignored source stays untracked.
-    assert git(repo, "status", "--porcelain").splitlines() == []
-
-
-def test_commit_message_counts_only_committed_targets(tmp_path, monkeypatch):
-    engine = make_engine(tmp_path, monkeypatch, TWO_DRIFTED)
-    repo = tmp_path / "repo"
-    ignore_untracked(repo, "second")
-    with engine.open_pull_session(engine.resolve_sync_scope(), commit=True) as session:
-        result = session.execute().result
-    assert result.status == "completed", result
+    # The message names only the target the commit records.
     subject = git(repo, "log", "-1", "--format=%s").strip()
     assert subject == "chore(dotman): pull app.first"
     assert result.commits[0].message.splitlines()[0] == subject
+    assert (repo / "packages/app/second").read_bytes() == b"live second"
+    # Nothing stays staged, and the ignored source stays untracked.
+    assert git(repo, "status", "--porcelain").splitlines() == []
 
 
 def test_commit_keeps_tracked_sources_that_gitignore_matches(tmp_path, monkeypatch):

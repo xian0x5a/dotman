@@ -102,7 +102,7 @@ def probe_work_tree(path: Path, runtime: CommandRuntime) -> GitWorkTree | None:
 
 
 def committable_paths(root: Path, paths: Sequence[Path], runtime: CommandRuntime) -> tuple[Path, ...]:
-    """The `paths` with changes a commit would record, read without touching the index.
+    """The `paths` with changes a commit would record, decided before anything is staged.
 
     Like `git add -A`, git status leaves out untracked sources git ignores: they
     are kept out of history on purpose. It also leaves out unchanged sources and
@@ -113,8 +113,8 @@ def committable_paths(root: Path, paths: Sequence[Path], runtime: CommandRuntime
     # Each -z entry is "XY <path>", relative to the work tree root.
     changed = {root / entry[3:] for entry in status.split("\0") if entry}
     # A directory source covers the changed files below it.
-    return tuple(path for path in dict.fromkeys(paths)
-                 if path in changed or any(path in name.parents for name in changed))
+    covered = changed.union(*(name.parents for name in changed))
+    return tuple(path for path in dict.fromkeys(paths) if path in covered)
 
 
 def commit_sources(root: Path, paths: Sequence[Path], message: str, runtime: CommandRuntime) -> str | None:
