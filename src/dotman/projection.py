@@ -22,8 +22,8 @@ from dotman.ignore import GitIgnoreChain, collect_gitignore_chain
 from dotman.manifest import (
     FORCED_COMMAND_PREFIX,
     flatten_vars,
-    merge_ignore_patterns,
     resolve_sync_policy,
+    resolve_target_ignore,
     sync_policy_allows_operation,
 )
 from dotman.models import (
@@ -248,17 +248,13 @@ def build_target_metadata(
                 if target.capture != "raw"
                 else None
             )
-            gitignore_enabled = package.gitignore_enabled if package.gitignore_enabled is not None else repo.ignore_defaults.gitignore
-            pattern_layers: list[tuple[str, ...]] = [repo.ignore_defaults.patterns]
+            ignore_patterns, gitignore_enabled = resolve_target_ignore(
+                defaults=repo.ignore_defaults, package=package, target=target
+            )
             gitignore = (
                 collect_gitignore_chain(repo_path, repo.root, nested=inspect_gitignore_patterns)
                 if gitignore_enabled else None
             )
-            if package.ignore_patterns is not None:
-                pattern_layers.append(package.ignore_patterns)
-            if target.ignore_patterns is not None:
-                pattern_layers.append(target.ignore_patterns)
-            ignore_patterns = merge_ignore_patterns(*pattern_layers)
             skip_markers = repo.ignore_defaults.skip_markers
             path_rules = render_target_path_rules(target.path_rules, context=context, base_dir=target.declared_in)
             metadata_targets.append(

@@ -180,8 +180,7 @@ class StateCommandRunner:
         repo_name = destination.repo_name
         package_id = destination.package_id
         result = prepare_add_to_package(
-            repo_root=engine.get_repo(repo_name).root,
-            repo_name=repo_name,
+            repo=engine.get_repo(repo_name),
             package_id=package_id,
             live_path_text=args.live_path,
         )

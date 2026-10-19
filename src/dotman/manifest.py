@@ -7,7 +7,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from dotman.models import AdditionalSource, DefaultCommandElevationMode, EditorSpec, HookCommandSpec, HookSpec, PackageSpec, TargetPathRule, TargetSpec, repo_qualified_target_text
+from dotman.models import AdditionalSource, DefaultCommandElevationMode, EditorSpec, HookCommandSpec, HookSpec, PackageSpec, RepoIgnoreDefaults, TargetPathRule, TargetSpec, repo_qualified_target_text
 from dotman.presets import BUILTIN_TARGET_PRESETS, get_builtin_target_preset
 
 
@@ -847,6 +847,19 @@ def merge_ignore_patterns(*pattern_sets: tuple[str, ...]) -> tuple[str, ...]:
     negation and then reinstated by the same exclusion text.
     """
     return tuple(pattern for pattern_set in pattern_sets for pattern in pattern_set)
+
+
+def resolve_target_ignore(
+    *, defaults: RepoIgnoreDefaults, package: PackageSpec, target: TargetSpec
+) -> tuple[tuple[str, ...], bool]:
+    """Layer repo, package, then target ignore patterns; return them with whether gitignore applies."""
+    gitignore_enabled = package.gitignore_enabled if package.gitignore_enabled is not None else defaults.gitignore
+    patterns = merge_ignore_patterns(
+        defaults.patterns,
+        package.ignore_patterns or (),
+        target.ignore_patterns or (),
+    )
+    return patterns, gitignore_enabled
 
 
 def normalize_gitignore_enabled(value: Any, *, context: str) -> bool | None:

@@ -11,10 +11,21 @@ from pathlib import Path, PurePosixPath
 import tomlkit
 
 from dotman.atomic_files import write_text_atomic
-from dotman.collisions import paths_conflict
+from dotman.collisions import TargetClaim, validate_target_collisions
 from dotman.command_runtime import ArgvCommand, CommandRequest, current_command_runtime
 from dotman.config import expand_path
-from dotman.manifest import PACKAGE_MANIFEST_FILE_NAME, discover_package_manifests, validate_package_id, validate_target_name
+from dotman.ignore import GitIgnoreChain, collect_gitignore_chain
+from dotman.manifest import (
+    PACKAGE_MANIFEST_FILE_NAME,
+    discover_package_manifests,
+    resolve_sync_policy,
+    resolve_target_ignore,
+    sync_policy_allows_operation,
+    validate_package_id,
+    validate_target_name,
+)
+from dotman.models import PackageSpec, TargetSpec, repo_qualified_target_text
+from dotman.repository import Repository
 from dotman.toml_utils import load_toml_text
 
 
@@ -67,8 +78,7 @@ class AddOperationResult:
 class ExistingTargetMetadata:
     names: set[str]
     paths: set[str]
-    # Each declared `source` with the live `path` of the target that declares it.
-    source_paths: dict[str, str | None]
+    sources: set[str]
 
 
 @dataclass(frozen=True)
@@ -181,7 +191,8 @@ def ensure_new_package_holds_no_packages(*, repo_root: Path, repo_name: str, pac
         )
 
 
-def prepare_add_to_package(*, repo_root: Path, repo_name: str, package_id: str, live_path_text: str) -> AddOperationResult:
+def prepare_add_to_package(*, repo: Repository, package_id: str, live_path_text: str) -> AddOperationResult:
+    repo_root, repo_name = repo.root, repo.config.name
     live_spec = resolve_live_path_spec(live_path_text)
     manifest_path = package_manifest_path(repo_root=repo_root, package_id=package_id)
     ensure_package_is_not_inside_another(repo_root=repo_root, repo_name=repo_name, package_id=package_id)
@@ -199,11 +210,14 @@ def prepare_add_to_package(*, repo_root: Path, repo_name: str, package_id: str, 
             f"package '{repo_name}:{package_id}' already declares target path '{live_spec.config_path}'"
         )
     target_name = next_available_target_name(live_spec.target_name_base, existing_targets.names)
-    source_path = next_available_source_path(live_spec.source_path, set(existing_targets.source_paths))
-    ensure_source_does_not_nest_unrelated_source(
+    source_path = next_available_source_path(live_spec.source_path, existing_targets.sources)
+    ensure_target_nests_compatibly(
+        repo=repo,
+        package_id=package_id,
+        manifest_path=manifest_path,
+        target_name=target_name,
         source_path=source_path,
         config_path=live_spec.config_path,
-        existing_source_paths=existing_targets.source_paths,
     )
     target_block = render_target_block(
         target_name=target_name,
@@ -268,7 +282,7 @@ def read_existing_target_metadata(
     package_id: str | None = None,
 ) -> ExistingTargetMetadata:
     if not manifest_text.strip():
-        return ExistingTargetMetadata(names=set(), paths=set(), source_paths={})
+        return ExistingTargetMetadata(names=set(), paths=set(), sources=set())
     payload = load_toml_text(
         manifest_text,
         context=_manifest_context(manifest_path=manifest_path, repo_name=repo_name, package_id=package_id),
@@ -276,7 +290,7 @@ def read_existing_target_metadata(
     )
     targets_payload = payload.get("targets")
     if not isinstance(targets_payload, dict):
-        return ExistingTargetMetadata(names=set(), paths=set(), source_paths={})
+        return ExistingTargetMetadata(names=set(), paths=set(), sources=set())
     target_names = set(targets_payload)
     for target_name in target_names:
         validate_target_name(target_name)
@@ -285,8 +299,8 @@ def read_existing_target_metadata(
         names=target_names,
         paths={target_payload["path"] for target_payload in target_payloads if isinstance(target_payload.get("path"), str)},
         # Normalized so `./files/x` and `files/x/` count as the source `add` derives as `files/x`.
-        source_paths={
-            PurePosixPath(target_payload["source"]).as_posix(): target_payload.get("path")
+        sources={
+            PurePosixPath(target_payload["source"]).as_posix()
             for target_payload in target_payloads
             if isinstance(target_payload.get("source"), str)
         },
@@ -329,30 +343,70 @@ def next_available_source_path(base_source: str, existing_sources: set[str]) -> 
     return candidate
 
 
-def ensure_source_does_not_nest_unrelated_source(
+def ensure_target_nests_compatibly(
     *,
+    repo: Repository,
+    package_id: str,
+    manifest_path: Path,
+    target_name: str,
     source_path: str,
     config_path: str,
-    existing_source_paths: dict[str, str | None],
 ) -> None:
-    # Dropped leading dots let live paths that do not nest (`~/.config/foo`, `~/config/foo/bar`)
-    # derive nested sources, which push and pull reject as incompatible nested targets.
-    # Nested live paths may share nested sources; the existing target's ignore rules decide that.
-    new_source = PurePosixPath(source_path)
-    for existing_source, existing_config_path in existing_source_paths.items():
-        existing = PurePosixPath(existing_source)
-        if existing not in new_source.parents and new_source not in existing.parents:
+    """Refuse a target that push or pull would reject as nested with a declared target.
+
+    Runs the engine's own ownership rule (`validate_target_collisions`), so the parent's
+    ignore patterns, gitignore rules and sync policy decide exactly as they do at sync time.
+    Only the package's declared (unrendered) targets are compared; paths that need a profile
+    to render cannot be checked here.
+    """
+    package = repo.resolve_package(package_id) if package_id in repo.packages else PackageSpec(
+        id=package_id, package_root=manifest_path.parent
+    )
+    new_target = TargetSpec(name=target_name, declared_in=manifest_path.parent, source=source_path, path=config_path)
+    new_claim, new_chain = _declared_target_claim(repo=repo, package=package, target=new_target)
+    for other in (package.targets or {}).values():
+        if other.disabled or other.probe is not None or other.source is None or other.path is None:
             continue
-        if isinstance(existing_config_path, str) and paths_conflict(
-            expand_path(config_path, dereference=False), expand_path(existing_config_path, dereference=False)
-        ):
-            continue
-        existing_path_text = f"unrelated path '{existing_config_path}'" if existing_config_path else "a target"
-        raise ValueError(
-            f"cannot add '{config_path}': its source '{source_path}' would nest with the source "
-            f"'{existing_source}' of {existing_path_text}, which push and pull "
-            "reject; give one of the targets a different source in the package manifest"
-        )
+        other_claim, other_chain = _declared_target_claim(repo=repo, package=package, target=other)
+        for operation in ("push", "pull"):
+            # Push only writes targets whose policy allows it; the pull check is the union sync makes.
+            if operation == "push" and not all(
+                sync_policy_allows_operation(resolve_sync_policy(package=package, target=target), operation=operation)
+                for target in (new_target, other)
+            ):
+                continue
+            try:
+                validate_target_collisions(
+                    [new_claim, other_claim],
+                    operation=operation,
+                    gitignore_chains={
+                        (new_claim.repo_path, new_claim.live_path): new_chain,
+                        (other_claim.repo_path, other_claim.live_path): other_chain,
+                    },
+                )
+            except ValueError as error:
+                raise ValueError(
+                    f"cannot add '{config_path}': {operation} would fail with: {error}; "
+                    "cover the nested path with the parent target's ignore patterns, "
+                    "or give one of the targets a different path or source in the package manifest"
+                ) from None
+
+
+def _declared_target_claim(
+    *, repo: Repository, package: PackageSpec, target: TargetSpec
+) -> tuple[TargetClaim, GitIgnoreChain | None]:
+    repo_path = expand_path(str(target.declared_in / target.source), dereference=False)
+    ignore_patterns, gitignore_enabled = resolve_target_ignore(
+        defaults=repo.ignore_defaults, package=package, target=target
+    )
+    claim = TargetClaim(
+        owner=package.id,
+        label=repo_qualified_target_text(repo_name=repo.config.name, package_id=package.id, target_name=target.name),
+        repo_path=repo_path,
+        live_path=expand_path(target.path, dereference=False),
+        ignore_patterns=ignore_patterns,
+    )
+    return claim, collect_gitignore_chain(repo_path, repo.root, nested=False) if gitignore_enabled else None
 
 
 def render_target_block(*, target_name: str, source_path: str, config_path: str, chmod: str | None) -> str:
