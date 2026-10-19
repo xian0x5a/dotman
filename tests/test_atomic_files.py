@@ -313,11 +313,11 @@ def test_write_bytes_atomic_refuses_to_replace_a_file_whose_owner_it_cannot_keep
     # file over.
     target_path = tmp_path / "service.conf"
     target_path.write_bytes(b"before\n")
-    real_stat = Path.stat
+    real_lstat = Path.lstat
     foreign_uid = os.getuid() + 1
 
-    def stat_reporting_a_foreign_owner(path: Path, *args, **kwargs) -> os.stat_result:
-        result = real_stat(path, *args, **kwargs)
+    def lstat_reporting_a_foreign_owner(path: Path) -> os.stat_result:
+        result = real_lstat(path)
         if path != target_path:
             return result
         fields = list(result)
@@ -328,7 +328,7 @@ def test_write_bytes_atomic_refuses_to_replace_a_file_whose_owner_it_cannot_keep
         if uid not in (-1, os.getuid()):
             raise PermissionError(1, "Operation not permitted")
 
-    monkeypatch.setattr(Path, "stat", stat_reporting_a_foreign_owner)
+    monkeypatch.setattr(Path, "lstat", lstat_reporting_a_foreign_owner)
     monkeypatch.setattr(os, "fchown", unprivileged_fchown)
 
     with pytest.raises(PermissionError):
@@ -375,3 +375,44 @@ def test_atomic_write_is_durable_before_it_returns(tmp_path: Path, monkeypatch, 
 
     expected = ["replace", "fsync-directory"] if target_path.is_symlink() else ["fsync-file", "replace", "fsync-directory"]
     assert events == expected
+
+
+def test_write_bytes_atomic_replacing_a_symlink_does_not_copy_the_owner_of_its_destination(tmp_path: Path) -> None:
+    # The rename replaces the link itself, so the destination's owner is
+    # irrelevant: a link into /nix/store or /etc must not yield a root-owned file.
+    fresh_path = tmp_path / "fresh"
+    write_bytes_atomic(fresh_path, b"fresh\n")
+    destination_path = tmp_path / "destination"
+    destination_path.write_bytes(b"destination\n")
+    shared_gid = _a_supplementary_group_of_the_current_user(fresh_path.stat().st_gid)
+    os.chown(destination_path, -1, shared_gid)
+    link_path = tmp_path / "link"
+    link_path.symlink_to(destination_path)
+
+    write_bytes_atomic(link_path, b"after\n")
+
+    assert not link_path.is_symlink()
+    assert link_path.read_bytes() == b"after\n"
+    assert link_path.stat().st_gid == fresh_path.stat().st_gid
+    assert destination_path.stat().st_gid == shared_gid
+
+
+def test_atomic_write_makes_directories_it_creates_durable(tmp_path: Path, monkeypatch) -> None:
+    # A new snapshot generation lives in a new directory; its manifest is not
+    # durable until every directory entry leading to it is.
+    target_path = tmp_path / "new" / "deeper" / "config"
+    synced_directories: list[int] = []
+    real_fsync = os.fsync
+
+    def recording_fsync(file_descriptor: int) -> None:
+        synced = os.fstat(file_descriptor)
+        if stat.S_ISDIR(synced.st_mode):
+            synced_directories.append(synced.st_ino)
+        real_fsync(file_descriptor)
+
+    monkeypatch.setattr(os, "fsync", recording_fsync)
+
+    write_bytes_atomic(target_path, b"payload\n")
+
+    expected = {directory.stat().st_ino for directory in (tmp_path, tmp_path / "new", tmp_path / "new" / "deeper")}
+    assert expected <= set(synced_directories)

@@ -28,10 +28,10 @@ def _new_atomic_temp_path(directory: Path) -> Path:
 
 
 def write_bytes_atomic(path: Path, content: bytes, *, mode: int | None = None) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
+    _create_parent_directories_durably(path)
     cleanup_stale_atomic_temp_files(path.parent)
-    replaced_status = _replaced_file_status(path)
-    replacement_mode = mode if mode is not None else _permission_bits(replaced_status)
+    replacement_mode = mode if mode is not None else target_replacement_mode(path)
+    replaced_owner = _replaced_regular_file_owner(path)
     candidate_temp_path = _new_atomic_temp_path(path.parent)
     temp_path: Path | None = None
     # With a known replacement mode the temp file starts owner-only, so its
@@ -46,9 +46,9 @@ def write_bytes_atomic(path: Path, content: bytes, *, mode: int | None = None) -
         with os.fdopen(file_descriptor, "wb") as temp_file:
             temp_file.write(content)
             temp_file.flush()
-            if replaced_status is not None:
+            if replaced_owner is not None:
                 # Before fchmod: a chown clears setuid/setgid bits.
-                _keep_owner_and_group(temp_file.fileno(), replaced_status)
+                _keep_owner_and_group(temp_file.fileno(), replaced_owner)
             if replacement_mode is not None:
                 os.fchmod(temp_file.fileno(), replacement_mode)
             os.fsync(temp_file.fileno())
@@ -71,7 +71,7 @@ def write_text_atomic(
 
 
 def write_symlink_atomic(path: Path, target: str | Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
+    _create_parent_directories_durably(path)
     cleanup_stale_atomic_temp_files(path.parent)
     candidate_temp_path = _new_atomic_temp_path(path.parent)
     temp_path: Path | None = None
@@ -85,20 +85,24 @@ def write_symlink_atomic(path: Path, target: str | Path) -> None:
 
 
 
-def _replaced_file_status(path: Path) -> os.stat_result | None:
+def target_replacement_mode(path: Path) -> int | None:
     try:
-        return path.stat()
+        return stat.S_IMODE(path.stat().st_mode)
     except FileNotFoundError:
-        return None
-
-
-
-def _permission_bits(replaced_status: os.stat_result | None) -> int | None:
-    if replaced_status is None:
         # Exclusive creation already applies the process umask. Leaving that
         # mode intact avoids mutating the process-global umask during writes.
         return None
-    return stat.S_IMODE(replaced_status.st_mode)
+
+
+
+def _replaced_regular_file_owner(path: Path) -> os.stat_result | None:
+    # lstat: the rename replaces a symlink itself, so the owner of its
+    # destination (a root-owned file in /nix/store or /etc) must not carry over.
+    try:
+        replaced_entry = path.lstat()
+    except FileNotFoundError:
+        return None
+    return replaced_entry if stat.S_ISREG(replaced_entry.st_mode) else None
 
 
 
@@ -112,6 +116,19 @@ def _keep_owner_and_group(file_descriptor: int, replaced_status: os.stat_result)
     gid = replaced_status.st_gid if replaced_status.st_gid != created_status.st_gid else -1
     if uid != -1 or gid != -1:
         os.fchown(file_descriptor, uid, gid)
+
+
+
+def _create_parent_directories_durably(path: Path) -> None:
+    missing_directories: list[Path] = []
+    directory = path.parent
+    while not directory.exists():
+        missing_directories.append(directory)
+        directory = directory.parent
+    for directory in reversed(missing_directories):
+        directory.mkdir(exist_ok=True)
+        # The new file is durable only if the entries leading to it are.
+        _fsync_directory(directory.parent)
 
 
 
@@ -173,6 +190,7 @@ __all__ = [
     "cleanup_atomic_temp_file",
     "cleanup_stale_atomic_temp_files",
     "default_created_file_mode",
+    "target_replacement_mode",
     "write_bytes_atomic",
     "write_symlink_atomic",
     "write_text_atomic",
