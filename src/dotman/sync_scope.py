@@ -7,7 +7,6 @@ from typing import Sequence
 
 from dotman import planning, tracking
 from dotman.models import (
-    package_ref_text,
     ResolvedPackageIdentity,
     ResolvedPackageSelection,
     ResolvedSyncScope,
@@ -25,38 +24,33 @@ from dotman.projection import rendered_target_is_directory, target_claim
 from dotman.templates import render_template_string
 
 
-def _instance_ref(item: planning.PackagePlanningInput) -> str:
-    identity = item.selection.identity
-    return package_ref_text(package_id=identity.package_id, bound_profile=identity.bound_profile)
-
-
 def _validate_reserved_paths(
     planning_inputs: list[planning.PackagePlanningInput],
     winning_target_keys: set[tuple[str, str, str | None, str]],
 ) -> None:
     """Reject winning Push targets or reservations inside another package instance's reserved paths."""
-    for repo_name in dict.fromkeys(item.repo.config.name for item in planning_inputs):
-        repo_inputs = [item for item in planning_inputs if item.repo.config.name == repo_name]
-        # Claims are owned by package instances, so two instances of one
-        # `multi_instance` package are checked against each other.
-        target_claims = [
-            target_claim(metadata)
-            for item in repo_inputs
-            for metadata in item.target_metadata
-            if planning.target_claims_path(metadata.target)
-            and (repo_name, item.selection.identity.package_id, item.selection.identity.bound_profile,
-                 metadata.target_name) in winning_target_keys
-        ]
-        reserved_claims = []
-        for item in repo_inputs:
-            package = item.repo.resolve_package(item.selection.identity.package_id)
-            for reserved_path in package.reserved_paths or ():
-                rendered_path = render_template_string(
-                    reserved_path, item.package_context.context,
-                    base_dir=package.package_root, source_path=package.package_root,
-                )
-                reserved_claims.append((_instance_ref(item), expand_path(rendered_path, dereference=False)))
-        validate_reserved_path_claims(repo_name=repo_name, target_claims=target_claims, reserved_claims=reserved_claims)
+    # Claims are owned by package instances, repo-qualified so equal package IDs in
+    # different repos stay distinct, and checked across all repos in one pass.
+    # Two instances of one `multi_instance` package are checked against each other.
+    target_claims = [
+        target_claim(metadata)
+        for item in planning_inputs
+        for metadata in item.target_metadata
+        if planning.target_claims_path(metadata.target)
+        and (item.repo.config.name, item.selection.identity.package_id, item.selection.identity.bound_profile,
+             metadata.target_name) in winning_target_keys
+    ]
+    reserved_claims = []
+    for item in planning_inputs:
+        identity = item.selection.identity
+        package = item.repo.resolve_package(identity.package_id)
+        for reserved_path in package.reserved_paths or ():
+            rendered_path = render_template_string(
+                reserved_path, item.package_context.context,
+                base_dir=package.package_root, source_path=package.package_root,
+            )
+            reserved_claims.append((identity.canonical, expand_path(rendered_path, dereference=False)))
+    validate_reserved_path_claims(target_claims=target_claims, reserved_claims=reserved_claims)
 
 
 @dataclass(frozen=True)
