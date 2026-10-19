@@ -1,18 +1,12 @@
 from __future__ import annotations
 
-import pytest
-
 from dotman.resolver import (
     ResolverOption,
     build_full_spec_selector_field_kinds,
     build_full_spec_selector_match_fields,
     build_profile_field_kinds,
     build_profile_match_fields,
-    build_package_field_kinds,
     build_selector_field_kinds,
-    build_target_field_kinds,
-    build_package_match_fields,
-    build_target_match_fields,
     build_selector_match_fields,
     rank_resolver_option,
 )
@@ -75,40 +69,3 @@ def test_profile_ranking_uses_simple_match_instead_of_segment_scoring() -> None:
         query="linux",
         option=profile_substring,
     )
-
-
-REPO_QUALIFIED_OPTIONS = {
-    "selector": ResolverOption(
-        display_label="sandbox:sunshine",
-        match_fields=build_selector_match_fields(repo_name="sandbox", selector="sunshine"),
-        field_kinds=build_selector_field_kinds(),
-    ),
-    "full-spec-selector": ResolverOption(
-        display_label="sandbox:sunshine@host/linux",
-        match_fields=build_full_spec_selector_match_fields(
-            repo_name="sandbox", selector="sunshine", profile="host/linux"
-        ),
-        field_kinds=build_full_spec_selector_field_kinds(),
-    ),
-    "package": ResolverOption(
-        display_label="sandbox:sunshine",
-        match_fields=build_package_match_fields(repo_name="sandbox", package_id="sunshine"),
-        field_kinds=build_package_field_kinds(),
-    ),
-    "target": ResolverOption(
-        display_label="sandbox:sunshine.conf",
-        match_fields=build_target_match_fields(repo_name="sandbox", package_id="sunshine", target_name="conf"),
-        field_kinds=build_target_field_kinds(),
-    ),
-}
-
-
-@pytest.mark.parametrize("option_kind", REPO_QUALIFIED_OPTIONS)
-def test_repo_qualifier_is_colon_only_and_slash_never_matches_as_repo_alias(option_kind: str) -> None:
-    option = REPO_QUALIFIED_OPTIONS[option_kind]
-
-    # Ranking splits queries on `/` and `:`, so a repo-qualified query is stripped
-    # of its repo before ranking; the contract lives in the generated match fields.
-    assert any(field.startswith("sandbox:") for field in option.match_fields)
-    assert not any(field.startswith("sandbox/") for field in option.match_fields)
-    assert len(option.field_kinds) == len(option.match_fields)

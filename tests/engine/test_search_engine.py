@@ -76,4 +76,3 @@ def test_search_selectors_does_not_treat_slash_as_repo_qualifier(tmp_path: Path)
     assert [match.qualified_selector for match in colon_matches] == ["work:git"]
     assert colon_matches[0].match_reason == "exact_repo_qualified_selector"
     assert colon_matches[0].rank == 1
-
