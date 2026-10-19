@@ -4,11 +4,12 @@ import copy
 import functools
 import platform
 import shlex
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from graphlib import CycleError, TopologicalSorter
 from pathlib import Path
 from typing import Any
 
-from jinja2 import Environment, FileSystemLoader, Template, TemplateNotFound, TemplateSyntaxError, Undefined, UndefinedError, meta
+from jinja2 import Environment, FileSystemLoader, Template, TemplateNotFound, TemplateSyntaxError, Undefined, UndefinedError, meta, nodes
 
 
 class DotmanUndefined(Undefined):
@@ -87,27 +88,130 @@ def template_syntax_tokens(source: str) -> tuple[tuple[str, str], ...]:
     )
 
 
-def _resolve_node(value: Any, context: dict[str, Any]) -> Any:
-    """Recursively resolve Jinja2 references in a var value using the given context."""
-    if isinstance(value, str) and ("{{" in value or "{%" in value):
-        return _render_template(lambda: _compiled_string_template(Path("."), value), context)
-    if isinstance(value, dict):
-        return {k: _resolve_node(v, context) for k, v in value.items()}
-    return value
+VarPath = tuple[str | int, ...]
+
+
+def _is_template_string(value: Any) -> bool:
+    return isinstance(value, str) and ("{{" in value or "{%" in value)
+
+
+def _template_strings(value: Any, path: VarPath = ()) -> Iterator[tuple[VarPath, str]]:
+    """Yield the path and source of every template string nested in dicts and lists."""
+    if _is_template_string(value):
+        yield path, value
+    elif isinstance(value, dict):
+        for key, child in value.items():
+            yield from _template_strings(child, (*path, key))
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            yield from _template_strings(child, (*path, index))
+
+
+def _static_reference(node: nodes.Node) -> VarPath | None:
+    """Return the constant lookup chain of `name.attr['key'][0]`, or None when any step is dynamic."""
+    if isinstance(node, nodes.Name):
+        return (node.name,)
+    if isinstance(node, nodes.Getattr):
+        base = _static_reference(node.node)
+        return None if base is None else (*base, node.attr)
+    if isinstance(node, nodes.Getitem) and isinstance(node.arg, nodes.Const) and isinstance(node.arg.value, str | int):
+        base = _static_reference(node.node)
+        return None if base is None else (*base, node.arg.value)
+    return None
+
+
+def _lookup_chains(node: nodes.Node) -> Iterator[VarPath]:
+    reference = _static_reference(node)
+    if reference is not None:
+        yield reference
+        return
+    # A dynamic step still exposes its static prefix, e.g. `vars[name]` yields `vars`.
+    for child in node.iter_child_nodes():
+        yield from _lookup_chains(child)
+
+
+@functools.cache
+def _template_references(source: str) -> tuple[VarPath, ...]:
+    try:
+        parsed = _string_environment(Path(".")).parse(source)
+    except TemplateSyntaxError as exc:
+        raise JinjaRenderError(path=None, detail=str(exc)) from exc
+    context_names = meta.find_undeclared_variables(parsed)
+    return tuple(chain for chain in _lookup_chains(parsed) if chain[0] in context_names)
+
+
+def _referenced_var_path(reference: VarPath, variables: dict[str, Any]) -> VarPath | None:
+    """Map a lookup chain to the deepest var node it can reach, or None when it names no var.
+
+    Steps that are not keys (such as `.items()`) stop the walk, so the reference
+    depends on the whole node reached so far. A computed key (`vars[name]`) is
+    not known before rendering, so it depends on every var; when that includes
+    the referencing var itself, it is reported as a cycle rather than guessed.
+    """
+    head, *steps = reference
+    if head == "vars":
+        node: Any = variables
+        path: VarPath = ()
+    elif head in variables:
+        node, path = variables[head], (head,)
+    else:
+        return None
+    for step in steps:
+        if isinstance(node, dict) and step in node:
+            node = node[step]
+        elif isinstance(node, list) and isinstance(step, int) and -len(node) <= step < len(node):
+            # Template string paths use non-negative indexes, so `items[-1]` must match them.
+            step %= len(node)
+            node = node[step]
+        else:
+            break
+        path = (*path, step)
+    return path
+
+
+def _paths_overlap(first: VarPath, second: VarPath) -> bool:
+    shorter = min(len(first), len(second))
+    return first[:shorter] == second[:shorter]
+
+
+def _format_var_path(path: VarPath) -> str:
+    return "".join(f"[{step}]" if isinstance(step, int) else f".{step}" for step in path).lstrip(".")
+
+
+def _assign(container: Any, path: VarPath, value: Any) -> None:
+    for step in path[:-1]:
+        container = container[step]
+    container[path[-1]] = value
 
 
 def _resolve_vars_templates(variables: dict[str, Any]) -> dict[str, Any]:
-    """Iteratively resolve Jinja2 references within var values so vars can reference each other.
+    """Render every var template string once, after the var nodes it references.
 
-    Repeats until stable so chains like A = "{{ B }}", B = "{{ C }}" resolve fully.
+    Rendering once keeps `{% raw %}` output literal; a reference cycle has no
+    valid order and is reported instead of leaving template text in values.
     """
+    template_sources = dict(_template_strings(variables))
+    dependencies = {
+        path: {
+            other_path
+            for reference in _template_references(source)
+            if (target := _referenced_var_path(reference, variables)) is not None
+            for other_path in template_sources
+            if _paths_overlap(other_path, target)
+        }
+        for path, source in template_sources.items()
+    }
+    try:
+        render_order = tuple(TopologicalSorter(dependencies).static_order())
+    except CycleError as exc:
+        cycle = " -> ".join(_format_var_path(path) for path in exc.args[1])
+        raise JinjaRenderError(path=None, detail=f"vars reference each other in a cycle: {cycle}") from exc
+
     resolved = copy.deepcopy(variables)
-    for _ in range(10):
-        context = {**resolved, "vars": resolved}
-        new_resolved = {k: _resolve_node(v, context) for k, v in resolved.items()}
-        if new_resolved == resolved:
-            break
-        resolved = new_resolved
+    for path in render_order:
+        source = template_sources[path]
+        rendered = _render_template(lambda: _compiled_string_template(Path("."), source), {**resolved, "vars": resolved})
+        _assign(resolved, path, rendered)
     return resolved
 
 

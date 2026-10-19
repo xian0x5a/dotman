@@ -216,3 +216,39 @@ def test_template_context_cpu_arch_explicit_override_is_normalized() -> None:
     context = build_template_context({}, profile="basic", inferred_os="linux", cpu_arch="amd64")
 
     assert context["cpu_arch"] == "x86_64"
+
+
+@pytest.mark.parametrize(
+    ("variables", "name", "expected"),
+    [
+        ({"home": "/h", "paths": ["{{ home }}/a", {"nested": "{{ home }}/b"}]}, "paths", ["/h/a", {"nested": "/h/b"}]),
+        ({"literal": "{% raw %}{{ kept }}{% endraw %}", "copy": "{{ literal }}"}, "copy", "{{ kept }}"),
+        ({"home": "/h", "git": {"dir": "{{ home }}/git", "config": "{{ git.dir }}/config"}}, "git", {"dir": "/h/git", "config": "/h/git/config"}),
+        ({"git": {"dir": "/g", "config": "{{ vars['git'].dir }}/config"}}, "git", {"dir": "/g", "config": "/g/config"}),
+        ({"items": ["a", "{{ items[0] }}b"]}, "items", ["a", "ab"]),
+        ({"items": ["a", "{{ items[-2] }}b"]}, "items", ["a", "ab"]),
+        ({"theme": "dark", "palettes": {"dark": "{{ theme }}-bg"}, "bg": "{{ palettes[theme] }}"}, "bg", "dark-bg"),
+        ({"names": {"a": "x", "b": "{{ names.a }}"}, "all": "{% for key, value in vars.names.items() %}{{ value }}{% endfor %}"}, "all", "xx"),
+    ],
+)
+def test_template_context_renders_each_var_template_once_after_its_references(
+    variables: dict[str, object], name: str, expected: object
+) -> None:
+    context = build_template_context(variables, profile="basic", inferred_os="linux")
+
+    assert context[name] == expected
+    assert context["vars"][name] == expected
+
+
+@pytest.mark.parametrize(
+    "variables",
+    [
+        {"a": "{{ b }}", "b": "{{ a }}"},
+        {"x": "{{ x }}x"},
+        {"app": {"name": "{{ app }}"}},
+        {"a": "{{ vars.b }}", "b": ["{{ a }}"]},
+    ],
+)
+def test_template_context_rejects_var_reference_cycles(variables: dict[str, object]) -> None:
+    with pytest.raises(JinjaRenderError, match="cycle"):
+        build_template_context(variables, profile="basic", inferred_os="linux")
