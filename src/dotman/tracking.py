@@ -738,18 +738,20 @@ def record_tracked_package_entry(
 
 
 
-def validate_tracked_package_entry(
+def validate_tracked_package_entry_additions(
     context: "PlanningContext",
-    binding: FullSpecSelector,
+    bindings: list[FullSpecSelector],
 ) -> None:
+    """Validate the state that tracking all of `bindings` together would produce."""
     state = context.tracked_state
-    repo = get_repository(state, binding.repo)
     raw_entries_by_repo = raw_tracked_package_entries_by_repo(state)
-    raw_entries_by_repo[repo.config.name] = normalize_tracked_package_entry_set(
-        state,
-        persisted_tracked_package_entries_for_repo(repo, raw_entries_by_repo.get(repo.config.name, [])),
-        expand_tracked_package_entry_in_repo(repo, binding),
-    )
+    for binding in bindings:
+        repo = get_repository(state, binding.repo)
+        raw_entries_by_repo[repo.config.name] = normalize_tracked_package_entry_set(
+            state,
+            persisted_tracked_package_entries_for_repo(repo, raw_entries_by_repo.get(repo.config.name, [])),
+            expand_tracked_package_entry_in_repo(repo, binding),
+        )
     validate_tracked_package_entries(
         context,
         effective_tracked_package_entries_by_repo(state, raw_entries_by_repo),

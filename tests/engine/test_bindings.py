@@ -107,12 +107,14 @@ def test_preview_package_selection_implicit_overrides_returns_unique_packages(
     engine.record_tracked_package_entry(FullSpecSelector(repo="fixture", selector="beta-meta", selector_kind="package", profile="basic"))
 
     overrides = engine.preview_tracked_package_entry_implicit_overrides(
-        FullSpecSelector(
-            repo="fixture",
-            selector="alpha",
-            selector_kind="package",
-            profile="basic",
-        )
+        [
+            FullSpecSelector(
+                repo="fixture",
+                selector="alpha",
+                selector_kind="package",
+                profile="basic",
+            )
+        ]
     )
 
     assert len(overrides) == 1
