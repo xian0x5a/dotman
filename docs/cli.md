@@ -781,7 +781,7 @@ Examples: `dotman pull main:git.config`,
 - When tracked package entries resolve the same target path, explicit provenance should override implicit provenance.
 - Conflicting explicit candidates should fail, and conflicting implicit-only candidates should also fail.
 - In interactive `track`, dotman may offer a non-conflicting profile switch before failing.
-- In interactive `track`, an implicit-only conflict may also offer promotion of a conflicting package from the requested selector into an explicit package entry.
+- In interactive `track`, an implicit-only conflict may also offer to promote one of the conflicting packages into an explicit package entry. It lists each candidate as `repo:package@profile`, the repo and profile it is tracked under, and records the chosen package there.
 
 ## State
 

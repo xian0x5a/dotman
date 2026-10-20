@@ -242,25 +242,33 @@ class TrackResolver:
                 profile=candidate.selection.requested_profile,
             )
 
-        package_ids = sorted(
+        def promoted_binding(candidate) -> FullSpecSelector:
+            # Promote the candidate as it is tracked: an out-of-binding candidate
+            # may come from another repo or profile than the binding being tracked.
+            return FullSpecSelector(
+                repo=candidate.selection.identity.repo,
+                selector=candidate.package_id,
+                selector_kind="package",
+                profile=candidate.selection.requested_profile,
+            )
+
+        in_binding_candidates = [
+            candidate
+            for candidate in conflict.candidates
+            if candidate_binding(candidate) in candidate_bindings
+        ]
+        promotions = sorted(
             {
-                candidate.package_id
-                for candidate in conflict.candidates
-                if candidate_binding(candidate) in candidate_bindings
-            }
+                promoted_binding(candidate)
+                for candidate in in_binding_candidates or conflict.candidates
+            },
+            key=lambda promotion: (promotion.repo, promotion.selector, promotion.profile),
         )
-        if not package_ids:
-            package_ids = sorted({candidate.package_id for candidate in conflict.candidates})
-        if not package_ids:
+        if not promotions:
             return None
         binding_label = self._binding_label(binding)
-        if len(package_ids) == 1:
-            promoted = FullSpecSelector(
-                repo=binding.repo,
-                selector=package_ids[0],
-                selector_kind="package",
-                profile=binding.profile,
-            )
+        if len(promotions) == 1:
+            promoted = promotions[0]
             message = "\n".join(
                 [
                     f"Resolve implicit conflict for {binding_label}:",
@@ -278,22 +286,16 @@ class TrackResolver:
             ):
                 return promoted
             return None
-        selected_package = self._interaction.choose(
+        return self._interaction.choose(
             ChoiceRequest(
                 header_text=(
                     f"Select a conflicting package to track explicitly for {binding_label}:"
                 ),
                 options=tuple(
-                    ChoiceOption(value=package_id, label=package_id)
-                    for package_id in package_ids
+                    ChoiceOption(value=promotion, label=self._binding_label(promotion))
+                    for promotion in promotions
                 ),
             )
-        )
-        return FullSpecSelector(
-            repo=binding.repo,
-            selector=selected_package,
-            selector_kind="package",
-            profile=binding.profile,
         )
 
     def _select_non_conflicting_profile(

@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from dotman.cli import main
 from dotman.interaction import ScriptedInteraction
+from dotman.models import FullSpecSelector
 
 from tests.helpers import (
     REFERENCE_REPO,
@@ -760,7 +761,16 @@ def test_track_cli_can_promote_conflicting_package_from_implicit_conflict(
         encoding="utf-8",
     )
 
-    interaction = ScriptedInteraction(choices=["alpha"])
+    interaction = ScriptedInteraction(
+        choices=[
+            FullSpecSelector(
+                repo="fixture",
+                selector="alpha",
+                selector_kind="package",
+                profile="basic",
+            )
+        ]
+    )
 
     exit_code = main(
         [
@@ -796,6 +806,86 @@ def test_track_cli_can_promote_conflicting_package_from_implicit_conflict(
             "",
         ]
     )
+
+
+def test_track_cli_promotes_conflicting_package_in_its_own_repo(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+
+    # Both repos define alpha/beta, so a promotion that kept only the package id
+    # and reused the typed repo would silently track first:beta.
+    first_root = tmp_path / "first-repo"
+    second_root = tmp_path / "second-repo"
+    write_implicit_conflict_repo(first_root)
+    write_implicit_conflict_repo(second_root)
+    # `second` tracks beta-meta under a profile other than the typed `basic`, so a
+    # promotion that reused the typed profile would record beta@basic next to it.
+    (second_root / "profiles" / "work.toml").write_text("", encoding="utf-8")
+    config_path = write_named_manager_config(tmp_path, {"first": first_root, "second": second_root})
+
+    first_state = tmp_path / "state" / "dotman" / "repos" / "first" / "tracked-packages.toml"
+    second_state = tmp_path / "state" / "dotman" / "repos" / "second" / "tracked-packages.toml"
+    second_state.parent.mkdir(parents=True)
+    second_state.write_text(
+        "\n".join(
+            [
+                "schema_version = 1",
+                "",
+                "[[packages]]",
+                'repo = "second"',
+                'package_id = "beta-meta"',
+                'profile = "work"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    interaction = ScriptedInteraction(
+        choices=[
+            FullSpecSelector(
+                repo="second",
+                selector="beta",
+                selector_kind="package",
+                profile="work",
+            )
+        ]
+    )
+
+    exit_code = main(
+        ["--config", str(config_path), "track", "first:alpha-stack@basic"],
+        interaction=interaction,
+    )
+
+    assert exit_code == 0
+    assert [
+        (option.value.repo, option.value.selector, option.value.profile)
+        for option in interaction.requests[0].options
+    ] == [("first", "alpha", "basic"), ("second", "beta", "work")]
+    assert "tracked second:beta@work" in capsys.readouterr().out
+    assert second_state.read_text(encoding="utf-8") == "\n".join(
+        [
+            "schema_version = 1",
+            "",
+            "[[packages]]",
+            'repo = "second"',
+            'package_id = "beta"',
+            'profile = "work"',
+            "",
+            "[[packages]]",
+            'repo = "second"',
+            'package_id = "beta-meta"',
+            'profile = "work"',
+            "",
+        ]
+    )
+    assert not first_state.exists()
+
 
 def test_track_cli_skips_same_profile_package_override_prompt(
     tmp_path: Path,
