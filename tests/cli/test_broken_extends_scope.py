@@ -6,6 +6,7 @@ command, and JSON output, reports it as a stderr warning.
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -194,6 +195,50 @@ def test_naming_one_stale_instance_errors_on_it_and_still_warns_about_the_other(
     assert not any(named_row in line for line in warnings), output
     # The row the error did not name is still warned about, once.
     assert len([line for line in warnings if STALE_ROW in line]) == 1, output
+
+
+def _stale_row_with_package_deleted(tmp_path: Path) -> Path:
+    """Row `other:child@default` stays tracked after `child` is removed from the repo."""
+    config_path = _write_two_repo_config(tmp_path, "")
+    shutil.rmtree(tmp_path / "other-repo" / "packages" / STALE_PACKAGE)
+    return config_path
+
+
+def _stale_row_with_profile_deleted(tmp_path: Path) -> Path:
+    """Row `other:child@gone` stays tracked after profile `gone` is removed; `child` itself resolves."""
+    config_path = _write_two_repo_config(tmp_path, "")
+    write_tracked_packages_state(tmp_path / "state", repo_name=STALE_REPO, entries=[(STALE_PACKAGE, "gone")])
+    return config_path
+
+
+@pytest.mark.parametrize(
+    ("write_config", "stale_row"),
+    [
+        pytest.param(_stale_row_with_package_deleted, STALE_ROW, id="package-deleted"),
+        pytest.param(_stale_row_with_profile_deleted, f"{STALE_REPO}:{STALE_PACKAGE}@gone", id="profile-deleted"),
+    ],
+)
+def test_tracking_a_stale_row_whose_package_or_profile_is_gone_names_the_row_once(
+    tmp_path: Path, capsys, write_config, stale_row: str
+) -> None:
+    config_path = write_config(tmp_path)
+
+    code, output = _run(config_path, capsys, "track", stale_row)
+
+    assert code != 0
+    assert f"dotman untrack {stale_row}" in output, output
+    assert stale_row in output
+    assert not any(line.startswith("warning:") and stale_row in line for line in output.splitlines()), output
+
+
+def test_push_naming_a_row_whose_package_was_deleted_fails_naming_the_row(tmp_path: Path, capsys) -> None:
+    config_path = _stale_row_with_package_deleted(tmp_path)
+
+    code, output = _run(config_path, capsys, "push", "--dry-run", f"{STALE_REPO}:{STALE_PACKAGE}")
+
+    assert code != 0
+    assert f"dotman untrack {STALE_ROW}" in output, output
+    assert not any(line.startswith("warning:") and STALE_ROW in line for line in output.splitlines()), output
 
 
 def test_tracking_a_healthy_package_beside_a_stale_row_keeps_the_row(
