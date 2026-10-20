@@ -5,6 +5,11 @@
 - Example repo layouts and sample config live in `examples/repo/`.
 - The dotman agent skill lives in `skills/dotman/`. When a change alters user-facing behavior (commands, flags, selector syntax, workflows), update the skill along with `docs/`.
 
+## Probes
+
+- Outside pytest, point `HOME`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME` and `XDG_STATE_HOME` at a temp dir before running dotman; otherwise it reads and writes the user's real config, snapshots, and tracked state. `tests/conftest.py` shows the isolation pytest applies.
+- Carry this rule into the brief of any delegated agent that runs dotman.
+
 ## UI design
 
 - Do not forget to update style whenever add or modify a user-facing command/UI
