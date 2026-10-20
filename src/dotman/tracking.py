@@ -592,17 +592,28 @@ def _record_skipped_tracked_row(binding: FullSpecSelector, message: str) -> None
     )
 
 
-def find_skipped_tracked_row(repo_name: str | None, package_id: str) -> SkippedTrackedRow | None:
-    """Return the stale row this command skipped for a package, so a miss on it can say why."""
+def claim_skipped_tracked_row(
+    repo_name: str | None, package_id: str, profile: str | None = None,
+) -> SkippedTrackedRow | None:
+    """Return the stale row this command skipped for a package (and profile, if named), for an error that names it.
+
+    The row is marked shown: the error explains it, so the end-of-command warning leaves it out.
+    """
     log = _SKIPPED_ENTRIES.get()
-    return next(
+    if log is None:
+        return None
+    key, skipped = next(
         (
-            skipped for skipped in (log.entries.values() if log is not None else ())
+            (key, skipped) for key, skipped in log.entries.items()
             if isinstance(skipped, SkippedTrackedRow)
             and skipped.binding.selector == package_id and repo_name in (None, skipped.binding.repo)
+            and profile in (None, skipped.binding.profile)
         ),
-        None,
+        (None, None),
     )
+    if key is not None:
+        log.reported.add(key)
+    return skipped
 
 
 def effective_tracked_package_entries_for_repo(

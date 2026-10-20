@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shlex
 from datetime import datetime, timezone
 from typing import NamedTuple, Sequence
 
@@ -179,6 +180,27 @@ def render_package_profile_label(*, repo_name: str, package_id: str, profile: st
 
 def full_spec_selector_label_text(*, repo_name: str, selector: str, profile: str, selector_first: bool = False) -> str:
     return f"{repo_qualified_selector_text(repo_name=repo_name, selector=selector)}@{profile}"
+
+
+def stale_row_untrack_command(binding: FullSpecSelector) -> str:
+    """The `dotman untrack` command that removes a stale tracked row, pasteable into a shell."""
+    # The command stays plain text a shell can run. The row may hold unprintable
+    # characters, so the selector is the escaped name, which untrack accepts for
+    # exactly that row (tracking._is_named_by); shlex.quote keeps a space, a quote
+    # or a backslash in it from splitting or changing the argument.
+    untrack_selector = terminal_safe_line(
+        full_spec_selector_label_text(
+            repo_name=binding.repo, selector=binding.selector, profile=binding.profile
+        )
+    )
+    return f"dotman untrack {shlex.quote(untrack_selector)}"
+
+
+def stale_tracked_row_rejection_text(subject: str, binding: FullSpecSelector, reason: str) -> str:
+    """Why a named package was rejected: its tracked row is stale. It carries the fix, as no skip warning follows."""
+    # The row may hold unprintable characters from an older dotman; the error emitters escape the message.
+    row = full_spec_selector_label_text(repo_name=binding.repo, selector=binding.selector, profile=binding.profile)
+    return f"{subject} matches stale tracked row {row}: {reason}; remove it with: {stale_row_untrack_command(binding)}"
 
 
 def render_full_spec_selector_label(*, repo_name: str, selector: str, profile: str, selector_first: bool = False, use_color: bool) -> str:

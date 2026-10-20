@@ -154,10 +154,46 @@ def test_explicitly_selecting_the_stale_package_fails_naming_the_cause(
     assert code != 0
     # The row made the command fail, so it is not also listed as a skipped entry.
     assert not any(_is_stale_entry_line(line) for line in output.splitlines()), output
-    # The error itself names the cause, not just the skip warning.
-    error_output = "\n".join(line for line in output.splitlines() if not line.startswith("warning:"))
+    # The error explains the named row, so it is not also warned about.
+    assert not any(
+        line.startswith("warning:") and (STALE_ROW in line or "stale tracked row" in line) for line in output.splitlines()
+    ), output
+    # The error itself names the cause and carries the fix, since no warning does.
     for name in (STALE_REPO, STALE_PACKAGE, MISSING_PARENT):
-        assert name in error_output
+        assert name in output
+    assert f"dotman untrack {STALE_ROW}" in output, output
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        pytest.param(["track", f"{STALE_REPO}:{STALE_PACKAGE}@work"], id="track"),
+        pytest.param(["push", "--dry-run", f"{STALE_REPO}:{STALE_PACKAGE}<work>"], id="push-instance"),
+    ],
+)
+def test_naming_one_stale_instance_errors_on_it_and_still_warns_about_the_other(
+    tmp_path: Path, capsys, argv: list[str]
+) -> None:
+    config_path = _write_two_repo_config(
+        tmp_path, f'binding_mode = "multi_instance"\nextends = ["{MISSING_PARENT}"]\n'
+    )
+    (tmp_path / "other-repo" / "profiles" / "work.toml").write_text("", encoding="utf-8")
+    write_tracked_packages_state(
+        tmp_path / "state", repo_name=STALE_REPO, entries=[(STALE_PACKAGE, "default"), (STALE_PACKAGE, "work")]
+    )
+    named_row = f"{STALE_REPO}:{STALE_PACKAGE}@work"
+
+    code, output = _run(config_path, capsys, *argv)
+
+    assert code != 0
+    assert f"dotman untrack {named_row}" in output, output
+    lines = output.splitlines()
+    warnings = [line for line in lines if line.startswith("warning:")]
+    error_lines = [line for line in lines if "dotman untrack" in line and line not in warnings]
+    assert error_lines and all(STALE_ROW not in line for line in error_lines), "the error names only the named row"
+    assert not any(named_row in line for line in warnings), output
+    # The row the error did not name is still warned about, once.
+    assert len([line for line in warnings if STALE_ROW in line]) == 1, output
 
 
 def test_tracking_a_healthy_package_beside_a_stale_row_keeps_the_row(
