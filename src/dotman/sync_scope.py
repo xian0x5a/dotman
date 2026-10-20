@@ -133,6 +133,7 @@ def _tracked_selections(context) -> list[ResolvedPackageSelection]:
 
 
 def _matching_selection(
+    context,
     selector: _ScopeSelector,
     *,
     repo,
@@ -154,7 +155,16 @@ def _matching_selection(
             if repo.package_binding_mode(selection.package_id) != "multi_instance"
         ]
     if not candidates:
-        raise UsageError(f"sync scope '{selector.text}' did not match an exact tracked package identity")
+        raise UsageError(
+            tracking.stale_tracked_row_rejection(
+                context.tracked_state,
+                subject_text=f"sync scope '{selector.text}'",
+                repo_name=selector.repo,
+                package_id=selector.package_id,
+                profile=selector.bound_profile,
+            )
+            or f"sync scope '{selector.text}' did not match an exact tracked package identity"
+        )
     if len(candidates) > 1:
         labels = ", ".join(selection.selection_label for selection in candidates)
         raise UsageError(f"sync scope '{selector.text}' is ambiguous: {labels}")
@@ -268,7 +278,7 @@ def resolve_sync_scope(
             repo = context.repositories.get(item.repo)
             if repo is None:
                 raise UsageError(f"unknown repo '{item.repo}'")
-            root = _matching_selection(item, repo=repo, selections=all_selections)
+            root = _matching_selection(context, item, repo=repo, selections=all_selections)
             # Only a package input expands to its dependencies; a target input is the narrowest scope.
             expand = include_dependencies and item.target_name is None
             closure = _scope_closure(context, all_selections, root) if expand else [root]
@@ -356,7 +366,7 @@ def resolve_sync_scope(
     dependency_roots: dict[str, dict[ResolvedPackageIdentity, None]] = {}
     for item, closure in zip(parsed, selected_closures if parsed else ()):
         repo = context.repositories[item.repo]
-        root = _matching_selection(item, repo=repo, selections=all_selections)
+        root = _matching_selection(context, item, repo=repo, selections=all_selections)
         requested_scopes.add(root.identity.canonical)
         if item.target_name is not None:
             if not _target_exists(context, root, item.target_name):

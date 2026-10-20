@@ -602,6 +602,15 @@ def resolve_tracked_package_text(
     package_query = package_ref_text(package_id=selector, bound_profile=bound_profile)
     lookup_package_text = f"{explicit_repo}:{package_query}" if explicit_repo is not None else package_query
     selector, bound_profile, exact_matches, partial_matches = engine.find_tracked_package_matches(lookup_package_text)
+    if not exact_matches and not partial_matches:
+        rejection = engine.stale_tracked_row_rejection(
+            subject_text=f"tracked package '{package_text}'",
+            repo_name=explicit_repo,
+            package_id=selector,
+            profile=bound_profile,
+        )
+        if rejection is not None:
+            raise UsageError(rejection)
     return resolve_candidate_match(
         exact_matches=exact_matches,
         partial_matches=partial_matches,

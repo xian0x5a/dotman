@@ -110,7 +110,9 @@ class EditResolver:
                     for repo, package_id, match_bound_profile in partial_matches
                 )
             ),
-            not_found_error=f"tracked package '{package_query}' did not match any tracked package",
+            not_found_error=lambda: self._not_found_error(
+                "tracked package", lookup_text, f"tracked package '{package_query}' did not match any tracked package"
+            ),
             single_partial_error=(
                 f"no exact match for '{package_query}'; use exact name '"
                 f"{self._package_label(*self._package_identity(partial_matches[0]))}'"
@@ -123,6 +125,7 @@ class EditResolver:
     def resolve_target_path(self, target_text: str) -> Path:
         engine = self._require_engine()
         query_text, exact_matches, partial_matches = engine.find_tracked_target_matches(target_text)
+        target_not_found = f"tracked target '{query_text}' did not match any tracked target"
         exact_candidates = [self._target_candidate(match) for match in exact_matches]
         partial_candidates = [self._target_candidate(match) for match in partial_matches]
         return self._resolve_candidates(
@@ -138,7 +141,12 @@ class EditResolver:
                 f"tracked target '{query_text}' is ambiguous: "
                 + ", ".join(self._target_label(match) for match in partial_matches)
             ),
-            not_found_error=f"tracked target '{query_text}' did not match any tracked target",
+            not_found_error=lambda: (
+                self._not_found_error("tracked target", target_text, target_not_found)
+                # A bare target name names no package, so it cannot name a stale row.
+                if "." in target_text
+                else target_not_found
+            ),
             single_partial_error=(
                 f"no exact match for '{query_text}'; use exact name '"
                 f"{self._target_label(partial_matches[0])}'"
@@ -208,10 +216,8 @@ class EditResolver:
                 f"{subject} '{query_text}' is ambiguous: "
                 + self._format_edit_query_candidates(partial_candidates)
             ),
-            not_found_error=(
-                f"{subject} '{query_text}' did not match any tracked package or target"
-                if exact_candidates or partial_candidates
-                else self._not_found_error(subject, query_text)
+            not_found_error=lambda: self._not_found_error(
+                subject, query_text, f"{subject} '{query_text}' did not match any tracked package or target"
             ),
             single_partial_error=(
                 f"no exact match for '{query_text}'; use exact name "
@@ -221,14 +227,12 @@ class EditResolver:
             ),
         )
 
-    def _not_found_error(self, subject: str, query_text: str) -> str:
+    def _not_found_error(self, subject: str, query_text: str, not_found: str) -> str:
         """Explain a miss; a query naming a stale tracked row says why that row cannot match."""
         repo_name, package_id, bound_profile = parse_package_ref_text(query_text.partition(".")[0])
-        # Built only when nothing matched, so the error is always raised and the row claimed is reported.
-        stale = self._require_engine().claim_stale_tracked_row(repo_name, package_id, bound_profile)
-        if stale is None:
-            return f"{subject} '{query_text}' did not match any tracked package or target"
-        return cli_style.stale_tracked_row_rejection_text(f"{subject} '{query_text}'", stale.binding, stale.message)
+        return self._require_engine().stale_tracked_row_rejection(
+            subject_text=f"{subject} '{query_text}'", repo_name=repo_name, package_id=package_id, profile=bound_profile,
+        ) or not_found
 
     def _resolve_repo_config(
         self,
@@ -286,7 +290,7 @@ class EditResolver:
                 else f"{command_label} '{repo_query}' is ambiguous: "
                 + ", ".join(repo_config.name for repo_config in matching_repos)
             ),
-            not_found_error=(
+            not_found_error=lambda: (
                 f"{command_label} is required in non-interactive mode: {repo_names}"
                 if repo_query is None
                 else f"{command_label} '{repo_query}' did not match any configured repo: {repo_names}"
@@ -309,7 +313,8 @@ class EditResolver:
         header_text: str,
         exact_error: str,
         partial_error: str,
-        not_found_error: str,
+        # Built only on a miss: it may mark a stale row shown, which must not happen on a match.
+        not_found_error: Callable[[], str],
         single_partial_error: str | None,
         rank_candidates: bool = True,
     ) -> CandidateValue:
@@ -329,7 +334,7 @@ class EditResolver:
             if self._interaction is None:
                 raise InteractionRequiredError(partial_error)
             return self._choose_candidate(header_text, ranked_partial)
-        raise UsageError(not_found_error)
+        raise UsageError(not_found_error())
 
     @staticmethod
     def _rank_candidates(
