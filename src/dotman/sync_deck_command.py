@@ -13,8 +13,7 @@ from dotman.interaction_policy import InteractionRequiredError, interaction_scop
 from dotman.printable import terminal_safe_line, terminal_safe_text
 from dotman.progress import make_planning_sink
 from dotman.sync_timeline import SyncTimelineRenderer
-from dotman.cli_emit import stale_row_untrack_command
-from dotman.cli_style import SYNC_TERM_STYLE_BY_NAME, full_spec_selector_label_text, render_annotation_parentheses, render_sync_term, render_package_label, render_summary_stat, style_text, MENU_REPO_STYLE
+from dotman.cli_style import SYNC_TERM_STYLE_BY_NAME, full_spec_selector_label_text, stale_row_untrack_command, render_annotation_parentheses, render_sync_term, render_package_label, render_summary_stat, style_text, MENU_REPO_STYLE
 from dotman.sync_scope import _parse_scope_selector, split_scope_child_path
 from dotman.sync_base_store import DirectoryChildPresent, FilePresent, Missing
 from dotman.sync_session import (

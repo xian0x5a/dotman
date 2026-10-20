@@ -4,7 +4,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Literal, TypeVar
 
-from dotman import cli_style
+from dotman import cli_style, tracking
 from dotman.collisions import TrackedTargetConflictError
 from dotman.engine import DotmanEngine
 from dotman.errors import UsageError
@@ -16,8 +16,8 @@ from dotman.interaction import (
 )
 from dotman.interaction_policy import InteractionRequiredError
 from dotman.models import FullSpecSelector, ResolvedSelector, SelectorKind
-from dotman.package_resolution import parse_full_spec_selector_text
-from dotman.repository import Repository
+from dotman.package_resolution import UnresolvedSelectorError, parse_full_spec_selector_text
+from dotman.repository import MissingExtendsParentError, Repository
 from dotman.resolver import (
     ResolverOption,
     build_profile_field_kinds,
@@ -53,6 +53,19 @@ class TrackResolver:
 
     def resolve(self, binding_text: str, *, no_confirm: bool = False) -> TrackResolution:
         binding = self._resolve_selector(binding_text)
+        try:
+            return self._resolve_binding(binding, no_confirm=no_confirm)
+        except (MissingExtendsParentError, UnresolvedSelectorError) as exc:
+            # The package itself does not resolve; when that also left its tracked row
+            # stale, the error explains the row instead of a separate skip warning.
+            stale = tracking.claim_skipped_tracked_row(binding.repo, binding.selector, binding.profile)
+            if stale is None:
+                raise
+            raise UsageError(
+                cli_style.stale_tracked_row_rejection_text(f"track '{binding_text}'", stale.binding, stale.message)
+            ) from exc
+
+    def _resolve_binding(self, binding: FullSpecSelector, *, no_confirm: bool) -> TrackResolution:
         while True:
             replacement_result = self._confirm_replacements(
                 binding,
