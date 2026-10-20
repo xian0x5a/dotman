@@ -131,12 +131,18 @@ class StateCommandRunner:
                 json_output=args.json_output,
                 use_color=self._use_color,
             )
-        engine.record_tracked_package_entry(resolution.binding, validate=False)
-        return cli_emit.emit_tracked_package_entry(
-            binding=resolution.binding,
-            json_output=args.json_output,
-            use_color=self._use_color,
-        )
+        # Promotions need an interaction, which JSON output disables, so JSON
+        # output always reports exactly one entry.
+        recorded_bindings = [*resolution.promotions, resolution.binding]
+        for binding in recorded_bindings:
+            engine.record_tracked_package_entry(binding, validate=False)
+        for binding in recorded_bindings:
+            cli_emit.emit_tracked_package_entry(
+                binding=binding,
+                json_output=args.json_output,
+                use_color=self._use_color,
+            )
+        return 0
 
     def _run_untrack(self, *, args: Any, engine: DotmanEngine) -> int:
         resolver = UntrackResolver(

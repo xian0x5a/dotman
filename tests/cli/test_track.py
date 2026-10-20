@@ -789,7 +789,8 @@ def test_track_cli_can_promote_conflicting_package_from_implicit_conflict(
     )
     assert "Confirm explicit override for fixture:alpha@basic:" not in output
     assert "implicit: fixture:beta@basic (beta)" not in output
-    assert "tracked fixture:alpha@basic" in output
+    # The promotion breaks the tie; the typed request is tracked next to it.
+    assert output.index("tracked fixture:alpha@basic") < output.index("tracked fixture:alpha-stack@basic")
     assert (state_dir / "tracked-packages.toml").read_text(encoding="utf-8") == "\n".join(
         [
             "schema_version = 1",
@@ -797,6 +798,11 @@ def test_track_cli_can_promote_conflicting_package_from_implicit_conflict(
             "[[packages]]",
             'repo = "fixture"',
             'package_id = "alpha"',
+            'profile = "basic"',
+            "",
+            "[[packages]]",
+            'repo = "fixture"',
+            'package_id = "alpha-meta"',
             'profile = "basic"',
             "",
             "[[packages]]",
@@ -867,7 +873,9 @@ def test_track_cli_promotes_conflicting_package_in_its_own_repo(
         (option.value.repo, option.value.selector, option.value.profile)
         for option in interaction.requests[0].options
     ] == [("first", "alpha", "basic"), ("second", "beta", "work")]
-    assert "tracked second:beta@work" in capsys.readouterr().out
+    output = capsys.readouterr().out
+    # Promotion first, then the typed request in its own repo.
+    assert output.index("tracked second:beta@work") < output.index("tracked first:alpha-stack@basic")
     assert second_state.read_text(encoding="utf-8") == "\n".join(
         [
             "schema_version = 1",
@@ -884,7 +892,143 @@ def test_track_cli_promotes_conflicting_package_in_its_own_repo(
             "",
         ]
     )
+    assert first_state.read_text(encoding="utf-8") == "\n".join(
+        [
+            "schema_version = 1",
+            "",
+            "[[packages]]",
+            'repo = "first"',
+            'package_id = "alpha-meta"',
+            'profile = "basic"',
+            "",
+        ]
+    )
+
+
+def _tracked_state_text(repo: str, entries: list[tuple[str, str]]) -> str:
+    lines = ["schema_version = 1", ""]
+    for package_id, profile in entries:
+        lines.extend(
+            [
+                "[[packages]]",
+                f'repo = "{repo}"',
+                f'package_id = "{package_id}"',
+                f'profile = "{profile}"',
+                "",
+            ]
+        )
+    return "\n".join(lines)
+
+
+def test_track_cli_declined_promotion_override_leaves_state_untouched(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+
+    first_root = tmp_path / "first-repo"
+    second_root = tmp_path / "second-repo"
+    write_implicit_conflict_repo(first_root)
+    write_implicit_conflict_repo(second_root)
+    (second_root / "profiles" / "work.toml").write_text("", encoding="utf-8")
+    config_path = write_named_manager_config(tmp_path, {"first": first_root, "second": second_root})
+
+    first_state = tmp_path / "state" / "dotman" / "repos" / "first" / "tracked-packages.toml"
+    second_state = tmp_path / "state" / "dotman" / "repos" / "second" / "tracked-packages.toml"
+    second_state.parent.mkdir(parents=True)
+    second_state_text = _tracked_state_text("second", [("beta-meta", "work")])
+    second_state.write_text(second_state_text, encoding="utf-8")
+
+    # Promoting first:alpha@basic is accepted (it is picked), but it would explicitly
+    # override the implicit second:beta@work, and that confirmation is declined.
+    interaction = ScriptedInteraction(
+        choices=[
+            FullSpecSelector(
+                repo="first",
+                selector="alpha",
+                selector_kind="package",
+                profile="basic",
+            )
+        ],
+        confirmations=[False],
+    )
+
+    exit_code = main(
+        ["--config", str(config_path), "track", "first:alpha-stack@basic"],
+        interaction=interaction,
+    )
+
+    assert exit_code == 0
+    confirmation = interaction.requests[1]
+    assert "Confirm explicit override for first:alpha@basic:" in confirmation.message
+    assert "implicit: second:beta@work (beta)" in confirmation.message
+    output = capsys.readouterr().out
+    # The declined request is the typed one, not the promotion it was held with.
+    assert "skipped tracking first:alpha-stack@basic" in output
+    assert "tracked " not in output
     assert not first_state.exists()
+    assert second_state.read_text(encoding="utf-8") == second_state_text
+
+
+def test_track_cli_asks_for_replacement_once_when_promoting(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+
+    repo_root = tmp_path / "implicit-conflict-repo"
+    write_implicit_conflict_repo(repo_root)
+    (repo_root / "profiles" / "work.toml").write_text("", encoding="utf-8")
+    config_path = write_named_manager_config(tmp_path, {"fixture": repo_root})
+
+    state_path = tmp_path / "state" / "dotman" / "repos" / "fixture" / "tracked-packages.toml"
+    state_path.parent.mkdir(parents=True)
+    state_path.write_text(
+        _tracked_state_text("fixture", [("alpha-meta", "work"), ("beta-meta", "basic")]),
+        encoding="utf-8",
+    )
+
+    # Switching alpha-meta from work to basic needs a replacement confirmation, and
+    # then ties with beta-meta@basic. The typed binding is unchanged by the promotion,
+    # so the replacement is not asked again; a second ask would exhaust the script.
+    interaction = ScriptedInteraction(
+        choices=[
+            FullSpecSelector(
+                repo="fixture",
+                selector="alpha",
+                selector_kind="package",
+                profile="basic",
+            )
+        ],
+        confirmations=[True],
+    )
+
+    exit_code = main(
+        ["--config", str(config_path), "track", "fixture:alpha-meta@basic"],
+        interaction=interaction,
+    )
+
+    assert exit_code == 0
+    replacement_requests = [
+        request
+        for request in interaction.requests
+        if "Confirm tracked package entry replacement" in getattr(request, "message", "")
+    ]
+    assert len(replacement_requests) == 1
+    assert capsys.readouterr().out.splitlines() == [
+        "tracked fixture:alpha@basic",
+        "tracked fixture:alpha-meta@basic",
+    ]
+    assert state_path.read_text(encoding="utf-8") == _tracked_state_text(
+        "fixture",
+        [("alpha", "basic"), ("alpha-meta", "basic"), ("beta-meta", "basic")],
+    )
 
 
 def test_track_cli_skips_same_profile_package_override_prompt(

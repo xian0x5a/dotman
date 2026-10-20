@@ -362,8 +362,8 @@ class DotmanEngine:
     def record_tracked_package_entry(self, binding: FullSpecSelector, *, validate: bool = True) -> None:
         tracking.record_tracked_package_entry(self._planning_context, binding, validate=validate)
 
-    def validate_tracked_package_entry(self, binding: FullSpecSelector) -> None:
-        tracking.validate_tracked_package_entry(self._planning_context, binding)
+    def validate_tracked_package_entries(self, bindings: list[FullSpecSelector]) -> None:
+        tracking.validate_tracked_package_entry_additions(self._planning_context, bindings)
 
     def find_persisted_tracked_package_entry_matches(
         self,
