@@ -345,6 +345,13 @@ class DotmanEngine:
     def read_effective_tracked_package_entries(self, repo: Repository) -> list[FullSpecSelector]:
         return tracking.read_effective_tracked_package_entries(repo)
 
+    def claim_stale_tracked_row(
+        self, repo_name: str | None, package_id: str, profile: str | None = None,
+    ) -> tracking.SkippedTrackedRow | None:
+        # Filtered rather than candidate_repos(repo_name): an unknown repo has no rows, not an error to raise here.
+        repos = [repo for repo in self.candidate_repos() if not repo_name or repo.config.name == repo_name]
+        return tracking.claim_stale_tracked_row(repos, package_id, profile)
+
     def read_persisted_tracked_package_entries(self, repo: Repository) -> list[FullSpecSelector]:
         return tracking.read_persisted_tracked_package_entries(repo)
 

@@ -4,7 +4,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Literal, TypeVar
 
-from dotman import cli_style, tracking
+from dotman import cli_style
 from dotman.collisions import TrackedTargetConflictError
 from dotman.engine import DotmanEngine
 from dotman.errors import UsageError
@@ -52,18 +52,29 @@ class TrackResolver:
         self._use_color = use_color
 
     def resolve(self, binding_text: str, *, no_confirm: bool = False) -> TrackResolution:
-        binding = self._resolve_selector(binding_text)
+        named_repo, named_package, named_profile = parse_full_spec_selector_text(binding_text)
+        try:
+            binding = self._resolve_selector(binding_text)
+        except UsageError as exc:
+            # A deleted package or profile fails the name lookup itself.
+            self._raise_if_named_row_is_stale(binding_text, named_repo, named_package, named_profile, exc)
+            raise
         try:
             return self._resolve_binding(binding, no_confirm=no_confirm)
         except (MissingExtendsParentError, UnresolvedSelectorError) as exc:
-            # The package itself does not resolve; when that also left its tracked row
-            # stale, the error explains the row instead of a separate skip warning.
-            stale = tracking.claim_skipped_tracked_row(binding.repo, binding.selector, binding.profile)
-            if stale is None:
-                raise
+            # The package exists but no longer resolves.
+            self._raise_if_named_row_is_stale(binding_text, binding.repo, binding.selector, binding.profile, exc)
+            raise
+
+    def _raise_if_named_row_is_stale(
+        self, binding_text: str, repo_name: str | None, package_id: str, profile: str | None, cause: Exception,
+    ) -> None:
+        """When the named package's tracked row is stale, fail naming the row and its fix instead of `cause`."""
+        stale = self._engine.claim_stale_tracked_row(repo_name, package_id, profile)
+        if stale is not None:
             raise UsageError(
                 cli_style.stale_tracked_row_rejection_text(f"track '{binding_text}'", stale.binding, stale.message)
-            ) from exc
+            ) from cause
 
     def _resolve_binding(self, binding: FullSpecSelector, *, no_confirm: bool) -> TrackResolution:
         while True:

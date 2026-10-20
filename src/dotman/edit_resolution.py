@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Generic, TypeVar
 
 from dotman import cli_style
-from dotman import tracking
 from dotman.engine import DotmanEngine
 from dotman.errors import UsageError
 from dotman.interaction import ChoiceOption, ChoiceRequest, Interaction
@@ -222,12 +221,11 @@ class EditResolver:
             ),
         )
 
-    @staticmethod
-    def _not_found_error(subject: str, query_text: str) -> str:
+    def _not_found_error(self, subject: str, query_text: str) -> str:
         """Explain a miss; a query naming a stale tracked row says why that row cannot match."""
         repo_name, package_id, bound_profile = parse_package_ref_text(query_text.partition(".")[0])
         # Built only when nothing matched, so the error is always raised and the row claimed is reported.
-        stale = tracking.claim_skipped_tracked_row(repo_name, package_id, bound_profile)
+        stale = self._require_engine().claim_stale_tracked_row(repo_name, package_id, bound_profile)
         if stale is None:
             return f"{subject} '{query_text}' did not match any tracked package or target"
         return cli_style.stale_tracked_row_rejection_text(f"{subject} '{query_text}'", stale.binding, stale.message)
