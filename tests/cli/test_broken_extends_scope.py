@@ -7,10 +7,12 @@ from __future__ import annotations
 
 import json
 import shutil
+import tomllib
 from pathlib import Path
 
 import pytest
 from dotman.cli import main
+from dotman.command_runtime import MemoryCommandRuntime
 
 from tests.helpers import write_named_manager_config, write_tracked_packages_state
 
@@ -172,7 +174,7 @@ def test_explicitly_selecting_the_stale_package_fails_naming_the_cause(
         pytest.param(["push", "--dry-run", f"{STALE_REPO}:{STALE_PACKAGE}<work>"], id="push-instance"),
     ],
 )
-def test_naming_one_stale_instance_errors_on_it_and_still_warns_about_the_other(
+def test_naming_one_stale_instance_errors_on_that_row_only(
     tmp_path: Path, capsys, argv: list[str]
 ) -> None:
     config_path = _write_two_repo_config(
@@ -193,8 +195,10 @@ def test_naming_one_stale_instance_errors_on_it_and_still_warns_about_the_other(
     error_lines = [line for line in lines if "dotman untrack" in line and line not in warnings]
     assert error_lines and all(STALE_ROW not in line for line in error_lines), "the error names only the named row"
     assert not any(named_row in line for line in warnings), output
-    # The row the error did not name is still warned about, once.
-    assert len([line for line in warnings if STALE_ROW in line]) == 1, output
+    # Naming one row does not hide the other: push reads the tracked state before it
+    # fails, so it warns about that row once; track rejects the name before reading it.
+    expected_other_row_warnings = 0 if argv[0] == "track" else 1
+    assert len([line for line in warnings if STALE_ROW in line]) == expected_other_row_warnings, output
 
 
 def _stale_row_with_package_deleted(tmp_path: Path) -> Path:
@@ -296,3 +300,203 @@ def test_list_tracked_and_doctor_still_report_the_stale_row(two_repo_config: Pat
         assert invalid[0]["reason"] == "extends_parent_missing"
         assert MISSING_PARENT in invalid[0]["message"]
         assert "warning:" not in captured.err
+
+
+# --- Rows the command itself removed or replaced are not reported as stale -------------------
+
+
+def _write_main_repo(
+    tmp_path: Path,
+    *,
+    packages: dict[str, str],
+    groups: dict[str, list[str]] | None = None,
+    tracked: list[tuple[str, str]],
+) -> Path:
+    """One repo `main` with only profile `default`; `packages` maps id to manifest text."""
+    repo_root = tmp_path / "main-repo"
+    (repo_root / "profiles").mkdir(parents=True)
+    (repo_root / "profiles" / "default.toml").write_text("", encoding="utf-8")
+    for package_id, manifest in packages.items():
+        (repo_root / "packages" / package_id).mkdir(parents=True)
+        (repo_root / "packages" / package_id / "package.toml").write_text(manifest, encoding="utf-8")
+    (repo_root / "groups").mkdir()
+    for group_id, members in (groups or {}).items():
+        (repo_root / "groups" / f"{group_id}.toml").write_text(f"members = {json.dumps(members)}\n", encoding="utf-8")
+    config_path = write_named_manager_config(tmp_path, {"main": repo_root})
+    write_tracked_packages_state(tmp_path / "state", repo_name="main", entries=tracked)
+    return config_path
+
+
+def _tracked_main_rows(tmp_path: Path) -> set[tuple[str, str]]:
+    state_file = tmp_path / "state" / "dotman" / "repos" / "main" / "tracked-packages.toml"
+    return {(row["package_id"], row["profile"]) for row in tomllib.loads(state_file.read_text(encoding="utf-8")).get("packages", [])}
+
+
+def _warnings(output: str) -> list[str]:
+    return [line for line in output.splitlines() if line.startswith("warning:")]
+
+
+@pytest.mark.parametrize("target", ["main:child@default", "main:stack@default"], ids=["package", "group"])
+def test_track_replacing_a_stale_row_in_the_same_scope_does_not_warn_about_it(
+    tmp_path: Path, capsys, target: str
+) -> None:
+    # `child@gone` is replaced by `child@default`; the profile it names no longer exists.
+    config_path = _write_main_repo(
+        tmp_path, packages={"child": ""}, groups={"stack": ["child"]}, tracked=[("child", "gone")]
+    )
+
+    code, output = _run(config_path, capsys, "track", target)
+
+    assert code == 0, output
+    assert _tracked_main_rows(tmp_path) == {("child", "default")}
+    assert not any("main:child@gone" in line for line in _warnings(output)), output
+
+
+def test_track_replacing_a_stale_row_still_warns_once_about_an_unrelated_stale_row(tmp_path: Path, capsys) -> None:
+    config_path = _write_main_repo(
+        tmp_path,
+        packages={"child": "", "broken": 'depends = ["nope"]\n'},
+        tracked=[("child", "gone"), ("broken", "default")],
+    )
+
+    code, output = _run(config_path, capsys, "track", "main:child@default")
+
+    assert code == 0, output
+    assert _tracked_main_rows(tmp_path) == {("child", "default"), ("broken", "default")}
+    warnings = _warnings(output)
+    assert len([line for line in warnings if "main:broken@default" in line]) == 1, output
+    assert not any("main:child@gone" in line for line in warnings), output
+
+
+def test_untrack_of_a_group_does_not_warn_about_the_stale_member_rows_it_removed(tmp_path: Path, capsys) -> None:
+    config_path = _write_main_repo(
+        tmp_path,
+        packages={"app": 'depends = ["nope"]\n', "lib": ""},
+        groups={"stack": ["app", "lib"]},
+        tracked=[("app", "default"), ("lib", "default")],
+    )
+
+    code, output = _run(config_path, capsys, "untrack", "main:stack@default")
+
+    assert code == 0, output
+    assert _tracked_main_rows(tmp_path) == set()
+    assert not any("main:app@default" in line for line in _warnings(output)), output
+
+
+def test_untrack_of_a_group_still_warns_once_about_an_unrelated_stale_row(tmp_path: Path, capsys) -> None:
+    config_path = _write_main_repo(
+        tmp_path,
+        packages={"app": 'depends = ["nope"]\n', "lib": "", "broken": 'depends = ["nope"]\n'},
+        groups={"stack": ["app", "lib"]},
+        tracked=[("app", "default"), ("lib", "default"), ("broken", "default")],
+    )
+
+    code, output = _run(config_path, capsys, "untrack", "main:stack@default")
+
+    assert code == 0, output
+    assert _tracked_main_rows(tmp_path) == {("broken", "default")}
+    warnings = _warnings(output)
+    assert len([line for line in warnings if "main:broken@default" in line]) == 1, output
+    assert not any("main:app@default" in line for line in warnings), output
+
+
+def test_untrack_of_a_group_removes_its_rows_whose_profile_was_deleted(tmp_path: Path, capsys) -> None:
+    # `untrack` matches persisted rows, so rows of a deleted profile stay removable through their group.
+    config_path = _write_main_repo(
+        tmp_path,
+        packages={"child": "", "lib": ""},
+        groups={"stack": ["child", "lib"]},
+        tracked=[("child", "gone"), ("lib", "gone")],
+    )
+
+    code, output = _run(config_path, capsys, "untrack", "main:stack@gone")
+
+    assert code == 0, output
+    assert _tracked_main_rows(tmp_path) == set()
+    assert not any("stale tracked row" in line for line in output.splitlines()), output
+
+
+# --- Naming a stale row in a lookup command ----------------------------------------------------
+
+STALE_TARGET = "conf"
+STALE_MANIFEST_WITH_TARGET = (
+    f'extends = ["{MISSING_PARENT}"]\n[targets.{STALE_TARGET}]\nsource = "files/c.conf"\npath = "~/c.conf"\n'
+)
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        pytest.param(["info", "tracked", f"{STALE_REPO}:{STALE_PACKAGE}"], id="info-tracked"),
+        pytest.param(["edit", "package", f"{STALE_REPO}:{STALE_PACKAGE}"], id="edit-package"),
+        pytest.param(["edit", "target", f"{STALE_REPO}:{STALE_PACKAGE}.{STALE_TARGET}"], id="edit-target"),
+        pytest.param(["info", "sync-base", f"{STALE_REPO}:{STALE_PACKAGE}.{STALE_TARGET}"], id="info-sync-base"),
+    ],
+)
+def test_lookup_naming_the_stale_row_fails_once_naming_the_row_and_the_fix(
+    tmp_path: Path, capsys, monkeypatch, argv: list[str]
+) -> None:
+    # `edit` would open an editor on success; keep any launch harmless and out of the real runtime.
+    monkeypatch.setenv("EDITOR", "true")
+    monkeypatch.setattr("dotman.cli_interaction.current_command_runtime", lambda: MemoryCommandRuntime([]))
+    config_path = _write_two_repo_config(tmp_path, STALE_MANIFEST_WITH_TARGET)
+
+    # `edit` refuses `--no-confirm`, so no lookup passes it.
+    code, stdout, stderr = _run_split(config_path, capsys, *argv, no_confirm=False)
+    output = stdout + stderr
+
+    assert code != 0
+    assert STALE_ROW in output, output
+    assert f"dotman untrack {STALE_ROW}" in output, output
+    assert MISSING_PARENT in output, output
+    # One error, not a warning plus a generic "did not match": the error itself carries the row and the fix.
+    error_text = "\n".join(line for line in output.splitlines() if not line.startswith("warning:"))
+    assert STALE_ROW in error_text and f"dotman untrack {STALE_ROW}" in error_text, output
+    assert not any(line.startswith("warning:") and STALE_ROW in line for line in output.splitlines()), output
+
+
+def test_bare_target_query_sharing_a_stale_package_name_fails_as_not_found_and_still_warns(
+    tmp_path: Path, capsys, monkeypatch
+) -> None:
+    monkeypatch.setenv("EDITOR", "true")
+    monkeypatch.setattr("dotman.cli_interaction.current_command_runtime", lambda: MemoryCommandRuntime([]))
+    # Stale package `conf` shares its name with the bare target query, but no tracked target is named `conf`.
+    config_path = _write_main_repo(
+        tmp_path, packages={"conf": f'extends = ["{MISSING_PARENT}"]\n'}, tracked=[("conf", "default")]
+    )
+
+    code, stdout, stderr = _run_split(config_path, capsys, "edit", "target", "conf", no_confirm=False)
+    output = stdout + stderr
+
+    assert code != 0, output
+    assert "tracked target 'conf' did not match any tracked target" in output, output
+    assert "matches stale tracked row" not in output, output
+    [warning] = _warnings(output)
+    assert "main:conf@default" in warning, output
+
+
+# --- The reason names what is missing ------------------------------------------------------------
+
+
+@pytest.fixture
+def missing_dependency_config(tmp_path: Path) -> Path:
+    return _write_main_repo(
+        tmp_path, packages={"a": "", "app": 'depends = ["nope"]\n'}, tracked=[("a", "default"), ("app", "default")]
+    )
+
+
+def test_stale_row_warning_names_the_missing_dependency(missing_dependency_config: Path, capsys) -> None:
+    code, output = _run(missing_dependency_config, capsys, "info", "trackable", "main:a")
+
+    assert code == 0, output
+    [warning] = [line for line in _warnings(output) if "main:app@default" in line]
+    assert "nope" in warning, warning
+
+
+def test_list_tracked_reason_names_the_missing_dependency(missing_dependency_config: Path, capsys) -> None:
+    capsys.readouterr()
+    main(["--config", str(missing_dependency_config), "--json", "list", "tracked"])
+    payload = json.loads(capsys.readouterr().out)
+
+    [entry] = payload["invalid_package_entries"]
+    assert "nope" in entry["message"], entry

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -8,6 +8,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Mapping, TYPE_CHECKING
 
+from dotman import cli_style
 from dotman.atomic_files import write_text_atomic
 from dotman.errors import UsageError
 from dotman.printable import terminal_safe_line
@@ -479,20 +480,36 @@ def normalize_tracked_package_entry_set(
 
 
 def expand_tracked_package_entry_in_repo(repo: Repository, package_entry: FullSpecSelector) -> list[FullSpecSelector]:
+    """Expand a binding the user named to track into its package bindings, or raise why it cannot be tracked.
+
+    This is the gate for user input; persisted rows go through resolve_persisted_tracked_package_entry
+    instead. It raises usage errors naming what does not resolve, so every binding it returns
+    resolves, and the stale-row filtering that later runs over the would-be state never skips
+    (and warns about) a binding that was never tracked.
+    """
     if package_entry.profile not in repo.profiles:
-        raise PersistedTrackedPackageEntryResolutionError(reason="unknown_profile", message="unknown profile")
+        raise UsageError(f"unknown profile '{package_entry.profile}' in repo '{repo.config.name}'")
     package_match = package_entry.selector in repo.packages
     group_match = package_entry.selector in repo.groups
     if package_match and group_match:
-        raise PersistedTrackedPackageEntryResolutionError(reason="selector_kind_invalid", message="selector kind invalid")
+        raise UsageError(
+            f"selector '{package_entry.selector}' is ambiguous between package and group in repo '{repo.config.name}'"
+        )
     if not package_match and not group_match:
-        raise PersistedTrackedPackageEntryResolutionError(reason="unknown_selector", message="unknown selector")
+        raise UsageError(f"selector '{package_entry.selector}' did not match any package or group")
     if package_match:
-        return [package_entry]
-    # Only a binding the user just named reaches here (persisted rows go through
-    # resolve_persisted_tracked_package_entry), so the group's expansion error
-    # (missing or ambiguous member, cycle) is theirs to see as is.
-    package_ids = repo.expand_group(package_entry.selector)
+        # Raises the missing dependency, group member or `extends` parent by name.
+        resolve_package_ids(repo, package_entry.selector, "package")
+        package_ids = [package_entry.selector]
+    else:
+        package_ids = repo.expand_group(package_entry.selector)
+        for package_id in package_ids:
+            try:
+                resolve_package_ids(repo, package_id, "package")
+            except (MissingExtendsParentError, UnresolvedSelectorError) as exc:
+                raise UsageError(
+                    f"group '{package_entry.selector}' package '{package_id}' cannot be tracked: {exc}"
+                ) from exc
     return [
         FullSpecSelector(
             repo=package_entry.repo,
@@ -509,6 +526,8 @@ def expand_tracked_package_entry_in_repo(repo: Repository, package_entry: FullSp
 class SkippedTrackedRow:
     binding: FullSpecSelector
     message: str
+    # The repo state dir holding the row, to check at report time that it is still tracked.
+    state_dir: Path
 
 
 @dataclass(frozen=True)
@@ -531,6 +550,9 @@ class _SkippedEntryLog:
     # Keys some output already showed, so the end-of-command warning skips them
     # even when a later walk records the same entry again.
     reported: set[SkippedEntryKey] = field(default_factory=set)
+    # Rows this command last wrote per repo state dir, so a stale row it removed or
+    # replaced is not reported; dirs it never wrote keep every row it read.
+    written_rows: dict[Path, list[FullSpecSelector]] = field(default_factory=dict)
 
 
 # Entries skipped as stale during the running command, keyed by identity so repeated
@@ -564,7 +586,11 @@ def silencing_skipped_entries() -> Iterator[None]:
 def take_unreported_skipped_entries(
     entry_type: type | None = None,
 ) -> list[SkippedEntry]:
-    """Return the skipped entries (of `entry_type`, if given) no output has shown yet, marking them shown."""
+    """Return the skipped entries (of `entry_type`, if given) no output has shown yet, marking them shown.
+
+    A stale row the command itself has since removed or replaced is left out: there is
+    nothing left to untrack, however many reads of the old state skipped it.
+    """
     log = _SKIPPED_ENTRIES.get()
     if log is None:
         return []
@@ -573,7 +599,13 @@ def take_unreported_skipped_entries(
         if key not in log.reported and (entry_type is None or isinstance(entry, entry_type))
     }
     log.reported.update(taken)
-    return list(taken.values())
+
+    def still_tracked(entry: SkippedEntry) -> bool:
+        if not isinstance(entry, SkippedTrackedRow) or entry.state_dir not in log.written_rows:
+            return True
+        return entry.binding in log.written_rows[entry.state_dir]
+
+    return [entry for entry in taken.values() if still_tracked(entry)]
 
 
 def _record_skipped_entry(key: SkippedEntryKey, entry: SkippedEntry) -> None:
@@ -582,22 +614,29 @@ def _record_skipped_entry(key: SkippedEntryKey, entry: SkippedEntry) -> None:
         log.entries.setdefault(key, entry)
 
 
-def _record_skipped_tracked_row(binding: FullSpecSelector, message: str) -> None:
+def _record_skipped_tracked_row(binding: FullSpecSelector, message: str, state_dir: Path) -> None:
     _record_skipped_entry(
         (binding.repo, binding.selector, binding.profile),
-        SkippedTrackedRow(binding=binding, message=message),
+        SkippedTrackedRow(binding=binding, message=message, state_dir=state_dir),
     )
 
 
-def claim_stale_tracked_row(
-    repos: Iterable[Repository], package_id: str, profile: str | None = None,
-) -> SkippedTrackedRow | None:
-    """Return the stale row tracking a package the user named (and profile, if named), for the error rejecting it.
+def stale_tracked_row_rejection(
+    context: TrackedStateContext,
+    *,
+    subject_text: str,
+    repo_name: str | None,
+    package_id: str,
+    profile: str | None = None,
+) -> str | None:
+    """The error for a name that matched nothing because its tracked row is stale, or None if no stale row is named.
 
     It reads the persisted rows rather than this command's skip log: a command can fail
     on the name before any walk of the tracked state skipped the row. The row is marked
     shown, since the error explains it, so the end-of-command warning leaves it out.
     """
+    # Filtered rather than candidate_repositories(repo_name): an unknown repo has no rows, not an error to raise here.
+    repos = [repo for repo in candidate_repositories(context) if not repo_name or repo.config.name == repo_name]
     for repo in repos:
         for binding in read_tracked_package_entries(repo):
             if binding.selector != package_id or profile not in (None, binding.profile):
@@ -606,7 +645,7 @@ def claim_stale_tracked_row(
                 resolve_persisted_tracked_package_entry(repo, binding)
             except PersistedTrackedPackageEntryResolutionError as exc:
                 _mark_skipped_entry_shown((binding.repo, binding.selector, binding.profile))
-                return SkippedTrackedRow(binding=binding, message=exc.message)
+                return cli_style.stale_tracked_row_rejection_text(subject_text, binding, exc.message)
     return None
 
 
@@ -625,7 +664,7 @@ def effective_tracked_package_entries_for_repo(
         try:
             resolve_persisted_tracked_package_entry(repo, binding)
         except PersistedTrackedPackageEntryResolutionError as exc:
-            _record_skipped_tracked_row(binding, exc.message)
+            _record_skipped_tracked_row(binding, exc.message, repo.config.state_path)
             continue
         effective_bindings = _normalize_tracked_package_entries_in_repo(repo, effective_bindings, binding)
     return effective_bindings
@@ -782,6 +821,9 @@ def write_tracked_package_entries_file(state_dir: Path, bindings: list[FullSpecS
             for entry in tracked_packages
         ]
     write_text_atomic(state_path, dump_toml_text(state))
+    log = _SKIPPED_ENTRIES.get()
+    if log is not None:
+        log.written_rows[state_dir] = list(bindings)
 
 
 
@@ -886,7 +928,7 @@ def iter_tracked_package_entries(
     for record in invalid_records:
         # package_invalid rows are malformed manifests, not stale state; they stay silent here as before.
         if record.issue is not None and record.issue.reason != "package_invalid":
-            _record_skipped_tracked_row(record.package_entry, record.issue.message)
+            _record_skipped_tracked_row(record.package_entry, record.issue.message, record.state_dir)
     return [
         (record.repo, record.package_entry, record.selector_kind or "package", list(record.package_ids))
         for record in valid_records
@@ -1025,10 +1067,8 @@ def resolve_persisted_tracked_package_entry(
         # Same kind of dangling reference as a missing dependency: stale, not a broken manifest.
         raise PersistedTrackedPackageEntryResolutionError(reason="extends_parent_missing", message=str(exc)) from exc
     except UnresolvedSelectorError as exc:
-        raise PersistedTrackedPackageEntryResolutionError(
-            reason="dependency_resolution_failed",
-            message="dependency resolution failed",
-        ) from exc
+        # The message names the selector that does not resolve, so the warning points at the fix.
+        raise PersistedTrackedPackageEntryResolutionError(reason="dependency_resolution_failed", message=str(exc)) from exc
 
 
 def is_resolvable_persisted_tracked_package_entry(repo: Repository, binding: FullSpecSelector) -> bool:

@@ -337,7 +337,11 @@ class UntrackResolver:
         tracked_bindings: Sequence[FullSpecSelector],
     ) -> str | None:
         if requested_profile is not None:
-            available_profiles = self._engine.list_profiles(repo_name)
+            # Untrack matches persisted rows, so a profile the repo no longer defines still
+            # names the group's rows bound to it and keeps them removable.
+            available_profiles = list(
+                dict.fromkeys([*self._engine.list_profiles(repo_name), *(binding.profile for binding in tracked_bindings)])
+            )
             if not available_profiles:
                 raise UsageError(f"repo '{repo_name}' does not define any profiles")
             partial_profiles = [

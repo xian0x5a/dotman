@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -291,3 +292,64 @@ def test_untrack_of_package_whose_manifest_does_not_load_succeeds(
     assert main(["--config", str(config_path), "--no-confirm", "untrack", "main:alpha@default"]) == 0
 
     assert _listed_package_entries(config_path, capsys) == set()
+
+
+def _write_unresolvable_binding_repo(repo_root: Path, case: str) -> tuple[str, str, str | None]:
+    """Write a repo where tracking the returned binding cannot resolve.
+
+    Returns the binding, the missing name and, when a group member is what fails, that member.
+    """
+    _write_plain_packages(repo_root, ["a"])
+    (repo_root / "groups").mkdir()
+
+    def write_package(package_id: str, manifest: str) -> None:
+        (repo_root / "packages" / package_id).mkdir()
+        (repo_root / "packages" / package_id / "package.toml").write_text(manifest, encoding="utf-8")
+
+    def write_group(group_id: str, members: list[str]) -> None:
+        (repo_root / "groups" / f"{group_id}.toml").write_text(f"members = {json.dumps(members)}\n", encoding="utf-8")
+
+    if case == "dependency-missing":
+        write_package("app", 'depends = ["nope"]\n')
+        return "main:app@default", "nope", None
+    if case == "dependency-group-member-missing":
+        write_group("stack", ["a", "ghost"])
+        write_package("app", 'depends = ["stack"]\n')
+        return "main:app@default", "ghost", None
+    if case == "group-member-dependency-missing":
+        write_package("app", 'depends = ["nope"]\n')
+        write_group("stack", ["app"])
+        return "main:stack@default", "nope", "app"
+    if case == "extends-parent-missing":
+        write_package("app", 'extends = ["gone"]\n')
+        return "main:app@default", "gone", None
+    raise AssertionError(case)
+
+
+@pytest.mark.parametrize(
+    "case",
+    ["dependency-missing", "dependency-group-member-missing", "group-member-dependency-missing", "extends-parent-missing"],
+)
+def test_track_of_binding_that_cannot_resolve_is_usage_error_without_stale_row_warning(
+    tmp_path: Path,
+    capsys,
+    case: str,
+) -> None:
+    # The binding was never tracked, so it is not a stale row: only the error is shown
+    # and nothing is written to tracked state.
+    repo_root = tmp_path / "repo"
+    binding, missing_name, failing_member = _write_unresolvable_binding_repo(repo_root, case)
+    config_path = write_named_manager_config(tmp_path, {"main": repo_root})
+
+    exit_code = main(["--config", str(config_path), "--no-confirm", "track", binding])
+
+    assert exit_code == 2
+    error = capsys.readouterr().err
+    assert missing_name in error
+    if failing_member:
+        assert re.search(rf"\b{failing_member}\b", error), error
+    assert "warning:" not in error
+    assert "stale tracked row" not in error
+    assert _listed_package_entries(config_path, capsys) == set()
+    state_file = tmp_path / "state" / "dotman" / "repos" / "main" / "tracked-packages.toml"
+    assert not state_file.exists() or "[[packages]]" not in state_file.read_text(encoding="utf-8")

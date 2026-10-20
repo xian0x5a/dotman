@@ -70,11 +70,11 @@ class TrackResolver:
         self, binding_text: str, repo_name: str | None, package_id: str, profile: str | None, cause: Exception,
     ) -> None:
         """When the named package's tracked row is stale, fail naming the row and its fix instead of `cause`."""
-        stale = self._engine.claim_stale_tracked_row(repo_name, package_id, profile)
-        if stale is not None:
-            raise UsageError(
-                cli_style.stale_tracked_row_rejection_text(f"track '{binding_text}'", stale.binding, stale.message)
-            ) from cause
+        rejection = self._engine.stale_tracked_row_rejection(
+            subject_text=f"track '{binding_text}'", repo_name=repo_name, package_id=package_id, profile=profile,
+        )
+        if rejection is not None:
+            raise UsageError(rejection) from cause
 
     def _resolve_binding(self, binding: FullSpecSelector, *, no_confirm: bool) -> TrackResolution:
         while True:
