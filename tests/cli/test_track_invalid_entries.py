@@ -186,6 +186,36 @@ def test_untrack_group_removes_member_rows_that_do_not_resolve(tmp_path: Path, c
     assert _listed_package_entries(config_path, capsys) == set()
 
 
+@pytest.mark.parametrize(
+    ("groups", "listing_group"),
+    [
+        pytest.param({"stack": ["a", "missing"]}, "stack", id="listed-directly"),
+        pytest.param({"stack": ["inner"], "inner": ["a", "missing"]}, "inner", id="listed-in-nested-group"),
+    ],
+)
+def test_track_group_with_missing_member_is_usage_error_naming_group_and_member(
+    tmp_path: Path,
+    capsys,
+    groups: dict[str, list[str]],
+    listing_group: str,
+) -> None:
+    repo_root = tmp_path / "repo"
+    _write_plain_packages(repo_root, ["a"])
+    (repo_root / "groups").mkdir()
+    for group_id, members in groups.items():
+        (repo_root / "groups" / f"{group_id}.toml").write_text(f"members = {json.dumps(members)}\n", encoding="utf-8")
+    config_path = write_named_manager_config(tmp_path, {"main": repo_root})
+
+    exit_code = main(["--config", str(config_path), "--no-confirm", "track", "main:stack@default"])
+
+    assert exit_code == 2
+    error = capsys.readouterr().err
+    assert listing_group in error
+    assert "missing" in error
+    assert "PersistedTrackedPackageEntryResolutionError" not in error
+    assert "dependency resolution failed" not in error
+
+
 def test_tracked_package_with_broken_manifest_is_reported_and_fails_planning(tmp_path: Path, capsys) -> None:
     # A broken manifest is a repo error, not stale state: list and doctor report the
     # row with the cause, and planning and writes fail instead of skipping it.

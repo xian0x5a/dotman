@@ -428,7 +428,9 @@ class Repository:
                     visit(member, (*stack, current_group_id))
                     continue
                 if not package_exists:
-                    raise UsageError(f"group member '{member}' does not resolve in repo '{self.config.name}'")
+                    raise UsageError(
+                        f"group '{current_group_id}' member '{member}' does not resolve in repo '{self.config.name}'"
+                    )
                 if member not in seen:
                     seen.add(member)
                     ordered.append(member)

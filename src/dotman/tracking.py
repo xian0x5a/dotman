@@ -489,13 +489,10 @@ def expand_tracked_package_entry_in_repo(repo: Repository, package_entry: FullSp
         raise PersistedTrackedPackageEntryResolutionError(reason="unknown_selector", message="unknown selector")
     if package_match:
         return [package_entry]
-    try:
-        package_ids = repo.expand_group(package_entry.selector)
-    except ValueError as exc:
-        raise PersistedTrackedPackageEntryResolutionError(
-            reason="dependency_resolution_failed",
-            message="dependency resolution failed",
-        ) from exc
+    # Only a binding the user just named reaches here (persisted rows go through
+    # resolve_persisted_tracked_package_entry), so the group's expansion error
+    # (missing or ambiguous member, cycle) is theirs to see as is.
+    package_ids = repo.expand_group(package_entry.selector)
     return [
         FullSpecSelector(
             repo=package_entry.repo,
