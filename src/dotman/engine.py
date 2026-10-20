@@ -362,7 +362,7 @@ class DotmanEngine:
     def record_tracked_package_entry(self, binding: FullSpecSelector, *, validate: bool = True) -> None:
         tracking.record_tracked_package_entry(self._planning_context, binding, validate=validate)
 
-    def validate_tracked_package_entries(self, bindings: list[FullSpecSelector]) -> None:
+    def validate_tracked_package_entry_additions(self, bindings: list[FullSpecSelector]) -> None:
         tracking.validate_tracked_package_entry_additions(self._planning_context, bindings)
 
     def find_persisted_tracked_package_entry_matches(
@@ -435,10 +435,12 @@ class DotmanEngine:
 
     def preview_tracked_package_entry_implicit_overrides(
         self,
-        package_entry: FullSpecSelector,
+        package_entries: list[FullSpecSelector],
     ) -> list[TrackedTargetOverride]:
+        """Preview the implicit owners that tracking all of `package_entries` together would override."""
         selections = [
             selection
+            for package_entry in package_entries
             for selection in planning.resolve_full_spec_selector(
                 self._planning_context,
                 package_entry,

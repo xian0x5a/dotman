@@ -785,7 +785,7 @@ def test_track_cli_can_promote_conflicting_package_from_implicit_conflict(
     assert exit_code == 0
     output = capsys.readouterr().out
     assert interaction.requests[0].header_text == (
-        "Select a conflicting package to track explicitly for fixture:alpha-stack@basic:"
+        "Select a conflicting package to track explicitly alongside fixture:alpha-stack@basic:"
     )
     assert "Confirm explicit override for fixture:alpha@basic:" not in output
     assert "implicit: fixture:beta@basic (beta)" not in output
@@ -852,6 +852,7 @@ def test_track_cli_promotes_conflicting_package_in_its_own_repo(
         encoding="utf-8",
     )
 
+    # Promoting second:beta@work overrides the request's own implicit first:alpha@basic.
     interaction = ScriptedInteraction(
         choices=[
             FullSpecSelector(
@@ -860,7 +861,8 @@ def test_track_cli_promotes_conflicting_package_in_its_own_repo(
                 selector_kind="package",
                 profile="work",
             )
-        ]
+        ],
+        confirmations=[True],
     )
 
     exit_code = main(
@@ -873,6 +875,7 @@ def test_track_cli_promotes_conflicting_package_in_its_own_repo(
         (option.value.repo, option.value.selector, option.value.profile)
         for option in interaction.requests[0].options
     ] == [("first", "alpha", "basic"), ("second", "beta", "work")]
+    assert "Confirm explicit override for first:alpha-stack@basic:" in interaction.requests[1].message
     output = capsys.readouterr().out
     # Promotion first, then the typed request in its own repo.
     assert output.index("tracked second:beta@work") < output.index("tracked first:alpha-stack@basic")
@@ -963,7 +966,8 @@ def test_track_cli_declined_promotion_override_leaves_state_untouched(
 
     assert exit_code == 0
     confirmation = interaction.requests[1]
-    assert "Confirm explicit override for first:alpha@basic:" in confirmation.message
+    assert "Confirm explicit override for first:alpha-stack@basic:" in confirmation.message
+    assert "new: first:alpha@basic (alpha)" in confirmation.message
     assert "implicit: second:beta@work (beta)" in confirmation.message
     output = capsys.readouterr().out
     # The declined request is the typed one, not the promotion it was held with.
@@ -971,6 +975,158 @@ def test_track_cli_declined_promotion_override_leaves_state_untouched(
     assert "tracked " not in output
     assert not first_state.exists()
     assert second_state.read_text(encoding="utf-8") == second_state_text
+
+
+def _write_two_path_conflict_repos(tmp_path: Path) -> Path:
+    """Write repos where `first:alpha-stack` ties with `second:beta-meta@work` on two paths.
+
+    alpha owns the shared path and delta the other path, both templated by profile, so
+    the ties exist at `basic` only. beta owns both paths in `second` and so clashes
+    explicitly with alpha as soon as alpha is promoted. State tracks `second:beta-meta@work`.
+    """
+    first_root = tmp_path / "first-repo"
+    second_root = tmp_path / "second-repo"
+    for root in (first_root, second_root):
+        (root / "profiles").mkdir(parents=True)
+        (root / "profiles" / "basic.toml").write_text("", encoding="utf-8")
+        (root / "profiles" / "work.toml").write_text("", encoding="utf-8")
+
+    def write_package(root: Path, package_id: str, targets: dict[str, str], depends: list[str] = ()) -> None:
+        package_dir = root / "packages" / package_id
+        (package_dir / "files").mkdir(parents=True)
+        lines = [f"depends = {json.dumps(list(depends))}", ""] if depends else []
+        for name, path in targets.items():
+            (package_dir / "files" / f"{name}.conf").write_text(f"{package_id} {name}\n", encoding="utf-8")
+            lines.extend([f"[targets.{name}]", f'source = "files/{name}.conf"', f'path = "{path}"', ""])
+        (package_dir / "package.toml").write_text("\n".join(lines), encoding="utf-8")
+
+    write_package(first_root, "alpha", {"shared": "~/.config/shared-{{ profile }}.conf"})
+    write_package(first_root, "delta", {"other": "~/.config/other-{{ profile }}.conf"})
+    write_package(first_root, "alpha-meta", {}, depends=["alpha", "delta"])
+    (first_root / "groups").mkdir()
+    (first_root / "groups" / "alpha-stack.toml").write_text('members = ["alpha-meta"]\n', encoding="utf-8")
+    write_package(
+        second_root,
+        "beta",
+        {"shared": "~/.config/shared-basic.conf", "other": "~/.config/other-basic.conf"},
+    )
+    write_package(second_root, "beta-meta", {}, depends=["beta"])
+
+    second_state = tmp_path / "state" / "dotman" / "repos" / "second" / "tracked-packages.toml"
+    second_state.parent.mkdir(parents=True)
+    second_state.write_text(_tracked_state_text("second", [("beta-meta", "work")]), encoding="utf-8")
+    return write_named_manager_config(tmp_path, {"first": first_root, "second": second_root})
+
+
+def test_track_cli_confirms_promotion_overriding_implicit_packages_of_the_request(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    config_path = _write_two_path_conflict_repos(tmp_path)
+    first_state = tmp_path / "state" / "dotman" / "repos" / "first" / "tracked-packages.toml"
+    second_state = tmp_path / "state" / "dotman" / "repos" / "second" / "tracked-packages.toml"
+    second_state_text = second_state.read_text(encoding="utf-8")
+
+    interaction = ScriptedInteraction(
+        choices=[FullSpecSelector(repo="second", selector="beta", selector_kind="package", profile="work")],
+        confirmations=[False],
+    )
+
+    exit_code = main(
+        ["--config", str(config_path), "track", "first:alpha-stack@basic"],
+        interaction=interaction,
+    )
+
+    assert exit_code == 0
+    # Promoting beta settles the shared path, but beta also takes over the other path
+    # from delta, which the user never resolved; the confirmation must list both.
+    message = interaction.requests[1].message
+    assert "Confirm explicit override for first:alpha-stack@basic:" in message
+    assert "new: second:beta@work (beta)" in message
+    assert "implicit: first:alpha@basic (alpha)" in message
+    assert "implicit: first:delta@basic (delta)" in message
+    assert capsys.readouterr().out == "skipped tracking first:alpha-stack@basic\n"
+    assert not first_state.exists()
+    assert second_state.read_text(encoding="utf-8") == second_state_text
+
+
+def test_track_cli_offers_only_promotions_that_fit_the_held_ones(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    config_path = _write_two_path_conflict_repos(tmp_path)
+
+    # Promoting alpha settles the shared path. The other path still ties delta with
+    # beta, but promoting beta would clash explicitly with alpha, so only delta is left
+    # and it is asked as a single confirmation instead of a menu.
+    interaction = ScriptedInteraction(
+        choices=[FullSpecSelector(repo="first", selector="alpha", selector_kind="package", profile="basic")],
+        confirmations=[True, True],
+    )
+
+    exit_code = main(
+        ["--config", str(config_path), "track", "first:alpha-stack@basic"],
+        interaction=interaction,
+    )
+
+    assert exit_code == 0
+    menu, promotion, override = interaction.requests
+    assert [option.label for option in menu.options] == ["first:alpha@basic", "second:beta@work"]
+    assert promotion.prompt == "Confirm promotion? [y/n] "
+    assert "promote:   first:delta@basic" in promotion.message
+    assert "tracking it explicitly, alongside the request, breaks the implicit tie." in promotion.message
+    assert "Confirm explicit override for first:alpha-stack@basic:" in override.message
+    assert capsys.readouterr().out.splitlines() == [
+        "tracked first:alpha@basic",
+        "tracked first:delta@basic",
+        "tracked first:alpha-stack@basic",
+    ]
+    first_state = tmp_path / "state" / "dotman" / "repos" / "first" / "tracked-packages.toml"
+    assert first_state.read_text(encoding="utf-8") == _tracked_state_text(
+        "first",
+        [("alpha", "basic"), ("alpha-meta", "basic"), ("delta", "basic")],
+    )
+
+
+def test_track_cli_drops_held_promotions_when_switching_profile(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    config_path = _write_two_path_conflict_repos(tmp_path)
+
+    # alpha is promoted for the shared path, then the promotion for the other path is
+    # declined and the user switches to `work`, where nothing ties any more. The alpha
+    # promotion only settled the tie at `basic`, so it must not outlive the switch.
+    interaction = ScriptedInteraction(
+        choices=[
+            FullSpecSelector(repo="first", selector="alpha", selector_kind="package", profile="basic"),
+            "work",
+        ],
+        confirmations=[False],
+    )
+
+    exit_code = main(
+        ["--config", str(config_path), "track", "first:alpha-stack@basic"],
+        interaction=interaction,
+    )
+
+    assert exit_code == 0
+    assert interaction.requests[2].header_text == "Select a non-conflicting profile for first:alpha-stack@basic:"
+    assert capsys.readouterr().out == "tracked first:alpha-stack@work\n"
+    first_state = tmp_path / "state" / "dotman" / "repos" / "first" / "tracked-packages.toml"
+    assert first_state.read_text(encoding="utf-8") == _tracked_state_text("first", [("alpha-meta", "work")])
 
 
 def test_track_cli_asks_for_replacement_once_when_promoting(
