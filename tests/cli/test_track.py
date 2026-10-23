@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
@@ -977,6 +978,21 @@ def test_track_cli_declined_promotion_override_leaves_state_untouched(
     assert second_state.read_text(encoding="utf-8") == second_state_text
 
 
+def _write_package(root: Path, package_id: str, targets: dict[str, str], depends: Sequence[str] = ()) -> None:
+    package_dir = root / "packages" / package_id
+    (package_dir / "files").mkdir(parents=True)
+    lines = [f"depends = {json.dumps(list(depends))}", ""] if depends else []
+    for name, path in targets.items():
+        (package_dir / "files" / f"{name}.conf").write_text(f"{package_id} {name}\n", encoding="utf-8")
+        lines.extend([f"[targets.{name}]", f'source = "files/{name}.conf"', f'path = "{path}"', ""])
+    (package_dir / "package.toml").write_text("\n".join(lines), encoding="utf-8")
+
+
+def _write_basic_profile(root: Path) -> None:
+    (root / "profiles").mkdir(parents=True)
+    (root / "profiles" / "basic.toml").write_text("", encoding="utf-8")
+
+
 def _write_two_path_conflict_repos(tmp_path: Path) -> Path:
     """Write repos where `first:alpha-stack` ties with `second:beta-meta@work` on two paths.
 
@@ -987,30 +1003,20 @@ def _write_two_path_conflict_repos(tmp_path: Path) -> Path:
     first_root = tmp_path / "first-repo"
     second_root = tmp_path / "second-repo"
     for root in (first_root, second_root):
-        (root / "profiles").mkdir(parents=True)
-        (root / "profiles" / "basic.toml").write_text("", encoding="utf-8")
+        _write_basic_profile(root)
         (root / "profiles" / "work.toml").write_text("", encoding="utf-8")
 
-    def write_package(root: Path, package_id: str, targets: dict[str, str], depends: list[str] = ()) -> None:
-        package_dir = root / "packages" / package_id
-        (package_dir / "files").mkdir(parents=True)
-        lines = [f"depends = {json.dumps(list(depends))}", ""] if depends else []
-        for name, path in targets.items():
-            (package_dir / "files" / f"{name}.conf").write_text(f"{package_id} {name}\n", encoding="utf-8")
-            lines.extend([f"[targets.{name}]", f'source = "files/{name}.conf"', f'path = "{path}"', ""])
-        (package_dir / "package.toml").write_text("\n".join(lines), encoding="utf-8")
-
-    write_package(first_root, "alpha", {"shared": "~/.config/shared-{{ profile }}.conf"})
-    write_package(first_root, "delta", {"other": "~/.config/other-{{ profile }}.conf"})
-    write_package(first_root, "alpha-meta", {}, depends=["alpha", "delta"])
+    _write_package(first_root, "alpha", {"shared": "~/.config/shared-{{ profile }}.conf"})
+    _write_package(first_root, "delta", {"other": "~/.config/other-{{ profile }}.conf"})
+    _write_package(first_root, "alpha-meta", {}, depends=["alpha", "delta"])
     (first_root / "groups").mkdir()
     (first_root / "groups" / "alpha-stack.toml").write_text('members = ["alpha-meta"]\n', encoding="utf-8")
-    write_package(
+    _write_package(
         second_root,
         "beta",
         {"shared": "~/.config/shared-basic.conf", "other": "~/.config/other-basic.conf"},
     )
-    write_package(second_root, "beta-meta", {}, depends=["beta"])
+    _write_package(second_root, "beta-meta", {}, depends=["beta"])
 
     second_state = tmp_path / "state" / "dotman" / "repos" / "second" / "tracked-packages.toml"
     second_state.parent.mkdir(parents=True)
@@ -1094,6 +1100,93 @@ def test_track_cli_offers_only_promotions_that_fit_the_held_ones(
         "first",
         [("alpha", "basic"), ("alpha-meta", "basic"), ("delta", "basic")],
     )
+
+
+def test_track_cli_never_offers_a_promotion_that_clashes_explicitly_at_a_later_path(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    first_root = tmp_path / "first-repo"
+    second_root = tmp_path / "second-repo"
+    for root in (first_root, second_root):
+        _write_basic_profile(root)
+    shared, eps_path, z_path = "~/.config/shared.conf", "~/.config/e.conf", "~/.config/z.conf"
+    _write_package(first_root, "eps", {"e": eps_path})
+    _write_package(first_root, "alpha", {"shared": shared})
+    _write_package(first_root, "alpha-meta", {}, depends=["eps", "alpha"])
+    (first_root / "groups").mkdir()
+    (first_root / "groups" / "alpha-stack.toml").write_text('members = ["alpha-meta"]\n', encoding="utf-8")
+    _write_package(second_root, "beta", {"shared": shared})
+    _write_package(second_root, "phi", {"e": eps_path, "z": z_path})
+    _write_package(second_root, "zeta", {"z": z_path})
+    _write_package(second_root, "beta-meta", {}, depends=["beta", "phi"])
+    second_state = tmp_path / "state" / "dotman" / "repos" / "second" / "tracked-packages.toml"
+    second_state.parent.mkdir(parents=True)
+    second_state.write_text(
+        _tracked_state_text("second", [("beta-meta", "basic"), ("zeta", "basic")]),
+        encoding="utf-8",
+    )
+    config_path = write_named_manager_config(tmp_path, {"first": first_root, "second": second_root})
+    first_state = tmp_path / "state" / "dotman" / "repos" / "first" / "tracked-packages.toml"
+    second_state_text = second_state.read_text(encoding="utf-8")
+
+    # Promoting phi settles the e.conf tie but clashes explicitly with the tracked zeta
+    # at z.conf, so only eps is left and it is asked as a single confirmation.
+    interaction = ScriptedInteraction(confirmations=[False])
+    exit_code = main(["--config", str(config_path), "track", "first:alpha-stack@basic"], interaction=interaction)
+
+    assert exit_code == 2
+    [promotion] = interaction.requests
+    assert promotion.prompt == "Confirm promotion? [y/n] "
+    assert "promote:   first:eps@basic" in promotion.message
+    assert not first_state.exists()
+    assert second_state.read_text(encoding="utf-8") == second_state_text
+
+
+def test_track_cli_names_the_explicit_clash_hidden_behind_an_implicit_tie(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    first_root = tmp_path / "first-repo"
+    second_root = tmp_path / "second-repo"
+    for root in (first_root, second_root):
+        _write_basic_profile(root)
+    shared, z_path = "~/.config/shared.conf", "~/.config/z.conf"
+    # The request ties implicitly with beta at shared.conf and clashes explicitly
+    # with the explicitly tracked zeta at z.conf, which is found later.
+    _write_package(first_root, "alpha", {"shared": shared})
+    _write_package(first_root, "gamma", {"z": z_path})
+    _write_package(first_root, "alpha-meta", {}, depends=["alpha"])
+    (first_root / "groups").mkdir()
+    # gamma is a direct member, so it is explicit and clashes with the explicit zeta.
+    (first_root / "groups" / "alpha-stack.toml").write_text('members = ["alpha-meta", "gamma"]\n', encoding="utf-8")
+    _write_package(second_root, "beta", {"shared": shared})
+    _write_package(second_root, "zeta", {"z": z_path})
+    _write_package(second_root, "beta-meta", {}, depends=["beta"])
+    second_state = tmp_path / "state" / "dotman" / "repos" / "second" / "tracked-packages.toml"
+    second_state.parent.mkdir(parents=True)
+    second_state_text = _tracked_state_text("second", [("beta-meta", "basic"), ("zeta", "basic")])
+    second_state.write_text(second_state_text, encoding="utf-8")
+    config_path = write_named_manager_config(tmp_path, {"first": first_root, "second": second_root})
+    first_state = tmp_path / "state" / "dotman" / "repos" / "first" / "tracked-packages.toml"
+
+    interaction = ScriptedInteraction()
+    exit_code = main(["--config", str(config_path), "track", "first:alpha-stack@basic"], interaction=interaction)
+
+    assert exit_code == 2
+    assert interaction.requests == []
+    error = capsys.readouterr().err
+    assert "conflicting explicit tracked targets for" in error
+    assert "z.conf" in error
+    assert not first_state.exists()
+    assert second_state.read_text(encoding="utf-8") == second_state_text
 
 
 def test_track_cli_drops_held_promotions_when_switching_profile(
