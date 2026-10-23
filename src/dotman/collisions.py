@@ -56,45 +56,63 @@ def resolve_tracked_target_winners(
 ) -> set[tuple[int, int]]:
     winner_indexes: set[tuple[int, int]] = set()
     for live_path, candidates in candidates_by_live_path.items():
-        candidates_by_instance_target: dict[tuple[str, str, str | None, str], TrackedTargetCandidate] = {}
-        for candidate in candidates:
-            instance_target_key = (
-                candidate.selection.identity.repo,
-                candidate.selection.identity.package_id,
-                candidate.selection.identity.bound_profile,
-                candidate.target_name,
-            )
-            existing = candidates_by_instance_target.get(instance_target_key)
-            if existing is None or (candidate.precedence, -candidate.plan_index, -candidate.target_index) > (
-                existing.precedence,
-                -existing.plan_index,
-                -existing.target_index,
-            ):
-                candidates_by_instance_target[instance_target_key] = candidate
-
-        deduped_candidates = list(candidates_by_instance_target.values())
-        highest_precedence = max(candidate.precedence for candidate in deduped_candidates)
-        contenders = [candidate for candidate in deduped_candidates if candidate.precedence == highest_precedence]
-        first = contenders[0]
+        contenders = _top_contenders(candidates)
         if len(contenders) > 1:
-            raise TrackedTargetConflictError(
-                live_path=live_path,
-                precedence=first.precedence_name,
-                contenders=[
-                    f"{candidate.selection_label} -> {candidate.target_label}"
-                    for candidate in sorted(contenders, key=lambda item: (item.selection_label, item.target_label))
-                ],
-                candidates=sorted(
-                    contenders,
-                    key=lambda item: (
-                        item.selection_label,
-                        item.target_label,
-                    ),
-                ),
-            )
-        winner_indexes.add((first.plan_index, first.target_index))
+            raise _conflict_error(live_path, contenders)
+        winner_indexes.add((contenders[0].plan_index, contenders[0].target_index))
     return winner_indexes
 
+
+def tracked_target_conflicts(
+    candidates_by_live_path: dict[Path, list[TrackedTargetCandidate]],
+) -> list[TrackedTargetConflictError]:
+    """Every contested live path, so a later explicit clash is not hidden behind an earlier implicit tie."""
+    return [
+        _conflict_error(live_path, contenders)
+        for live_path, candidates in candidates_by_live_path.items()
+        if len(contenders := _top_contenders(candidates)) > 1
+    ]
+
+
+def _top_contenders(candidates: list[TrackedTargetCandidate]) -> list[TrackedTargetCandidate]:
+    """The candidates that tie at the highest precedence, one per package instance target."""
+    candidates_by_instance_target: dict[tuple[str, str, str | None, str], TrackedTargetCandidate] = {}
+    for candidate in candidates:
+        instance_target_key = (
+            candidate.selection.identity.repo,
+            candidate.selection.identity.package_id,
+            candidate.selection.identity.bound_profile,
+            candidate.target_name,
+        )
+        existing = candidates_by_instance_target.get(instance_target_key)
+        if existing is None or (candidate.precedence, -candidate.plan_index, -candidate.target_index) > (
+            existing.precedence,
+            -existing.plan_index,
+            -existing.target_index,
+        ):
+            candidates_by_instance_target[instance_target_key] = candidate
+
+    deduped_candidates = list(candidates_by_instance_target.values())
+    highest_precedence = max(candidate.precedence for candidate in deduped_candidates)
+    return [candidate for candidate in deduped_candidates if candidate.precedence == highest_precedence]
+
+
+def _conflict_error(live_path: Path, contenders: list[TrackedTargetCandidate]) -> TrackedTargetConflictError:
+    return TrackedTargetConflictError(
+        live_path=live_path,
+        precedence=contenders[0].precedence_name,
+        contenders=[
+            f"{candidate.selection_label} -> {candidate.target_label}"
+            for candidate in sorted(contenders, key=lambda item: (item.selection_label, item.target_label))
+        ],
+        candidates=sorted(
+            contenders,
+            key=lambda item: (
+                item.selection_label,
+                item.target_label,
+            ),
+        ),
+    )
 
 
 @dataclass(frozen=True)

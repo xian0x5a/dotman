@@ -40,6 +40,11 @@ class TrackResolution:
     promotions: tuple[FullSpecSelector, ...] = ()
 
 
+def _blocking_conflict(conflicts: Sequence[TrackedTargetConflictError]) -> TrackedTargetConflictError:
+    """The conflict that blocks tracking: an explicit clash, which no promotion settles, before any implicit tie."""
+    return next((conflict for conflict in conflicts if conflict.precedence != "implicit"), conflicts[0])
+
+
 class TrackResolver:
     def __init__(
         self,
@@ -91,22 +96,21 @@ class TrackResolver:
                 if replacement_result is not None:
                     return replacement_result
                 replacements_confirmed_for = binding
-            try:
-                self._engine.validate_tracked_package_entry_additions([*promotions, binding])
-            except TrackedTargetConflictError as conflict:
-                promotion = self._resolve_implicit_conflict(binding, conflict, held_promotions=promotions)
-                if promotion is not None:
-                    promotions.append(promotion)
-                    continue
-                alternative_profile = self._select_non_conflicting_profile(binding)
-                if alternative_profile is None:
-                    raise
-                # Held promotions settled conflicts of the old profile; conflicts
-                # that remain at the new one offer promotions afresh.
-                promotions.clear()
-                binding = binding.with_profile(alternative_profile)
+            conflicts = self._engine.tracked_package_entry_addition_conflicts([*promotions, binding])
+            if not conflicts:
+                break
+            conflict = _blocking_conflict(conflicts)
+            promotion = self._resolve_implicit_conflict(binding, conflict, held_promotions=promotions)
+            if promotion is not None:
+                promotions.append(promotion)
                 continue
-            break
+            alternative_profile = self._select_non_conflicting_profile(binding)
+            if alternative_profile is None:
+                raise conflict
+            # Held promotions settled conflicts of the old profile; conflicts
+            # that remain at the new one offer promotions afresh.
+            promotions.clear()
+            binding = binding.with_profile(alternative_profile)
 
         # Nothing is recorded until every prompt is accepted, so declining one
         # leaves both the binding and its promotions untracked.
@@ -247,18 +251,9 @@ class TrackResolver:
     ) -> FullSpecSelector | None:
         if conflict.precedence != "implicit" or self._interaction is None:
             return None
-        candidate_bindings = set(self._engine.expand_tracked_package_entry(binding))
-
-        def candidate_binding(candidate) -> FullSpecSelector:
-            return FullSpecSelector(
-                repo=candidate.selection.identity.repo,
-                selector=candidate.selection.source_selector or candidate.package_id,
-                selector_kind="package",
-                profile=candidate.selection.requested_profile,
-            )
 
         def promoted_binding(candidate) -> FullSpecSelector:
-            # Promote the candidate as it is tracked: an out-of-binding candidate
+            # Promote the candidate as it is tracked: a candidate outside the request
             # may come from another repo or profile than the binding being tracked.
             return FullSpecSelector(
                 repo=candidate.selection.identity.repo,
@@ -267,18 +262,10 @@ class TrackResolver:
                 profile=candidate.selection.requested_profile,
             )
 
-        in_binding_candidates = [
-            candidate
-            for candidate in conflict.candidates
-            if candidate_binding(candidate) in candidate_bindings
-        ]
         promotions = sorted(
             (
                 promotion
-                for promotion in {
-                    promoted_binding(candidate)
-                    for candidate in in_binding_candidates or conflict.candidates
-                }
+                for promotion in {promoted_binding(candidate) for candidate in conflict.candidates}
                 if self._promotion_fits(promotion, binding, held_promotions)
             ),
             key=lambda promotion: (promotion.repo, promotion.selector, promotion.profile),
@@ -323,15 +310,12 @@ class TrackResolver:
         binding: FullSpecSelector,
         held_promotions: list[FullSpecSelector],
     ) -> bool:
-        """Whether `promotion` can be tracked with the request without an explicit clash.
+        """Whether `promotion` can be tracked with the request without an explicit clash at any path.
 
         An implicit conflict that remains is fine: the next round offers another promotion.
         """
-        try:
-            self._engine.validate_tracked_package_entry_additions([*held_promotions, promotion, binding])
-        except TrackedTargetConflictError as conflict:
-            return conflict.precedence == "implicit"
-        return True
+        conflicts = self._engine.tracked_package_entry_addition_conflicts([*held_promotions, promotion, binding])
+        return all(conflict.precedence == "implicit" for conflict in conflicts)
 
     def _select_non_conflicting_profile(
         self,

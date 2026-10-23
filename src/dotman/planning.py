@@ -8,8 +8,9 @@ from typing import TYPE_CHECKING, Any, Mapping
 from dotman.collisions import (
     TrackedTargetCandidate,
     TrackedTargetOverride,
+    TrackedTargetConflictError,
     operation_write_path,
-    resolve_tracked_target_winners,
+    tracked_target_conflicts,
 )
 from dotman.command_runtime import CommandRuntime
 from dotman.errors import UsageError
@@ -458,15 +459,29 @@ def validate_tracked_package_ownership(
     *,
     entries_by_repo: dict[str, list[TrackedPackageEntry]] | None = None,
 ) -> None:
+    conflicts = tracked_package_ownership_conflicts(planning_context, entries_by_repo=entries_by_repo)
+    if conflicts:
+        raise conflicts[0]
+
+
+def tracked_package_ownership_conflicts(
+    planning_context: PlanningContext,
+    *,
+    entries_by_repo: dict[str, list[TrackedPackageEntry]] | None = None,
+) -> list[TrackedTargetConflictError]:
     selections = resolve_tracked_package_selections(planning_context, entries_by_repo=entries_by_repo)
-    for operation in ("push", "pull"):
-        candidates_by_path = collect_tracked_ownership_candidates(
-            planning_context,
-            entries_by_repo=entries_by_repo,
-            selections=selections,
-            operation=operation,
+    return [
+        conflict
+        for operation in ("push", "pull")
+        for conflict in tracked_target_conflicts(
+            collect_tracked_ownership_candidates(
+                planning_context,
+                entries_by_repo=entries_by_repo,
+                selections=selections,
+                operation=operation,
+            )
         )
-        resolve_tracked_target_winners(candidates_by_path)
+    ]
 
 
 def preview_package_selection_implicit_overrides(
