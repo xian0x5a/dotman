@@ -36,6 +36,7 @@ from dotman.package_resolution import (
 from dotman.repository import MissingExtendsParentError, Repository
 
 if TYPE_CHECKING:
+    from dotman.collisions import TrackedTargetConflictError
     from dotman.planning import PlanningContext
 
 TRACKED_PACKAGES_FILE_NAME = "tracked-packages.toml"
@@ -743,6 +744,28 @@ def validate_tracked_package_entry_additions(
     bindings: list[FullSpecSelector],
 ) -> None:
     """Validate the state that tracking all of `bindings` together would produce."""
+    validate_tracked_package_entries(context, _tracked_package_entries_with_additions(context, bindings))
+
+
+def tracked_package_entry_addition_conflicts(
+    context: "PlanningContext",
+    bindings: list[FullSpecSelector],
+) -> list["TrackedTargetConflictError"]:
+    """Every target conflict in the state that tracking all of `bindings` together would produce."""
+    from dotman import planning
+
+    return planning.tracked_package_ownership_conflicts(
+        context,
+        entries_by_repo=tracked_entries_by_repo_from_bindings(
+            _tracked_package_entries_with_additions(context, bindings)
+        ),
+    )
+
+
+def _tracked_package_entries_with_additions(
+    context: "PlanningContext",
+    bindings: list[FullSpecSelector],
+) -> dict[str, list[FullSpecSelector]]:
     state = context.tracked_state
     raw_entries_by_repo = raw_tracked_package_entries_by_repo(state)
     for binding in bindings:
@@ -752,10 +775,7 @@ def validate_tracked_package_entry_additions(
             persisted_tracked_package_entries_for_repo(repo, raw_entries_by_repo.get(repo.config.name, [])),
             expand_tracked_package_entry_in_repo(repo, binding),
         )
-    validate_tracked_package_entries(
-        context,
-        effective_tracked_package_entries_by_repo(state, raw_entries_by_repo),
-    )
+    return effective_tracked_package_entries_by_repo(state, raw_entries_by_repo)
 
 
 

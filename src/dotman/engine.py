@@ -4,7 +4,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Sequence
 
-from dotman.collisions import TrackedTargetOverride
+from dotman.collisions import TrackedTargetConflictError, TrackedTargetOverride
 from dotman.command_runtime import CommandRuntime, current_command_runtime
 from dotman.config import default_state_root, load_manager_config
 from dotman.errors import UsageError
@@ -364,6 +364,11 @@ class DotmanEngine:
 
     def validate_tracked_package_entry_additions(self, bindings: list[FullSpecSelector]) -> None:
         tracking.validate_tracked_package_entry_additions(self._planning_context, bindings)
+
+    def tracked_package_entry_addition_conflicts(
+        self, bindings: list[FullSpecSelector],
+    ) -> list[TrackedTargetConflictError]:
+        return tracking.tracked_package_entry_addition_conflicts(self._planning_context, bindings)
 
     def find_persisted_tracked_package_entry_matches(
         self,
