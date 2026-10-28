@@ -347,7 +347,7 @@ def test_run_basic_reconcile_lists_only_changed_repo_sources_before_prompt(
 
     assert exit_code == 0
     output = capsys.readouterr().out
-    assert "Reconciled repo source changes:" in output
+    assert output.index("Reconciled repo source changes:") < output.index("Write these changes? [y/n] ")
     assert f"  - {repo_path.resolve()}" in output
     assert str(include_path.resolve()) not in output
 

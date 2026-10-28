@@ -897,14 +897,20 @@ def test_info_snapshot_with_ambiguous_ref_lets_the_interaction_pick_the_snapshot
     assert {option.value for option in request.options} == set(snapshot_ids.values())
 
 
-@pytest.mark.parametrize("json_output", [True, False])
+@pytest.mark.parametrize(
+    ("flags", "interaction"),
+    [
+        pytest.param(["--json"], ScriptedInteraction(), id="json-output"),
+        pytest.param(["--no-confirm"], ScriptedInteraction(), id="no-confirm"),
+        pytest.param([], None, id="no-terminal"),
+    ],
+)
 def test_info_snapshot_with_ambiguous_ref_fails_when_it_cannot_prompt(
-    tmp_path: Path, monkeypatch, capsys, json_output: bool,
+    tmp_path: Path, monkeypatch, capsys, flags: list[str], interaction: ScriptedInteraction | None,
 ) -> None:
-    config_path, snapshot_ids = _push_two_snapshots(tmp_path, monkeypatch)
-    # --json suppresses the interaction; the other case has none to begin with.
-    interaction = ScriptedInteraction() if json_output else None
-    flags = ["--json"] if json_output else []
+    config_path, _snapshot_ids = _push_two_snapshots(tmp_path, monkeypatch)
+    # Keep `pytest -s` from handing main a real terminal in the no-terminal case.
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
     capsys.readouterr()
 
     exit_code = main(
@@ -956,6 +962,8 @@ def test_interactive_restore_shows_all_diffs_then_restores_on_skip(
 
 def test_restore_without_interaction_requires_confirmation(tmp_path: Path, monkeypatch, capsys) -> None:
     config_path, live_path = _push_snapshot_then_mutate_live(tmp_path, monkeypatch)
+    # Keep `pytest -s` from handing main a real terminal.
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
     capsys.readouterr()
 
     exit_code = main(["--config", str(config_path), "restore"], interaction=None)

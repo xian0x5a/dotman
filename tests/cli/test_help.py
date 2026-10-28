@@ -265,7 +265,7 @@ def test_rewrite_home_action_help_is_stdout_only(capsys, action: str) -> None:
     assert "--stdout" not in output
     assert "output" not in output.lower()
 
-def test_run_diff_review_menu_shows_help_then_skips_review(monkeypatch, capsys) -> None:
+def test_run_diff_review_menu_shows_help_then_skips_review(capsys) -> None:
     review_item = cli.ReviewItem(
         selection_label="example:git@basic",
         package_id="git",
@@ -293,7 +293,7 @@ def test_run_diff_review_menu_shows_help_then_skips_review(monkeypatch, capsys) 
     assert "  ?          show this help" in output
 
 
-def test_run_diff_review_menu_uses_full_paths_when_requested(monkeypatch, capsys) -> None:
+def test_run_diff_review_menu_uses_full_paths_when_requested(capsys) -> None:
     review_item = cli.ReviewItem(
         selection_label="example:git@basic",
         package_id="git",

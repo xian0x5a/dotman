@@ -583,44 +583,41 @@ def review_restore_actions_for_interactive_diffs(
 class InspectionRuntime:
     interaction: Interaction | None
 
-    def _interaction_for(self, *, json_output: bool) -> Interaction | None:
-        return None if json_output else self.interaction
-
     def resolve_tracked_package_text(
         self,
         engine: DotmanEngine,
         package_text: str,
         *,
-        json_output: bool,
+        interaction: Interaction | None,
     ) -> tuple[Repository, str, str | None]:
-        return resolve_tracked_package_text(engine, package_text, interaction=self._interaction_for(json_output=json_output))
+        return resolve_tracked_package_text(engine, package_text, interaction=interaction)
 
     def resolve_trackable_selector_text(
         self,
         engine: DotmanEngine,
         query_text: str,
         *,
-        json_output: bool,
+        interaction: Interaction | None,
     ) -> tuple[Repository, str, SelectorKind]:
-        return resolve_trackable_selector_text(engine, query_text, interaction=self._interaction_for(json_output=json_output))
+        return resolve_trackable_selector_text(engine, query_text, interaction=interaction)
 
     def resolve_variable_text(
         self,
         engine: DotmanEngine,
         variable_text: str,
         *,
-        json_output: bool,
+        interaction: Interaction | None,
     ) -> str:
-        return resolve_variable_text(engine, variable_text, interaction=self._interaction_for(json_output=json_output))
+        return resolve_variable_text(engine, variable_text, interaction=interaction)
 
     def resolve_snapshot_record(
         self,
         snapshot_root: Path,
         snapshot_ref: str | None,
         *,
-        json_output: bool,
+        interaction: Interaction | None,
     ) -> SnapshotRecord:
-        return resolve_snapshot_record(snapshot_root, snapshot_ref, interaction=self._interaction_for(json_output=json_output))
+        return resolve_snapshot_record(snapshot_root, snapshot_ref, interaction=interaction)
 
 
 @dataclass(frozen=True)

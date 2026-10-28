@@ -7,6 +7,7 @@ from typing import Any, Protocol
 from dotman import cli_emit
 from dotman.config import load_manager_config
 from dotman.engine import DotmanEngine
+from dotman.interaction import Interaction
 from dotman.models import ManagerConfig, SelectorKind, package_ref_text
 from dotman.repository import Repository
 from dotman.snapshot import SnapshotRecord, list_snapshots
@@ -19,12 +20,15 @@ EngineFactory = Callable[[str | None], DotmanEngine]
 class InspectionCommandRuntime(Protocol):
     """Interactive resolution needed only by inspection workflows."""
 
+    @property
+    def interaction(self) -> Interaction | None: ...
+
     def resolve_tracked_package_text(
         self,
         engine: DotmanEngine,
         package_text: str,
         *,
-        json_output: bool,
+        interaction: Interaction | None,
     ) -> tuple[Repository, str, str | None]: ...
 
     def resolve_trackable_selector_text(
@@ -32,7 +36,7 @@ class InspectionCommandRuntime(Protocol):
         engine: DotmanEngine,
         query_text: str,
         *,
-        json_output: bool,
+        interaction: Interaction | None,
     ) -> tuple[Repository, str, SelectorKind]: ...
 
     def resolve_variable_text(
@@ -40,7 +44,7 @@ class InspectionCommandRuntime(Protocol):
         engine: DotmanEngine,
         variable_text: str,
         *,
-        json_output: bool,
+        interaction: Interaction | None,
     ) -> str: ...
 
     def resolve_snapshot_record(
@@ -48,7 +52,7 @@ class InspectionCommandRuntime(Protocol):
         snapshot_root: Path,
         snapshot_ref: str | None,
         *,
-        json_output: bool,
+        interaction: Interaction | None,
     ) -> SnapshotRecord: ...
 
 
@@ -130,12 +134,16 @@ class InspectionCommandRunner:
             )
         raise ValueError(f"unsupported list command '{args.list_command}'")
 
+    def _interaction(self, args: Any) -> Interaction | None:
+        # JSON output must stay machine-readable, so it never prompts.
+        return None if args.json_output else self._runtime.interaction
+
     def _run_info(self, *, args: Any, engine: DotmanEngine) -> int:
         if args.info_command == "tracked":
             repo, package_id, bound_profile = self._runtime.resolve_tracked_package_text(
                 engine,
                 args.package,
-                json_output=args.json_output,
+                interaction=self._interaction(args),
             )
             package_ref = package_ref_text(package_id=package_id, bound_profile=bound_profile)
             return cli_emit.emit_tracked_package_detail(
@@ -147,7 +155,7 @@ class InspectionCommandRunner:
             repo, selector, selector_kind = self._runtime.resolve_trackable_selector_text(
                 engine,
                 args.query,
-                json_output=args.json_output,
+                interaction=self._interaction(args),
             )
             return cli_emit.emit_trackable_detail(
                 trackable_detail=engine.describe_trackable(
@@ -162,7 +170,7 @@ class InspectionCommandRunner:
             resolved_variable = self._runtime.resolve_variable_text(
                 engine,
                 args.variable,
-                json_output=args.json_output,
+                interaction=self._interaction(args),
             )
             return cli_emit.emit_variable_detail(
                 variable_detail=engine.describe_variable(resolved_variable),
@@ -190,7 +198,7 @@ class InspectionCommandRunner:
                 snapshot=self._runtime.resolve_snapshot_record(
                     config.snapshots.path,
                     args.snapshot,
-                    json_output=args.json_output,
+                    interaction=self._interaction(args),
                 ),
                 json_output=args.json_output,
                 full_paths=args.full_path if args.full_path is not None else config.ui.full_paths,

@@ -196,7 +196,6 @@ def test_run_diff_review_menu_prints_footer_after_single_inspect(
 
 
 def test_run_diff_review_menu_list_command_reprints_menu(
-    monkeypatch,
     capsys,
 ) -> None:
     review_item = cli.ReviewItem(
@@ -213,7 +212,6 @@ def test_run_diff_review_menu_list_command_reprints_menu(
         after_bytes=b"after\n",
     )
     interaction = ScriptedInteraction(text_inputs=["list", "s"])
-
 
     assert cli.run_diff_review_menu([review_item], interaction=interaction, operation="push") is True
 
