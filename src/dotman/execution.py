@@ -4,7 +4,6 @@ import signal
 import stat
 import sys
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Callable, Sequence
 
 from dotman.command_runtime import (
