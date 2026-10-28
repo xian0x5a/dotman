@@ -76,7 +76,6 @@ class TargetMetadata:
     editor: Any = None
     additional_sources: tuple[str, ...] = ()
     additional_source_entries: tuple[AdditionalSource, ...] = ()
-    additional_sources_root: Path | None = None
     live_path_is_symlink: bool = False
     live_path_symlink_target: str | None = None
     # Rendered but unresolved; observation runs it once per session.
@@ -193,7 +192,6 @@ def build_target_metadata(
                         editor=target.editor,
                         additional_sources=target.additional_sources,
                         additional_source_entries=target.additional_source_entries,
-                        additional_sources_root=target.additional_sources_root,
                         compare_repo="raw",
                         compare_live="raw",
                         ignore_patterns=(),
@@ -295,7 +293,6 @@ def build_target_metadata(
                     editor=target.editor,
                     additional_sources=target.additional_sources,
                     additional_source_entries=target.additional_source_entries,
-                    additional_sources_root=target.additional_sources_root,
                     live_path_is_symlink=live_path_is_symlink,
                     live_path_symlink_target=live_path_symlink_target,
                     ignore_command=(

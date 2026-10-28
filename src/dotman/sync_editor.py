@@ -33,12 +33,7 @@ class EditorOutput:
 
 
 def freeze_additional_sources(*, metadata, repo_root, primary_paths):
-    package_root = Path(metadata.command_env['DOTMAN_PACKAGE_ROOT'])
-    sources = resolve_editor_additional_sources(
-        editor=metadata.editor, additional_sources=metadata.additional_sources,
-        additional_source_entries=metadata.additional_source_entries,
-        additional_sources_root=metadata.additional_sources_root, package_root=package_root,
-    )
+    sources = resolve_editor_additional_sources(metadata.additional_source_entries)
     if (metadata.editor.type == 'jinja' or metadata.render_command == 'jinja') and metadata.repo_path.exists():
         sources.extend(discover_template_file_dependencies(metadata.repo_path))
     sources = list(dict.fromkeys(path for path in sources if path != metadata.repo_path))

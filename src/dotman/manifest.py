@@ -406,7 +406,6 @@ def normalize_editor(value: Any, *, manifest_path: Path, target_name: str, defau
         elevation=elevation,
         additional_sources=sources,
         additional_source_entries=source_entries,
-        additional_sources_root=manifest_path.parent if sources else None,
         additional_sources_explicit="additional_sources" in value,
     )
 
@@ -793,7 +792,6 @@ def build_target_spec(
                       editor=editor, compare_repo=compare_repo, compare_live=compare_live,
                       additional_sources=editor.additional_sources,
                       additional_source_entries=editor.source_entries(),
-                      additional_sources_root=editor.additional_sources_root,
                       render_explicit=("render" in target_payload or "render" in preset_payload),
                       capture_explicit=("capture" in target_payload or "capture" in preset_payload),
                       compare_repo_explicit=(isinstance(compare_payload, dict) and "repo" in compare_payload) or isinstance(preset_payload.get("compare"), dict) and "repo" in preset_payload["compare"],
@@ -990,7 +988,6 @@ def merge_target_specs(base: TargetSpec, override: TargetSpec) -> TargetSpec:
         editor_explicit=base.editor_explicit or override.editor_explicit,
         additional_sources=editor.additional_sources,
         additional_source_entries=editor.source_entries(),
-        additional_sources_root=editor.additional_sources_root,
         ignore_patterns=override.ignore_patterns if override.ignore_patterns is not None else base.ignore_patterns,
         ignore_command=override.ignore_command if override.ignore_command is not None else base.ignore_command,
         path_rules=tuple(sorted(base_rules.values(), key=lambda r: (r.priority, r.name))),

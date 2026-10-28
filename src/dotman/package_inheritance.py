@@ -120,7 +120,6 @@ MANIFEST_FIELDS: dict[type, ManifestTable] = {
         "additional_sources": _field(
             "additional_sources",
             "additional_source_entries",
-            "additional_sources_root",
             "additional_sources_explicit",
             append="sources",
         ),
@@ -162,13 +161,11 @@ def _sync_editor_mirrors(owner: Any) -> Any:
     # Targets and path rules mirror their editor's sources for plan/display
     # consumers; keep those copies in step with the editor.
     editor: EditorSpec = owner.editor
-    mirrors: dict[str, Any] = {
-        "additional_sources": editor.additional_sources,
-        "additional_source_entries": editor.source_entries(),
-    }
-    if isinstance(owner, TargetSpec):
-        mirrors["additional_sources_root"] = editor.additional_sources_root
-    return replace(owner, **mirrors)
+    return replace(
+        owner,
+        additional_sources=editor.additional_sources,
+        additional_source_entries=editor.source_entries(),
+    )
 
 
 def _unset_spec(owner: Any, parent: Any, context: _PatchContext) -> Any:
@@ -285,7 +282,6 @@ class _Append:
             editor,
             additional_sources=tuple(entry.path for entry in entries),
             additional_source_entries=tuple(entries),
-            additional_sources_root=None,
             additional_sources_explicit=True,
         )
 

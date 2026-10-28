@@ -13,7 +13,7 @@ from typing import Mapping
 
 from dotman.atomic_files import write_text_atomic
 from dotman.errors import UsageError
-from dotman.models import AdditionalSource, EditorSpec
+from dotman.models import AdditionalSource
 from dotman.command_runtime import ArgvCommand, CommandRequest, CommandResult, current_command_runtime
 from dotman.file_access import chmod, read_bytes, write_bytes_atomic as sudo_write_bytes_atomic
 from dotman.printable import terminal_safe_line
@@ -260,30 +260,13 @@ def _write_confirmed_sources(changed_sources: list[EditableSourceCopy]) -> None:
                   | (_EXECUTABLE_BITS if executable else 0))
 
 
-def resolve_editor_additional_sources(
-    *,
-    editor: EditorSpec | None,
-    additional_sources: tuple[str, ...],
-    additional_source_entries: tuple[AdditionalSource, ...],
-    additional_sources_root: Path | None,
-    package_root: Path,
-) -> list[Path]:
+def resolve_editor_additional_sources(entries: tuple[AdditionalSource, ...]) -> list[Path]:
     # Resolve each configured entry against the package that declared it.
     # Entries from inherited specs retain their parent root; appended entries
-    # carry the child root. Manual plans without provenance use package_root.
-    entries = list(additional_source_entries)
-    if not entries:
-        entries = list(editor.source_entries() if editor is not None else ())
-    if not entries:
-        fallback_root = additional_sources_root or package_root
-        entries = [AdditionalSource(path, fallback_root) for path in additional_sources]
-    elif additional_sources and len(entries) < len(additional_sources):
-        known = {entry.path for entry in entries}
-        entries.extend(AdditionalSource(path, additional_sources_root or package_root) for path in additional_sources if path not in known)
-
+    # carry the child root.
     source_paths: list[Path] = []
     for entry in entries:
-        root = (entry.root or package_root).expanduser().resolve()
+        root = entry.root.expanduser().resolve()
         source_path = (root / entry.path).resolve()
         try:
             source_path.relative_to(root)
