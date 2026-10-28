@@ -701,7 +701,10 @@ def inline_value(value: Any) -> Any:
         rebuilt_array.extend(inline_value(table) for table in value.body)
         return rebuilt_array
     if not is_table_like(value):
-        return copy.deepcopy(value)
+        copied = copy.deepcopy(value)
+        if isinstance(copied, Item):
+            clear_line_trivia(copied, trail="")
+        return copied
     rebuilt = tomlkit.inline_table()
     for key_name in child_key_names(value):
         rebuilt[key_name] = inline_value(body_item(value, key_name))
@@ -1001,13 +1004,18 @@ def adapt_merged_value(
         # Inline tables cannot hold [table] or [[array]] sections.
         return inline_value(value)
     if merged_is_inline != isinstance(source_container, InlineTable):
-        # Line breaks and comments of a key-value line are invalid inside an
-        # inline table, and a value parsed inline has no line break of its own.
-        value.trivia.indent = ""
-        value.trivia.comment_ws = ""
-        value.trivia.comment = ""
-        value.trivia.trail = "" if merged_is_inline else "\n"
+        # A value parsed inline has no line break of its own.
+        clear_line_trivia(value, trail="" if merged_is_inline else "\n")
     return value
+
+
+def clear_line_trivia(value: Item, *, trail: str) -> None:
+    # Comment lines, indentation and line breaks around a key-value line are
+    # invalid inside an inline table, so values moved across styles drop them.
+    value.trivia.indent = ""
+    value.trivia.comment_ws = ""
+    value.trivia.comment = ""
+    value.trivia.trail = trail
 
 
 def trivia_identity_text(entries: list[TriviaEntry]) -> str:

@@ -1652,6 +1652,21 @@ def test_merge_spaces_tables_moved_into_an_overlay_inline_table_like_tomlkit(
     assert output == "e = {a = {x = 1, z = 3}, l = [{n = 1}], y = 2}\n"
 
 
+def test_merge_drops_line_comments_of_tables_moved_into_an_overlay_inline_table(
+    tmp_path: Path,
+) -> None:
+    output = run_toml_transform(
+        tmp_path,
+        "[e.t]\n# lead\nx = 1\n# mid\nz = 3\n\n[[e.l]]\n# lead\nn = 1\n  m = 2  # trailing\n",
+        "--selectors",
+        "e.t",
+        "e.l",
+        overlay_text="e = {y = 2}\n",
+    )
+
+    assert output == "e = {t = {x = 1, z = 3}, l = [{n = 1, m = 2}], y = 2}\n"
+
+
 def test_retained_split_table_keeps_the_comment_above_its_header(tmp_path: Path) -> None:
     output = run_toml_transform(
         tmp_path, "[e.f]\nx = 1\n\n# about e\n[e]\ny = 2\n", "--selectors", "e"
