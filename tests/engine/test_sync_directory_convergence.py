@@ -428,7 +428,7 @@ def test_interrupt_mid_execution_closes_the_opened_store(tmp_path, monkeypatch):
     from dotman.sync_base_store import SyncBaseStore
 
     opened, closed = [], []
-    open_store, close_store, complete = SyncBaseStore.open, SyncBaseStore.close, SyncBaseLifecycle.complete
+    open_store, close_store, complete = SyncBaseStore.open, SyncBaseStore.close, SyncBaseLifecycle.acknowledge
     monkeypatch.setattr(SyncBaseStore, "open", classmethod(lambda cls, *a, **kw: opened.append(open_store(*a, **kw)) or opened[-1]))
     monkeypatch.setattr(SyncBaseStore, "close", lambda self: (closed.append(self), close_store(self))[1])
     calls = []
@@ -441,7 +441,7 @@ def test_interrupt_mid_execution_closes_the_opened_store(tmp_path, monkeypatch):
 
     with changed_children_session(tmp_path, monkeypatch, 3) as (_engine, session):
         opened.clear()
-        monkeypatch.setattr(SyncBaseLifecycle, "complete", interrupt_second_completion)
+        monkeypatch.setattr(SyncBaseLifecycle, "acknowledge", interrupt_second_completion)
         # The apply loop reports the interrupt as an aborted result rather than propagating it.
         assert session.execute().result.status == "aborted"
     assert len(calls) == 2 and opened

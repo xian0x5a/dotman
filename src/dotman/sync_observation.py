@@ -628,7 +628,7 @@ def observe_scope(
         for (identity, unit, lifecycle, base, warning), observation in zip(pending, run_ordered(tasks), strict=True):
             if warning is None and observation.state == "directly-in-sync" and lifecycle is not None:
                 try:
-                    result = lifecycle.direct_agreement(FrozenBaseUnit(unit, observation.repository))
+                    result = lifecycle.acknowledge(FrozenBaseUnit(unit, observation.repository))
                     observation = replace(
                         observation, base=replace(base, acknowledged=result.acknowledged)
                     )
