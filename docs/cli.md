@@ -407,7 +407,7 @@ dotman --no-confirm sync main:app.settings
 ## Diagnostics And Catalog Inspection
 
 - `dotman --version` shows the installed build: a release tag such as `0.10.1`, or a development build past it such as `0.10.2.dev3+g1a2b3c4`. The version is fixed at install time, so reinstall to refresh it.
-- `dotman doctor` exits 1 when any check fails. It checks manager configuration, configured repo paths, tracked state, required external tools, and aggregate corrupt/orphaned Sync Base counts. Store failures include repository, path, and cause; no repair is performed.
+- `dotman doctor` exits 1 when any check fails. It checks manager configuration, configured repo paths, tracked state, required external tools, the configured editor (a warning when none is found; see [Edit](#edit)), and aggregate corrupt/orphaned Sync Base counts. Store failures include repository, path, and cause; no repair is performed.
 - `dotman list sync-bases` lists only currently usable Sync Bases.
 - `dotman info sync-base <sync-unit>` shows metadata and applicability for one exact repo-qualified file target or directory child; unavailable and ineligible results succeed.
 - `dotman reset sync-base <sync-unit>` immediately and idempotently discards one exact Base under the manager operation lock. It has no confirmation, dry-run, fuzzy selection, or scope expansion.
@@ -686,7 +686,7 @@ Examples: `dotman pull main:git.config`,
   - regular file: `644`
   - directory: `755`
 - If the live mode differs from the usual default for that target kind, `add` should write the actual mode into `chmod`, for example `600` or `700`.
-- In interactive mode, `add` should open an editor review when an editor is available.
+- In interactive mode, `add` should open an editor review when an editor is configured (see [Edit](#edit)).
 - That editor review should open a diff view of the old and generated `package.toml` content, and also open an editable temporary `package.toml` copy.
 - `add` should not write the edited manifest back to the repo until the editor exits and the user confirms the write.
 - The editor review for `add` should not open the live path itself.
@@ -697,14 +697,15 @@ Examples: `dotman pull main:git.config`,
   - `dotman add ~/.config/foo.conf`
 ## Edit
 
-- `edit package <package>` should open the tracked package directory in `$VISUAL` or `$EDITOR`.
-- `edit target <target>` should open the tracked target repo-side source path in `$VISUAL` or `$EDITOR`.
-- `edit repo <repo>` should open the configured repo root in `$VISUAL` or `$EDITOR`; non-exact repo names should use the interactive repo resolver when available.
-- `edit local [<repo>]` should open the per-repo local override path in `$VISUAL` or `$EDITOR`; missing, ambiguous, or non-exact `<repo>` should use the interactive repo resolver when available.
+- `edit`, `add` and `doctor` find the configured editor the way the default Sync Editor does (see [Projection and Editor configuration](repository.md#projection-and-editor-configuration)): the first of `VISUAL`, `EDITOR`, `GIT_EDITOR` and Git's `core.editor` that is set, otherwise the first of `sensible-editor`, `editor`, `nvim`, `vim`, `vi` and `nano` found on `PATH`. A `-d` argument is dropped. No editor is configured only when every step comes up empty.
+- `edit package <package>` should open the tracked package directory in the configured editor.
+- `edit target <target>` should open the tracked target repo-side source path in the configured editor.
+- `edit repo <repo>` should open the configured repo root in the configured editor; non-exact repo names should use the interactive repo resolver when available.
+- `edit local [<repo>]` should open the per-repo local override path in the configured editor; missing, ambiguous, or non-exact `<repo>` should use the interactive repo resolver when available.
 - `edit local <repo>` should open directly only for exact repo-name matches; non-interactive mode should reject non-exact matches.
 - `edit local` should load the manager config to resolve repo names, but should not load or validate the local override file before opening it.
 - `edit local` should create the local override parent directory before launching an editor.
-- `edit config` should open the selected dotman manager config path in `$VISUAL` or `$EDITOR`.
+- `edit config` should open the selected dotman manager config path in the configured editor.
 - `edit config` should use `--config <config-path>` when provided, otherwise `$XDG_CONFIG_HOME/dotman/config.toml` (or `~/.config/dotman/config.toml`).
 - `edit config` should not load or validate the config before opening it, so invalid config can be fixed with the command.
 - `edit target` should resolve tracked targets only.
