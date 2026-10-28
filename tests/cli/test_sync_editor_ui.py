@@ -313,7 +313,8 @@ def test_additional_edits_have_independent_canonical_review_and_json(tmp_path, m
     from types import SimpleNamespace
 
     from dotman.sync_deck import CommandDeck
-    from dotman.sync_deck_command import set_resolution_intent, sync_document
+    from dotman.sync_deck import set_resolution_intent
+    from dotman.sync_deck_command import sync_document
     from tests.engine.test_sync_session import make_engine
 
     editor = tmp_path / "edit-additional"

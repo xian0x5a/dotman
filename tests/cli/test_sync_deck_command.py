@@ -189,7 +189,8 @@ def test_failed_materialization_stops_no_confirm_publication(tmp_path, monkeypat
 
 
 def test_json_summary_counts_only_selected_effects(tmp_path, monkeypatch):
-    from dotman.sync_deck_command import review, sync_document
+    from dotman.sync_deck import review
+    from dotman.sync_deck_command import sync_document
     from dotman.sync_session import Preview
 
     engine = make_engine(tmp_path, monkeypatch, [("unit", "push-only", b"repo", b"live", "")])

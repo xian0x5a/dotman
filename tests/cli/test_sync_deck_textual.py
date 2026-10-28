@@ -747,7 +747,7 @@ def test_resolution_key_toggles_between_two_intents_without_menu(tmp_path, monke
 
 def test_resolution_key_on_edited_row_offers_edit_alongside_both_sides(tmp_path, monkeypatch):
     from textual.widgets import OptionList
-    from dotman.sync_deck_command import edit_proposal
+    from dotman.sync_deck import edit_proposal
 
     engine = make_engine(tmp_path, monkeypatch, [
         ('unit', 'both', b'repo', b'live', 'editor = { run = "printf edited > \\"$DOTMAN_SOURCE\\"", io = "pipe" }'),
