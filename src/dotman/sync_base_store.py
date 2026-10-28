@@ -974,7 +974,10 @@ class SyncBaseStore:
             directory_path, directory_descriptor = directory
             name = location[1]
             # A corrupt record is unavailable, not permission to overwrite it silently.
-            self._read_file(directory, name, record.identity, location=location)
+            # Decoding enforces the current epoch and one canonical encoding, so an
+            # equal decoded record means the stored bytes already match `content`.
+            if self._read_file(directory, name, record.identity, location=location) == record:
+                return
             temporary = f".{uuid.uuid4().hex}.tmp"
             descriptor = self._layout._open_file_descriptor(directory, temporary, create=True)
             try:

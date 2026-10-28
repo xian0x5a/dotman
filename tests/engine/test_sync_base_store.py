@@ -109,6 +109,19 @@ def test_failed_replacement_preserves_previous_record(tmp_path, monkeypatch):
         assert len(list(store.repo_state_directory.glob("bases/*/*.json"))) == 1
 
 
+def test_identical_replacement_skips_rewrite(tmp_path):
+    with SyncBaseStore.open(tmp_path / "manager", "repo") as store:
+        store.replace(record())
+        path = record_path(store)
+        before = path.stat()
+        store.replace(record())
+        after = path.stat()
+        assert (after.st_ino, after.st_mtime_ns) == (before.st_ino, before.st_mtime_ns)
+        store.replace(record(payload=FilePresent(b"new")))
+        assert path.stat().st_ino != before.st_ino
+        assert store.read(b"main:app.unit") == record(payload=FilePresent(b"new"))
+
+
 def test_read_transaction_excludes_writer_and_refreshes(tmp_path):
     root = tmp_path / "manager"
     with (
