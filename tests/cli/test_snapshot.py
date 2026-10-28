@@ -10,9 +10,12 @@ import pytest
 from dotman import cli_interaction
 from dotman.cli import main
 from dotman.cli_style import format_snapshot_timestamp
+from dotman.command_runtime import INTERRUPTED_EXIT_CODE
+from dotman.interaction import ChoiceRequest, ScriptedInteraction, TextInputRequest
 from dotman.models import SnapshotConfig, TargetPlan
 from dotman.snapshot import build_restore_actions, create_push_snapshot, list_snapshots
 from dotman.sync_session import AuthorizeSymlinkReplacement, SetApproval
+from dotman.terminal import ESCAPE_INPUT
 from tests.helpers import capture_parser_help, make_package_plan, write_named_manager_config
 
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
@@ -843,3 +846,121 @@ def test_restore_preview_and_execution_headers_render_snapshot_metadata_like_inf
         output = capsys.readouterr().out
         assert f"created:  {format_snapshot_timestamp(snapshot.created_at)}" in output
         assert snapshot.created_at not in output
+
+
+def _push_two_snapshots(tmp_path: Path, monkeypatch) -> tuple[Path, dict[str, str]]:
+    """Push twice; return the config path and each snapshot's ID keyed by the live content it recorded."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    repo_root = tmp_path / "repo"
+    _write_snapshot_execution_repo(repo_root)
+    config_path = _write_snapshot_config(tmp_path, repo_root)
+    _write_tracked_binding(tmp_path / "state")
+    live_path = home / ".config" / "app" / "config.txt"
+    live_path.parent.mkdir(parents=True, exist_ok=True)
+    for content in ("first\n", "second\n"):
+        live_path.write_text(content, encoding="utf-8")
+        assert main(["--no-confirm", "--config", str(config_path), "push"]) == 0
+    snapshot_ids = {
+        (snapshot.root / snapshot.entries[0].content_path).read_text(encoding="utf-8"): snapshot.snapshot_id
+        for snapshot in list_snapshots(tmp_path / "snapshots")
+    }
+    assert set(snapshot_ids) == {"first\n", "second\n"}
+    return config_path, snapshot_ids
+
+
+# Snapshot IDs start with a UTC timestamp, so every ID from this century shares this prefix.
+SHARED_SNAPSHOT_ID_PREFIX = "20"
+
+
+def test_info_snapshot_with_ambiguous_ref_lets_the_interaction_pick_the_snapshot(
+    tmp_path: Path, monkeypatch, capsys,
+) -> None:
+    config_path, snapshot_ids = _push_two_snapshots(tmp_path, monkeypatch)
+    older_id = snapshot_ids["first\n"]
+    interaction = ScriptedInteraction(choices=[older_id])
+    capsys.readouterr()
+
+    exit_code = main(
+        ["--config", str(config_path), "info", "snapshot", SHARED_SNAPSHOT_ID_PREFIX],
+        interaction=interaction,
+    )
+
+    assert exit_code == 0
+    output = capsys.readouterr().out
+    assert older_id in output
+    assert snapshot_ids["second\n"] not in output
+    [request] = interaction.requests
+    assert isinstance(request, ChoiceRequest)
+    assert request.header_text == f"Select a snapshot for '{SHARED_SNAPSHOT_ID_PREFIX}':"
+    assert {option.value for option in request.options} == set(snapshot_ids.values())
+
+
+@pytest.mark.parametrize("json_output", [True, False])
+def test_info_snapshot_with_ambiguous_ref_fails_when_it_cannot_prompt(
+    tmp_path: Path, monkeypatch, capsys, json_output: bool,
+) -> None:
+    config_path, snapshot_ids = _push_two_snapshots(tmp_path, monkeypatch)
+    # --json suppresses the interaction; the other case has none to begin with.
+    interaction = ScriptedInteraction() if json_output else None
+    flags = ["--json"] if json_output else []
+    capsys.readouterr()
+
+    exit_code = main(
+        ["--config", str(config_path), *flags, "info", "snapshot", SHARED_SNAPSHOT_ID_PREFIX],
+        interaction=interaction,
+    )
+
+    assert exit_code != 0
+    captured = capsys.readouterr()
+    assert "is ambiguous" in captured.out + captured.err
+    if interaction is not None:
+        assert interaction.requests == []
+
+
+def test_interactive_restore_aborts_on_escape_and_leaves_live_file_unchanged(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    config_path, live_path = _push_snapshot_then_mutate_live(tmp_path, monkeypatch)
+    interaction = ScriptedInteraction(text_inputs=[ESCAPE_INPUT])
+
+    exit_code = main(["--config", str(config_path), "restore"], interaction=interaction)
+
+    assert exit_code == INTERRUPTED_EXIT_CODE
+    assert live_path.read_text(encoding="utf-8") == "mutated after push\n"
+    [request] = interaction.requests
+    assert isinstance(request, TextInputRequest)
+    # Without escape_result a real terminal would swallow Esc in the line editor.
+    assert request.escape_result == ESCAPE_INPUT
+
+
+def test_interactive_restore_shows_all_diffs_then_restores_on_skip(
+    tmp_path: Path, monkeypatch, capsys,
+) -> None:
+    config_path, live_path = _push_snapshot_then_mutate_live(tmp_path, monkeypatch)
+    interaction = ScriptedInteraction(text_inputs=["a", "s"])
+    capsys.readouterr()
+
+    exit_code = main(["--config", str(config_path), "restore"], interaction=interaction)
+
+    assert exit_code == 0
+    assert live_path.read_text(encoding="utf-8") == "before push\n"
+    output = ANSI_ESCAPE.sub("", capsys.readouterr().out)
+    assert "Diff 1/1:" in output
+    assert "executing restore" in output
+    review_requests = [request for request in interaction.requests if isinstance(request, TextInputRequest)]
+    assert len(review_requests) == 2
+    assert all(request.escape_result == ESCAPE_INPUT for request in review_requests)
+
+
+def test_restore_without_interaction_requires_confirmation(tmp_path: Path, monkeypatch, capsys) -> None:
+    config_path, live_path = _push_snapshot_then_mutate_live(tmp_path, monkeypatch)
+    capsys.readouterr()
+
+    exit_code = main(["--config", str(config_path), "restore"], interaction=None)
+
+    assert exit_code != 0
+    captured = capsys.readouterr()
+    assert "restore requires confirmation" in captured.out + captured.err
+    assert live_path.read_text(encoding="utf-8") == "mutated after push\n"
