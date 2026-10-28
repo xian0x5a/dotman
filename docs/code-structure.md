@@ -45,8 +45,9 @@ Focused CLI responsibilities live in dedicated modules:
 - `sync_deck.py` — Textual DataTable workset, scrollable frozen review and
   confirmation over public SyncSession commands; ordinary terminal prompts
   continue to use `prompt_toolkit`
-- `cli_interaction.py` — shared terminal selection, resolution, restore diff
-  review, and focused runtime adapters used by command runners
+- `cli_interaction.py` — info and snapshot target resolution, restore diff
+  review, and focused runtime adapters used by command runners; all prompts
+  go through `interaction.py`
 - `cli_style.py` — labels, colors, and display helpers
 - `interaction.py` — typed terminal choices, confirmations, and text input, with
   production and deterministic scripted adapters
