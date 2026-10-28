@@ -10,7 +10,7 @@ import math
 from pathlib import Path
 import re
 import sys
-from typing import Any, ClassVar, Iterable
+from typing import Any, Callable, ClassVar, Iterable
 
 from dotman.atomic_files import write_bytes_atomic, write_text_atomic
 from dotman.errors import UsageError
@@ -98,6 +98,205 @@ def without_emptied_mappings(selected: Mapping[Any, Any], base: Mapping[Any, Any
                 continue
         kept[key] = value
     return kept
+
+
+# Spells a mapping key as selectors see it. JSON and plist keys are already
+# strings; YAML keys can be booleans, numbers or null.
+KeyText = Callable[[Any], str]
+_MISSING = object()
+
+
+def identity_key_text(key: str) -> str:
+    return key
+
+
+@dataclass
+class PathSelector:
+    """Selected key paths as a tree; a node that includes its subtree has no children."""
+
+    include_subtree: bool = False
+    children: dict[str, "PathSelector"] = field(default_factory=dict)
+
+
+def build_path_selector(key_paths: tuple[KeyPath, ...]) -> PathSelector:
+    root = PathSelector()
+    for key_path in key_paths:
+        current = root
+        for key_part in key_path:
+            if current.include_subtree:
+                break
+            current = current.children.setdefault(key_part, PathSelector())
+        current.include_subtree = True
+        current.children.clear()
+    return root
+
+
+def iter_key_paths(value: Any, *, key_text: KeyText, prefix: KeyPath = ()) -> tuple[KeyPath, ...]:
+    if not isinstance(value, dict):
+        return ()
+
+    key_paths: list[KeyPath] = []
+    for key, child_value in value.items():
+        key_path = prefix + (key_text(key),)
+        key_paths.append(key_path)
+        key_paths.extend(iter_key_paths(child_value, key_text=key_text, prefix=key_path))
+    return tuple(key_paths)
+
+
+def key_paths_matching_regexes(
+    data: Mapping[Any, Any],
+    key_regexes: tuple[re.Pattern[str], ...],
+    *,
+    key_text: KeyText,
+) -> tuple[KeyPath, ...]:
+    if not key_regexes:
+        return ()
+    return tuple(
+        key_path
+        for key_path in iter_key_paths(data, key_text=key_text)
+        if any(key_regex.search(".".join(key_path)) for key_regex in key_regexes)
+    )
+
+
+def select_key_paths(
+    data: Mapping[Any, Any],
+    exact_key_paths: tuple[KeyPath, ...],
+    key_regexes: tuple[re.Pattern[str], ...],
+    *,
+    key_text: KeyText,
+) -> tuple[KeyPath, ...]:
+    return exact_key_paths + key_paths_matching_regexes(data, key_regexes, key_text=key_text)
+
+
+def retained_value(value: Any, selector: PathSelector, *, key_text: KeyText) -> Any:
+    if selector.include_subtree:
+        return value
+    if not isinstance(value, dict):
+        return _MISSING
+
+    retained_data: dict[Any, Any] = {}
+    for key, child_value in value.items():
+        child_selector = selector.children.get(key_text(key))
+        if child_selector is None:
+            continue
+        child_retained_value = retained_value(child_value, child_selector, key_text=key_text)
+        if child_retained_value is not _MISSING:
+            retained_data[key] = child_retained_value
+
+    if not retained_data:
+        return _MISSING
+    return retained_data
+
+
+def stripped_value(value: Any, selector: PathSelector, *, key_text: KeyText) -> Any:
+    if selector.include_subtree:
+        return _MISSING
+    if not isinstance(value, dict):
+        return value
+
+    stripped_data: dict[Any, Any] = {}
+    for key, child_value in value.items():
+        child_selector = selector.children.get(key_text(key))
+        if child_selector is None:
+            stripped_data[key] = child_value
+            continue
+
+        child_stripped_value = stripped_value(child_value, child_selector, key_text=key_text)
+        if child_stripped_value is not _MISSING:
+            stripped_data[key] = child_stripped_value
+
+    return stripped_data
+
+
+def select_data(
+    data: dict[Any, Any],
+    selector_action: SelectorAction,
+    selected_key_paths: tuple[KeyPath, ...],
+    *,
+    key_text: KeyText,
+) -> dict[Any, Any]:
+    path_selector = build_path_selector(selected_key_paths)
+    if selector_action == SelectorAction.REMOVE:
+        selected = stripped_value(data, path_selector, key_text=key_text)
+    else:
+        selected = retained_value(data, path_selector, key_text=key_text)
+    return {} if selected is _MISSING else selected
+
+
+def child_overlay_selector(selector: PathSelector, key: Any, *, key_text: KeyText) -> PathSelector:
+    # Everything under a whole selection is whole too. A key no selector
+    # reaches gets an empty selector, so merge still descends into it.
+    if selector.include_subtree:
+        return selector
+    return selector.children.get(key_text(key)) or PathSelector()
+
+
+def overlay_objects(
+    original_base_data: dict[Any, Any],
+    preserved_base_data: dict[Any, Any],
+    overlay_data: dict[Any, Any],
+    path_selector: PathSelector,
+    *,
+    key_text: KeyText,
+) -> dict[Any, Any]:
+    merged_data: dict[Any, Any] = {}
+
+    # Keep surviving keys in live order so repo-managed value changes do not also
+    # produce noisy key-movement diffs.
+    for key in original_base_data:
+        child_selector = child_overlay_selector(path_selector, key, key_text=key_text)
+
+        if key in overlay_data:
+            overlay_value = overlay_data[key]
+            base_value = original_base_data[key]
+            # A whole selection is one value, so the overlay's copy replaces it. Any
+            # other mapping in both base and overlay merges key by key, whether or
+            # not selection kept any of it, so its keys keep live order and the live
+            # keys selection kept survive.
+            if (
+                not child_selector.include_subtree
+                and isinstance(base_value, dict)
+                and isinstance(overlay_value, dict)
+            ):
+                merged_data[key] = overlay_objects(
+                    base_value,
+                    preserved_base_data.get(key, {}),
+                    overlay_value,
+                    child_selector,
+                    key_text=key_text,
+                )
+                continue
+
+            merged_data[key] = overlay_value
+            continue
+
+        if key in preserved_base_data:
+            merged_data[key] = preserved_base_data[key]
+
+    for source_data in (overlay_data, preserved_base_data):
+        for key, value in source_data.items():
+            if key in merged_data:
+                continue
+            merged_data[key] = value
+
+    return merged_data
+
+
+def merge_overlay_data(
+    original_base_data: dict[Any, Any],
+    preserved_base_data: dict[Any, Any],
+    overlay_data: dict[Any, Any],
+    selected_key_paths: tuple[KeyPath, ...],
+    *,
+    key_text: KeyText,
+) -> dict[Any, Any]:
+    return overlay_objects(
+        original_base_data,
+        preserved_base_data,
+        overlay_data,
+        build_path_selector(selected_key_paths),
+        key_text=key_text,
+    )
 
 
 def split_quoted_key_path(raw_key: str, format_name: str) -> tuple[str, ...]:

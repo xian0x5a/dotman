@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import json
 import math
 from pathlib import Path
@@ -9,12 +8,16 @@ from typing import Any
 
 from dotman.transforms.framework import (
     BaseTransformEngine,
-    SelectorAction,
     SelectorSpec,
     TransformMode,
     TransformOutput,
     TransformRequest,
     compile_selector_regexes,
+    iter_key_paths,
+    merge_overlay_data,
+    select_data,
+    select_key_paths,
+    identity_key_text,
     subtract_excluded_key_paths,
     split_quoted_key_path,
     values_strictly_equal,
@@ -33,14 +36,7 @@ DOCUMENT_ROOT_KEY_PATH: JsonKeyPath = ()
 KeyRegex = re.Pattern[str]
 DEFAULT_JSON_INDENT = "  "
 _JSON_INDENT_RE = re.compile(r"^([ \t]+)\S")
-_MISSING = object()
 _LONE_SURROGATE_RE = re.compile("[\ud800-\udfff]")
-
-
-@dataclass
-class JsonPathSelector:
-    include_subtree: bool = False
-    children: dict[str, "JsonPathSelector"] = field(default_factory=dict)
 
 
 def parse_finite_json_float(number_text: str) -> float:
@@ -85,235 +81,6 @@ def parse_json_key_path(raw_key: str) -> JsonKeyPath:
 
 def parse_json_key_paths(raw_key_paths: tuple[str, ...]) -> tuple[JsonKeyPath, ...]:
     return tuple(parse_json_key_path(raw_key) for raw_key in raw_key_paths)
-
-
-
-def build_json_path_selector(key_paths: tuple[JsonKeyPath, ...]) -> JsonPathSelector:
-    root = JsonPathSelector()
-    for key_path in key_paths:
-        current = root
-        for key_part in key_path:
-            if current.include_subtree:
-                break
-            current = current.children.setdefault(key_part, JsonPathSelector())
-        current.include_subtree = True
-        current.children.clear()
-    return root
-
-
-
-def json_key_path_text(key_path: JsonKeyPath) -> str:
-    return ".".join(key_path)
-
-
-
-def matches_key_regexes(key_path: JsonKeyPath, key_regexes: tuple[KeyRegex, ...]) -> bool:
-    path_text = json_key_path_text(key_path)
-    return any(key_regex.search(path_text) for key_regex in key_regexes)
-
-
-
-def iter_json_key_paths(value: Any, prefix: JsonKeyPath = ()) -> tuple[JsonKeyPath, ...]:
-    if not isinstance(value, dict):
-        return ()
-
-    key_paths: list[JsonKeyPath] = []
-    for key, child_value in value.items():
-        key_path = prefix + (key,)
-        key_paths.append(key_path)
-        key_paths.extend(iter_json_key_paths(child_value, key_path))
-    return tuple(key_paths)
-
-
-
-def json_key_paths_matching_regexes(
-    data: JsonDict,
-    key_regexes: tuple[KeyRegex, ...],
-) -> tuple[JsonKeyPath, ...]:
-    if not key_regexes:
-        return ()
-    return tuple(
-        key_path
-        for key_path in iter_json_key_paths(data)
-        if matches_key_regexes(key_path, key_regexes)
-    )
-
-
-
-def selected_json_key_paths(
-    data: JsonDict,
-    exact_key_paths: tuple[JsonKeyPath, ...],
-    key_regexes: tuple[KeyRegex, ...],
-) -> tuple[JsonKeyPath, ...]:
-    return exact_key_paths + json_key_paths_matching_regexes(data, key_regexes)
-
-
-
-def retained_json_value(value: Any, selector: JsonPathSelector) -> Any:
-    if selector.include_subtree:
-        return value
-    if not isinstance(value, dict):
-        return _MISSING
-
-    retained_data: JsonDict = {}
-    for key, child_value in value.items():
-        child_selector = selector.children.get(key)
-        if child_selector is None:
-            continue
-        retained_value = retained_json_value(child_value, child_selector)
-        if retained_value is not _MISSING:
-            retained_data[key] = retained_value
-
-    if not retained_data:
-        return _MISSING
-    return retained_data
-
-
-
-def stripped_json_value(value: Any, selector: JsonPathSelector) -> Any:
-    if selector.include_subtree:
-        return _MISSING
-    if not isinstance(value, dict):
-        return value
-
-    stripped_data: JsonDict = {}
-    for key, child_value in value.items():
-        child_selector = selector.children.get(key)
-        if child_selector is None:
-            stripped_data[key] = child_value
-            continue
-
-        stripped_value = stripped_json_value(child_value, child_selector)
-        if stripped_value is not _MISSING:
-            stripped_data[key] = stripped_value
-
-    return stripped_data
-
-
-
-def filter_retained_keys(
-    data: JsonDict,
-    retained_key_paths: tuple[JsonKeyPath, ...],
-) -> JsonDict:
-    path_selector = build_json_path_selector(retained_key_paths)
-    retained_data: JsonDict = {}
-    for key, value in data.items():
-        child_selector = path_selector.children.get(key)
-        if child_selector is None:
-            continue
-
-        retained_value = retained_json_value(value, child_selector)
-        if retained_value is not _MISSING:
-            retained_data[key] = retained_value
-
-    return retained_data
-
-
-
-def filter_stripped_keys(
-    data: JsonDict,
-    stripped_key_paths: tuple[JsonKeyPath, ...],
-) -> JsonDict:
-    if not stripped_key_paths:
-        return dict(data)
-
-    path_selector = build_json_path_selector(stripped_key_paths)
-    stripped_data: JsonDict = {}
-    for key, value in data.items():
-        child_selector = path_selector.children.get(key)
-        if child_selector is None:
-            stripped_data[key] = value
-            continue
-
-        stripped_value = stripped_json_value(value, child_selector)
-        if stripped_value is not _MISSING:
-            stripped_data[key] = stripped_value
-
-    return stripped_data
-
-
-
-def select_json_data(
-    data: JsonDict,
-    selector_action: SelectorAction,
-    selected_key_paths: tuple[JsonKeyPath, ...],
-) -> JsonDict:
-    if selector_action == SelectorAction.REMOVE:
-        return filter_stripped_keys(data, selected_key_paths)
-    return filter_retained_keys(data, selected_key_paths)
-
-
-
-def child_overlay_selector(selector: JsonPathSelector, key: str) -> JsonPathSelector:
-    # Everything under a whole selection is whole too. A key no selector
-    # reaches gets an empty selector, so merge still descends into it.
-    if selector.include_subtree:
-        return selector
-    return selector.children.get(key) or JsonPathSelector()
-
-
-
-def overlay_json_objects(
-    original_base_data: JsonDict,
-    preserved_base_data: JsonDict,
-    overlay_data: JsonDict,
-    path_selector: JsonPathSelector,
-) -> JsonDict:
-    merged_data: JsonDict = {}
-
-    # Keep surviving keys in live order so repo-managed value changes do not also
-    # produce noisy key-movement diffs.
-    for key in original_base_data:
-        child_selector = child_overlay_selector(path_selector, key)
-
-        if key in overlay_data:
-            overlay_value = overlay_data[key]
-            base_value = original_base_data[key]
-            # A whole selection is one value, so the overlay's copy replaces it. Any
-            # other mapping in both base and overlay merges key by key, whether or
-            # not selection kept any of it, so its keys keep live order and the live
-            # keys selection kept survive.
-            if (
-                not child_selector.include_subtree
-                and isinstance(base_value, dict)
-                and isinstance(overlay_value, dict)
-            ):
-                merged_data[key] = overlay_json_objects(
-                    base_value,
-                    preserved_base_data.get(key, {}),
-                    overlay_value,
-                    child_selector,
-                )
-                continue
-
-            merged_data[key] = overlay_value
-            continue
-
-        if key in preserved_base_data:
-            merged_data[key] = preserved_base_data[key]
-
-    for source_data in (overlay_data, preserved_base_data):
-        for key, value in source_data.items():
-            if key in merged_data:
-                continue
-            merged_data[key] = value
-
-    return merged_data
-
-
-
-def overlay_json_data(
-    original_base_data: JsonDict,
-    preserved_base_data: JsonDict,
-    overlay_data: JsonDict,
-    selected_key_paths: tuple[JsonKeyPath, ...] = (),
-) -> JsonDict:
-    return overlay_json_objects(
-        original_base_data,
-        preserved_base_data,
-        overlay_data,
-        build_json_path_selector(selected_key_paths),
-    )
 
 
 
@@ -449,25 +216,29 @@ class JsonTransformEngine(BaseTransformEngine):
             request.base_path,
             stdin_bytes=request.engine_option("stdin_bytes"),
         )
-        selected_key_paths = selected_json_key_paths(
+        selected_key_paths = select_key_paths(
             base_data,
             exact_key_paths,
             selected_key_regexes,
+            key_text=identity_key_text,
         )
         if request.has_excluded_selectors():
             selected_key_paths = subtract_excluded_key_paths(
-                iter_json_key_paths(base_data),
+                iter_key_paths(base_data, key_text=identity_key_text),
                 selected_key_paths if request.has_included_selectors() else None,
-                selected_json_key_paths(
+                select_key_paths(
                     base_data,
                     parse_json_key_paths(request.excluded_selector_values("key")),
                     compile_key_regexes(request.excluded_selector_values("key_regex")),
+                    key_text=identity_key_text,
                 ),
             )
         # Only an absent selector list means identity. Selectors that match
         # nothing must still select nothing.
         transformed_data = (
-            select_json_data(base_data, request.selector_action, selected_key_paths)
+            select_data(
+                base_data, request.selector_action, selected_key_paths, key_text=identity_key_text
+            )
             if request.has_selectors()
             else dict(base_data)
         )
@@ -479,13 +250,14 @@ class JsonTransformEngine(BaseTransformEngine):
                 request.overlay_path,
                 stdin_bytes=request.engine_option("stdin_bytes"),
             )
-            transformed_data = overlay_json_data(
+            transformed_data = merge_overlay_data(
                 base_data,
                 transformed_data,
                 overlay_data,
                 # Without selectors the whole base is one selection, so the overlay
                 # replaces each top-level key it shares with the base.
                 selected_key_paths if request.has_selectors() else (DOCUMENT_ROOT_KEY_PATH,),
+                key_text=identity_key_text,
             )
 
         return build_json_output(

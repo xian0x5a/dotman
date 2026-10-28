@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from pathlib import Path
 import re
 from typing import Any
@@ -9,12 +8,15 @@ import yaml
 
 from dotman.transforms.framework import (
     BaseTransformEngine,
-    SelectorAction,
     SelectorSpec,
     TransformMode,
     TransformOutput,
     TransformRequest,
     compile_selector_regexes,
+    iter_key_paths,
+    merge_overlay_data,
+    select_data,
+    select_key_paths,
     subtract_excluded_key_paths,
     split_quoted_key_path,
     values_strictly_equal,
@@ -32,7 +34,6 @@ YamlKeyPath = tuple[str, ...]
 DOCUMENT_ROOT_KEY_PATH: YamlKeyPath = ()
 KeyRegex = re.Pattern[str]
 DEFAULT_YAML_INDENT = 2
-_MISSING = object()
 _NULL_TAG = "tag:yaml.org,2002:null"
 _BOOL_TAG = "tag:yaml.org,2002:bool"
 _INT_TAG = "tag:yaml.org,2002:int"
@@ -203,12 +204,6 @@ def yaml_key_text(key: Any) -> str:
     return yaml.representer.SafeRepresenter().represent_data(key).value
 
 
-@dataclass
-class YamlPathSelector:
-    include_subtree: bool = False
-    children: dict[str, "YamlPathSelector"] = field(default_factory=dict)
-
-
 def load_yaml(path: Path, *, stdin_bytes: bytes | None = None) -> YamlDict:
     source_text = read_input_text(path, stdin_bytes=stdin_bytes)
     if source_text is None:
@@ -236,221 +231,6 @@ def parse_yaml_key_path(raw_key: str) -> YamlKeyPath:
 
 def parse_yaml_key_paths(raw_key_paths: tuple[str, ...]) -> tuple[YamlKeyPath, ...]:
     return tuple(parse_yaml_key_path(raw_key) for raw_key in raw_key_paths)
-
-
-def build_yaml_path_selector(key_paths: tuple[YamlKeyPath, ...]) -> YamlPathSelector:
-    root = YamlPathSelector()
-    for key_path in key_paths:
-        current = root
-        for key_part in key_path:
-            if current.include_subtree:
-                break
-            current = current.children.setdefault(key_part, YamlPathSelector())
-        current.include_subtree = True
-        current.children.clear()
-    return root
-
-
-def yaml_key_path_text(key_path: YamlKeyPath) -> str:
-    return ".".join(key_path)
-
-
-def matches_key_regexes(key_path: YamlKeyPath, key_regexes: tuple[KeyRegex, ...]) -> bool:
-    path_text = yaml_key_path_text(key_path)
-    return any(key_regex.search(path_text) for key_regex in key_regexes)
-
-
-def iter_yaml_key_paths(value: Any, prefix: YamlKeyPath = ()) -> tuple[YamlKeyPath, ...]:
-    if not isinstance(value, dict):
-        return ()
-
-    key_paths: list[YamlKeyPath] = []
-    for key, child_value in value.items():
-        key_path = prefix + (yaml_key_text(key),)
-        key_paths.append(key_path)
-        key_paths.extend(iter_yaml_key_paths(child_value, key_path))
-    return tuple(key_paths)
-
-
-def yaml_key_paths_matching_regexes(
-    data: YamlDict,
-    key_regexes: tuple[KeyRegex, ...],
-) -> tuple[YamlKeyPath, ...]:
-    if not key_regexes:
-        return ()
-    return tuple(
-        key_path
-        for key_path in iter_yaml_key_paths(data)
-        if matches_key_regexes(key_path, key_regexes)
-    )
-
-
-def selected_yaml_key_paths(
-    data: YamlDict,
-    exact_key_paths: tuple[YamlKeyPath, ...],
-    key_regexes: tuple[KeyRegex, ...],
-) -> tuple[YamlKeyPath, ...]:
-    return exact_key_paths + yaml_key_paths_matching_regexes(data, key_regexes)
-
-
-def retained_yaml_value(value: Any, selector: YamlPathSelector) -> Any:
-    if selector.include_subtree:
-        return value
-    if not isinstance(value, dict):
-        return _MISSING
-
-    retained_data: YamlDict = {}
-    for key, child_value in value.items():
-        child_selector = selector.children.get(yaml_key_text(key))
-        if child_selector is None:
-            continue
-        retained_value = retained_yaml_value(child_value, child_selector)
-        if retained_value is not _MISSING:
-            retained_data[key] = retained_value
-
-    if not retained_data:
-        return _MISSING
-    return retained_data
-
-
-def stripped_yaml_value(value: Any, selector: YamlPathSelector) -> Any:
-    if selector.include_subtree:
-        return _MISSING
-    if not isinstance(value, dict):
-        return value
-
-    stripped_data: YamlDict = {}
-    for key, child_value in value.items():
-        child_selector = selector.children.get(yaml_key_text(key))
-        if child_selector is None:
-            stripped_data[key] = child_value
-            continue
-
-        stripped_value = stripped_yaml_value(child_value, child_selector)
-        if stripped_value is not _MISSING:
-            stripped_data[key] = stripped_value
-
-    return stripped_data
-
-
-def filter_retained_keys(
-    data: YamlDict,
-    retained_key_paths: tuple[YamlKeyPath, ...],
-) -> YamlDict:
-    path_selector = build_yaml_path_selector(retained_key_paths)
-    retained_data: YamlDict = {}
-    for key, value in data.items():
-        child_selector = path_selector.children.get(yaml_key_text(key))
-        if child_selector is None:
-            continue
-
-        retained_value = retained_yaml_value(value, child_selector)
-        if retained_value is not _MISSING:
-            retained_data[key] = retained_value
-
-    return retained_data
-
-
-def filter_stripped_keys(
-    data: YamlDict,
-    stripped_key_paths: tuple[YamlKeyPath, ...],
-) -> YamlDict:
-    if not stripped_key_paths:
-        return dict(data)
-
-    path_selector = build_yaml_path_selector(stripped_key_paths)
-    stripped_data: YamlDict = {}
-    for key, value in data.items():
-        child_selector = path_selector.children.get(yaml_key_text(key))
-        if child_selector is None:
-            stripped_data[key] = value
-            continue
-
-        stripped_value = stripped_yaml_value(value, child_selector)
-        if stripped_value is not _MISSING:
-            stripped_data[key] = stripped_value
-
-    return stripped_data
-
-
-def select_yaml_data(
-    data: YamlDict,
-    selector_action: SelectorAction,
-    selected_key_paths: tuple[YamlKeyPath, ...],
-) -> YamlDict:
-    if selector_action == SelectorAction.REMOVE:
-        return filter_stripped_keys(data, selected_key_paths)
-    return filter_retained_keys(data, selected_key_paths)
-
-
-def child_overlay_selector(selector: YamlPathSelector, key: str) -> YamlPathSelector:
-    # Everything under a whole selection is whole too. A key no selector
-    # reaches gets an empty selector, so merge still descends into it.
-    if selector.include_subtree:
-        return selector
-    return selector.children.get(key) or YamlPathSelector()
-
-
-def overlay_yaml_objects(
-    original_base_data: YamlDict,
-    preserved_base_data: YamlDict,
-    overlay_data: YamlDict,
-    path_selector: YamlPathSelector,
-) -> YamlDict:
-    merged_data: YamlDict = {}
-
-    # Keep surviving keys in live order so repo-managed value changes do not also
-    # produce noisy key-movement diffs.
-    for key in original_base_data:
-        child_selector = child_overlay_selector(path_selector, yaml_key_text(key))
-
-        if key in overlay_data:
-            overlay_value = overlay_data[key]
-            base_value = original_base_data[key]
-            # A whole selection is one value, so the overlay's copy replaces it. Any
-            # other mapping in both base and overlay merges key by key, whether or
-            # not selection kept any of it, so its keys keep live order and the live
-            # keys selection kept survive.
-            if (
-                not child_selector.include_subtree
-                and isinstance(base_value, dict)
-                and isinstance(overlay_value, dict)
-            ):
-                merged_data[key] = overlay_yaml_objects(
-                    base_value,
-                    preserved_base_data.get(key, {}),
-                    overlay_value,
-                    child_selector,
-                )
-                continue
-
-            merged_data[key] = overlay_value
-            continue
-
-        if key in preserved_base_data:
-            merged_data[key] = preserved_base_data[key]
-
-    for source_data in (overlay_data, preserved_base_data):
-        for key, value in source_data.items():
-            if key in merged_data:
-                continue
-            merged_data[key] = value
-
-    return merged_data
-
-
-def overlay_yaml_data(
-    original_base_data: YamlDict,
-    preserved_base_data: YamlDict,
-    overlay_data: YamlDict,
-    selected_key_paths: tuple[YamlKeyPath, ...] = (),
-) -> YamlDict:
-    return overlay_yaml_objects(
-        original_base_data,
-        preserved_base_data,
-        overlay_data,
-        build_yaml_path_selector(selected_key_paths),
-    )
 
 
 def detect_yaml_indent(text: str | None) -> int | None:
@@ -600,25 +380,29 @@ class YamlTransformEngine(BaseTransformEngine):
             request.base_path,
             stdin_bytes=request.engine_option("stdin_bytes"),
         )
-        selected_key_paths = selected_yaml_key_paths(
+        selected_key_paths = select_key_paths(
             base_data,
             exact_key_paths,
             selected_key_regexes,
+            key_text=yaml_key_text,
         )
         if request.has_excluded_selectors():
             selected_key_paths = subtract_excluded_key_paths(
-                iter_yaml_key_paths(base_data),
+                iter_key_paths(base_data, key_text=yaml_key_text),
                 selected_key_paths if request.has_included_selectors() else None,
-                selected_yaml_key_paths(
+                select_key_paths(
                     base_data,
                     parse_yaml_key_paths(request.excluded_selector_values("key")),
                     compile_key_regexes(request.excluded_selector_values("key_regex")),
+                    key_text=yaml_key_text,
                 ),
             )
         # Only an absent selector list means identity. Selectors that match
         # nothing must still select nothing.
         transformed_data = (
-            select_yaml_data(base_data, request.selector_action, selected_key_paths)
+            select_data(
+                base_data, request.selector_action, selected_key_paths, key_text=yaml_key_text
+            )
             if request.has_selectors()
             else dict(base_data)
         )
@@ -630,13 +414,14 @@ class YamlTransformEngine(BaseTransformEngine):
                 request.overlay_path,
                 stdin_bytes=request.engine_option("stdin_bytes"),
             )
-            transformed_data = overlay_yaml_data(
+            transformed_data = merge_overlay_data(
                 base_data,
                 transformed_data,
                 overlay_data,
                 # Without selectors the whole base is one selection, so the overlay
                 # replaces each top-level key it shares with the base.
                 selected_key_paths if request.has_selectors() else (DOCUMENT_ROOT_KEY_PATH,),
+                key_text=yaml_key_text,
             )
 
         return build_yaml_output(
