@@ -14,7 +14,7 @@ class StandaloneCommandRunner:
     command_names = frozenset({"rewrite", "transform", "capture", "reconcile", "render"})
 
     def run(self, args: Any) -> int:
-        if args.command == "reconcile" and getattr(args, "no_confirm", False):
+        if args.command == "reconcile" and args.no_confirm:
             raise InteractionRequiredError(f"{args.command} requires interaction and is unavailable with --no-confirm")
         if args.command == "rewrite" and args.rewrite_name == "home":
             from dotman.rewrites.cli import run_home_rewrite

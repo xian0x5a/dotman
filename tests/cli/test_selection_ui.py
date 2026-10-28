@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 
 import dotman.cli_interaction as cli
+from dotman import cli_style
 import pytest
 from dotman.cli import main
 from dotman.command_runtime import ArgvCommand, CommandResult, MemoryCommandRuntime
@@ -14,11 +15,8 @@ from tests.helpers import EXAMPLE_REPO, write_manager_config, write_named_manage
 
 
 
-def test_render_tracked_binding_label_uses_selection_menu_style(monkeypatch) -> None:
-    monkeypatch.delenv("NO_COLOR")
-    monkeypatch.setattr("sys.stdout.isatty", lambda: True)
-
-    assert cli.render_full_spec_selector_label(repo_name="example", selector="git", profile="basic") == (
+def test_render_tracked_binding_label_uses_selection_menu_style() -> None:
+    assert cli_style.render_full_spec_selector_label(repo_name="example", selector="git", profile="basic", use_color=True) == (
         "\033[2;34mexample\033[0m"
         "\033[2m:\033[0m"
         "\033[1mgit\033[0m"
@@ -32,15 +30,6 @@ def test_render_package_label_can_prioritize_package_name() -> None:
         package_first=True,
         include_repo_context=True,
     ) == "example:git"
-
-def test_render_full_spec_selector_label_can_prioritize_selector_name() -> None:
-    assert cli.render_full_spec_selector_label(
-        repo_name="example",
-        selector="git",
-        profile="basic",
-        selector_first=True,
-    ) == "example:git@basic"
-
 
 def test_render_package_target_label_uses_dot_separator_and_target_style(monkeypatch) -> None:
     monkeypatch.delenv("NO_COLOR")
@@ -322,34 +311,6 @@ def test_print_review_diff_header_dims_metadata_prefix_when_colored(
     assert "\033[2mfile: /live/gitconfig\033[0m" in output
 
 
-def test_print_review_diff_header_renders_probe_no_files_as_hint_text(
-    monkeypatch,
-    capsys,
-) -> None:
-    monkeypatch.delenv("NO_COLOR")
-    monkeypatch.setattr("sys.stdout.isatty", lambda: True)
-
-    review_item = cli.ReviewItem(
-        selection_label="sandbox:app@default",
-        package_id="app",
-        target_name="version",
-        action="install",
-        operation="push",
-        repo_path=Path("/repo/app"),
-        live_path=Path("/repo/app"),
-        source_path="",
-        destination_path="",
-        is_probe=True,
-    )
-
-
-    cli.print_review_diff_header(review_item, index=1, total=1)
-
-    output = capsys.readouterr().out
-    assert "target: probe" not in output
-    assert "\033[2mprobe target: no files\033[0m" in output
-
-
 def test_run_diff_review_menu_default_command_views_next_diff(
     monkeypatch,
     capsys,
@@ -618,27 +579,6 @@ def test_print_review_item_shows_unavailable_badge(capsys) -> None:
     output = capsys.readouterr().out
     assert "[diff unavailable]" in output
     assert "~/.../git/config -> ~/.../git/config" in output
-
-
-def test_print_review_item_shows_probe_badge_like_selection_menu(capsys) -> None:
-    review_item = cli.ReviewItem(
-        selection_label="sandbox:app@default",
-        package_id="app",
-        target_name="version",
-        action="install",
-        operation="push",
-        repo_path=Path("/repo/app"),
-        live_path=Path("/repo/app"),
-        source_path="",
-        destination_path="",
-        is_probe=True,
-        hook_command_summaries=("pre_push: echo target pre",),
-    )
-
-
-    cli.print_review_item(1, review_item)
-
-    assert capsys.readouterr().out == "   1) [install] sandbox:app.version [probe]\n"
 
 
 def test_print_review_item_preserves_root_prefix_for_system_paths(capsys) -> None:

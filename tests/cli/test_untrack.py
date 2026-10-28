@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-import dotman.cli_interaction as cli
+from dotman import cli_style
 from dotman.cli import main
 from dotman.interaction import ScriptedInteraction
 
@@ -551,7 +551,7 @@ def test_untrack_cli_uses_rendered_binding_label_for_terminal_output(
     )
 
     assert exit_code == 0
-    assert f"untracked {cli.render_full_spec_selector_label(repo_name='example', selector='git', profile='basic')}" in capsys.readouterr().out
+    assert f"untracked {cli_style.render_full_spec_selector_label(repo_name='example', selector='git', profile='basic', use_color=True)}" in capsys.readouterr().out
 
 def test_untrack_cli_reports_remaining_package_tracking_after_success(
     tmp_path: Path,

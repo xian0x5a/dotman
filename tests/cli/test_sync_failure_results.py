@@ -17,7 +17,7 @@ def test_failure_document_preserves_partial_unit_and_unattempted_effects(tmp_pat
         command(session, SetResolutionIntent, "main:app.unit", "use-live")
         command(session, SetApproval, "main:app.unit", True)
         result = session.execute().result
-        document = sync_document(SimpleNamespace(dry_run=False, scopes=[]), session, result)
+        document = sync_document(SimpleNamespace(dry_run=False, no_confirm=False, scopes=[]), session, result)
     assert document["sync_units"][0]["result"] == "not-converged"
     assert [(step["action"], step["status"]) for step in document["stages"]] == [
         ("update", "ok"), ("pre_push", "failed"), ("write", "unattempted"), ("complete", "unattempted"),

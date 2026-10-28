@@ -473,7 +473,7 @@ def needs_first_review(row) -> bool:
 
 
 def no_base_skip_summaries(args, rows) -> list[dict]:
-    if not getattr(args, "no_confirm", False):
+    if not args.no_confirm:
         return []
     return [{"identity": row.row_id, "reason": row.fallback_reason}
             for row in rows if needs_first_review(row) and not row.approved]

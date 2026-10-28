@@ -17,7 +17,7 @@ def guarded_engine(tmp_path, monkeypatch):
 def test_guard_skip_json_names_scope_direction_and_reason(tmp_path, monkeypatch):
     engine = guarded_engine(tmp_path, monkeypatch)
     with engine.open_pull_session(engine.resolve_sync_scope(), preview=True) as session:
-        document = sync_document(SimpleNamespace(dry_run=True, scopes=[]), session, None)
+        document = sync_document(SimpleNamespace(dry_run=True, no_confirm=False, scopes=[]), session, None)
     assert document["guard_skips"] == [{
         "identity": "main:app.unit", "direction": "pull", "scope_kind": "target",
         "path_rule_pattern": None, "reason": "offline",

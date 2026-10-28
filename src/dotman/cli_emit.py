@@ -30,10 +30,6 @@ def _format_variable_value(value: Any) -> str:
         return str(value)
 
 
-def effective_execution_mode(*, dry_run_requested: bool) -> str:
-    return "dry-run" if dry_run_requested else "execute"
-
-
 def display_cli_path(reference_path: Path | str, *, full_paths: bool) -> str:
     return display_review_path(reference_path, compact=not full_paths)
 
@@ -59,7 +55,6 @@ def _render_payload_action(action: str, *, use_color: bool) -> str:
 class HumanExecutionRenderer:
     full_paths: bool
     use_color: bool
-    stream_output: bool = True
 
     def render_restore_event(self, event: RestoreExecutionEvent) -> None:
         if isinstance(event, RestoreOperationStarted):
@@ -95,8 +90,6 @@ class HumanExecutionRenderer:
 
 @dataclass(frozen=True)
 class JsonExecutionRenderer:
-    stream_output: bool = False
-
     @staticmethod
     def render_restore_event(_event: RestoreExecutionEvent) -> None:
         return None
@@ -470,11 +463,7 @@ def emit_untracked_package_entries(
     json_output: bool,
     use_color: bool,
 ) -> int:
-    request_label = request_binding.label if hasattr(request_binding, "label") else cli_style.full_spec_selector_label_text(
-        repo_name=request_binding.repo,
-        selector=request_binding.selector,
-        profile=request_binding.profile,
-    )
+    request_label = request_binding.label
     payload = {
         "mode": "state-only",
         "operation": "untrack",
@@ -583,17 +572,9 @@ def emit_add_result(*, result: Any, json_output: bool, use_color: bool) -> int:
     return 0
 
 
-def emit_kept_add_result(*, repo_name: str, package_id: str, json_output: bool, use_color: bool) -> int:
-    payload = {
-        "mode": "config-only",
-        "operation": "add",
-        "repo": repo_name,
-        "package_id": package_id,
-        "written": False,
-    }
-    if json_output:
-        print(json.dumps(payload, indent=2, sort_keys=True))
-        return 0
+# The kept, no-op and skipped emitters below report a declined or empty review,
+# which only an interactive run reaches, so they have no JSON form.
+def emit_kept_add_result(*, repo_name: str, package_id: str, use_color: bool) -> int:
     print(
         "kept package config unchanged "
         + cli_style.render_package_label(
@@ -607,54 +588,17 @@ def emit_kept_add_result(*, repo_name: str, package_id: str, json_output: bool, 
     return 0
 
 
-def emit_noop_add_result(*, json_output: bool) -> int:
-    payload = {
-        "mode": "config-only",
-        "operation": "add",
-        "written": False,
-        "changed": False,
-    }
-    if json_output:
-        print(json.dumps(payload, indent=2, sort_keys=True))
-        return 0
+def emit_noop_add_result() -> int:
     print("No package config changes.")
     return 0
 
 
-def emit_kept_package_entry(*, binding: Any, json_output: bool, use_color: bool) -> int:
-    payload = {
-        "mode": "state-only",
-        "operation": "track",
-        "package_entry": {
-            "repo": binding.repo,
-            "package_id": binding.selector,
-            "profile": binding.profile,
-        },
-        "recorded": False,
-    }
-    if json_output:
-        print(json.dumps(payload, indent=2, sort_keys=True))
-        return 0
-
+def emit_kept_package_entry(*, binding: Any, use_color: bool) -> int:
     print(f"kept existing tracked package entry {cli_style.render_full_spec_selector_reference(binding, use_color=use_color)}")
     return 0
 
 
-def emit_skipped_tracking(*, binding: Any, json_output: bool, use_color: bool) -> int:
-    payload = {
-        "mode": "state-only",
-        "operation": "track",
-        "package_entry": {
-            "repo": binding.repo,
-            "package_id": binding.selector,
-            "profile": binding.profile,
-        },
-        "recorded": False,
-    }
-    if json_output:
-        print(json.dumps(payload, indent=2, sort_keys=True))
-        return 0
-
+def emit_skipped_tracking(*, binding: Any, use_color: bool) -> int:
     print(f"skipped tracking {cli_style.render_full_spec_selector_reference(binding, use_color=use_color)}")
     return 0
 
@@ -724,19 +668,17 @@ def emit_trackable_detail(*, trackable_detail: Any, json_output: bool, use_color
         show_tracked_instances = trackable_detail.binding_mode == "multi_instance" and bool(trackable_detail.tracked_instances)
         if show_tracked_instances:
             print("    tracked instances:")
-        for tracked_instance in trackable_detail.tracked_instances:
-            if not show_tracked_instances:
-                break
-            instance_label = cli_style.render_package_label(
-                repo_name=tracked_instance.repo,
-                package_id=tracked_instance.package_id,
-                bound_profile=tracked_instance.bound_profile,
-                use_color=use_color,
-            )
-            print(
-                f"      {cli_style.render_tracked_reason(tracked_instance.state, use_color=use_color)}: "
-                f"{instance_label}"
-            )
+            for tracked_instance in trackable_detail.tracked_instances:
+                instance_label = cli_style.render_package_label(
+                    repo_name=tracked_instance.repo,
+                    package_id=tracked_instance.package_id,
+                    bound_profile=tracked_instance.bound_profile,
+                    use_color=use_color,
+                )
+                print(
+                    f"      {cli_style.render_tracked_reason(tracked_instance.state, use_color=use_color)}: "
+                    f"{instance_label}"
+                )
 
         if trackable_detail.tracked_instances:
             print()
@@ -999,13 +941,12 @@ def emit_restore_payload(
     snapshot: Any,
     actions: Sequence[Any],
     json_output: bool,
-    mode: str,
     full_paths: bool = False,
     use_color: bool,
 ) -> int:
     visible_actions = visible_restore_actions(actions)
     payload = {
-        "mode": mode,
+        "mode": "dry-run",
         "operation": "restore",
         "snapshot": snapshot.to_dict(),
         "actions": [action.to_dict() for action in visible_actions],
@@ -1014,7 +955,7 @@ def emit_restore_payload(
         print(json.dumps(payload, indent=2, sort_keys=True))
         return 0
 
-    _print_restore_header(f"{mode} restore", snapshot=snapshot, action_count=len(visible_actions), use_color=use_color)
+    _print_restore_header("dry-run restore", snapshot=snapshot, action_count=len(visible_actions), use_color=use_color)
     if not visible_actions:
         return 0
     for action in visible_actions:

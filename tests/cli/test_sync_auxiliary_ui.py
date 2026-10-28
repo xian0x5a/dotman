@@ -31,7 +31,7 @@ def test_auxiliary_selection_and_review():
 def test_auxiliary_json_has_only_auxiliary_metadata():
     with auxiliary_session() as session:
         CommandDeck(session, use_color=False).select_all(True)
-        document = sync_document(SimpleNamespace(dry_run=True, scopes=[]), session, None)
+        document = sync_document(SimpleNamespace(dry_run=True, no_confirm=False, scopes=[]), session, None)
         assert document["sync_units"] == []
         assert document["scope"] == ["r:p.check", "r:p"]
         assert document["summary"]["selected_auxiliary"] == 2

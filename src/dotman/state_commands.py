@@ -56,7 +56,7 @@ class StateCommandRunner:
         self._use_color = use_color
 
     def run(self, args: Any) -> int:
-        if args.command == "edit" and getattr(args, "no_confirm", False):
+        if args.command == "edit" and args.no_confirm:
             raise InteractionRequiredError("edit requires an editor and is unavailable with --no-confirm")
         if args.command == "edit" and args.edit_command == "config":
             return self._runtime.open_editor_path(
@@ -117,20 +117,12 @@ class StateCommandRunner:
             use_color=self._use_color,
         ).resolve(
             args.binding,
-            no_confirm=getattr(args, "no_confirm", False),
+            no_confirm=args.no_confirm,
         )
         if resolution.disposition == "kept":
-            return cli_emit.emit_kept_package_entry(
-                binding=resolution.binding,
-                json_output=args.json_output,
-                use_color=self._use_color,
-            )
+            return cli_emit.emit_kept_package_entry(binding=resolution.binding, use_color=self._use_color)
         if resolution.disposition == "skipped":
-            return cli_emit.emit_skipped_tracking(
-                binding=resolution.binding,
-                json_output=args.json_output,
-                use_color=self._use_color,
-            )
+            return cli_emit.emit_skipped_tracking(binding=resolution.binding, use_color=self._use_color)
         # Promotions need an interaction, which JSON output disables, so JSON
         # output always reports exactly one entry.
         recorded_bindings = [*resolution.promotions, resolution.binding]
@@ -195,9 +187,9 @@ class StateCommandRunner:
             package_id=package_id,
             live_path_text=args.live_path,
         )
-        if not getattr(args, "no_confirm", False) and (args.json_output or self._runtime.interaction is None):
+        if not args.no_confirm and (args.json_output or self._runtime.interaction is None):
             raise InteractionRequiredError("add requires review; use --no-confirm to accept the generated manifest")
-        if getattr(args, "no_confirm", False):
+        if args.no_confirm:
             return cli_emit.emit_add_result(
                 result=write_add_result(result),
                 json_output=args.json_output,
@@ -210,16 +202,15 @@ class StateCommandRunner:
             if review_result.exit_code != 0:
                 return review_result.exit_code
             if review_result.manifest_text == result.before_text:
-                return cli_emit.emit_noop_add_result(json_output=args.json_output)
+                return cli_emit.emit_noop_add_result()
             if not resolver.confirm_manifest_write(
                 repo_name=repo_name,
                 package_id=package_id,
-                no_confirm=getattr(args, "no_confirm", False),
+                no_confirm=args.no_confirm,
             ):
                 return cli_emit.emit_kept_add_result(
                     repo_name=repo_name,
                     package_id=package_id,
-                    json_output=args.json_output,
                     use_color=self._use_color,
                 )
             result = write_add_result(result, manifest_text=review_result.manifest_text)

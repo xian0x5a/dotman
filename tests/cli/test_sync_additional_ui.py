@@ -54,7 +54,7 @@ def test_canonical_json_reports_one_shared_source_and_execution_failure():
             diagnostics=(SimpleNamespace(code="source-changed", message="Source changed"),),
         ),),
     )
-    document = sync_document(SimpleNamespace(dry_run=False, scopes=[]), session, result)
+    document = sync_document(SimpleNamespace(dry_run=False, no_confirm=False, scopes=[]), session, result)
     assert document["additional_source_changes"] == [{
         "row_id": row.row_id, "repo": "r", "path": "shared", "approved": True,
         "references": ["r:app.one", "r:app.two"], "kind": "write", "bytes": 6,
@@ -94,7 +94,7 @@ def test_plain_output_reports_source_approval_and_result(capsys):
         additional_changes=(SimpleNamespace(row_id=row.row_id, status="would-apply", diagnostics=()),),
     )
     runner = SyncDeckCommandRunner(engine_factory=None, use_color=False)
-    runner._emit(SimpleNamespace(dry_run=True, scopes=[], json_output=False), session, result)
+    runner._emit(SimpleNamespace(dry_run=True, no_confirm=False, scopes=[], json_output=False), session, result)
     output = capsys.readouterr().out
     assert "[would-apply] r:shared" in output
     assert "Additional Source Change: write" in output
@@ -112,7 +112,7 @@ def test_plain_output_lists_an_additional_source_path_on_one_line_escaped(capsys
         additional_changes=(SimpleNamespace(row_id=row.row_id, status="would-apply", diagnostics=()),),
     )
     runner = SyncDeckCommandRunner(engine_factory=None, use_color=False)
-    runner._emit(SimpleNamespace(dry_run=True, scopes=[], json_output=False), session, result)
+    runner._emit(SimpleNamespace(dry_run=True, no_confirm=False, scopes=[], json_output=False), session, result)
     output = capsys.readouterr().out
     assert "[would-apply] r:shared\\u000aforged: line\\u001b[31m\n" in output
     assert [line for line in output.splitlines() if line.startswith("forged:")] == []
@@ -120,7 +120,7 @@ def test_plain_output_lists_an_additional_source_path_on_one_line_escaped(capsys
 
 def _emit_with_diagnostic(runner, kind, message):
     """Emit one plain Sync result in which `message` is reported as `kind` of diagnostic."""
-    args = SimpleNamespace(dry_run=True, scopes=[], json_output=False)
+    args = SimpleNamespace(dry_run=True, no_confirm=False, scopes=[], json_output=False)
     row = additional_row()
     session = SimpleNamespace(view=SimpleNamespace(rows=(row,), observations=(), commit_options=()))
     additional_diagnostics = (SimpleNamespace(code="failed", message=message),) if kind == "entry" else ()
