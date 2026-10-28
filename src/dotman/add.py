@@ -9,9 +9,9 @@ from pathlib import Path, PurePosixPath
 
 from dotman.atomic_files import write_text_atomic
 from dotman.collisions import TargetClaim, validate_target_collisions
-from dotman.command_runtime import ArgvCommand, CommandRequest, current_command_runtime
+from dotman.command_runtime import CommandRequest, current_command_runtime
 from dotman.config import expand_path
-from dotman.editor import resolve_editor_command
+from dotman.editor import editor_command
 from dotman.errors import UsageError
 from dotman.ignore import GitIgnoreChain, collect_gitignore_chain
 from dotman.manifest import (
@@ -430,9 +430,6 @@ def append_target_block(*, before_text: str, target_block: str) -> str:
 
 
 def review_add_manifest(result: AddOperationResult) -> AddReviewResult | None:
-    editor_command = resolve_editor_command()
-    if editor_command is None:
-        return None
     with tempfile.TemporaryDirectory(prefix="dotman-add-review-") as temp_dir:
         temp_root = Path(temp_dir)
         before_path = temp_root / "package-before.toml"
@@ -457,9 +454,12 @@ def review_add_manifest(result: AddOperationResult) -> AddReviewResult | None:
         )
         review_path.chmod(0o444)
 
+        command = editor_command([str(review_path), str(editable_path)])
+        if command is None:
+            return None
         command_result = current_command_runtime().run(
             CommandRequest(
-                command=ArgvCommand((*editor_command, str(review_path), str(editable_path))),
+                command=command,
                 io="tty",
             )
         )

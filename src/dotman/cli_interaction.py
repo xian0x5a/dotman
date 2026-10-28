@@ -15,7 +15,6 @@ from dotman.add import (
     review_add_manifest,
 )
 from dotman.command_runtime import (
-    ArgvCommand,
     CommandRequest,
     current_command_runtime,
 )
@@ -23,7 +22,7 @@ from dotman.diff_review import (
     ReviewItem,
     run_review_item_diff,
 )
-from dotman.editor import resolve_editor_command
+from dotman.editor import editor_command, resolve_editor_command
 from dotman.engine import DotmanEngine
 from dotman.interaction import Interaction, choose_with_fzf
 from dotman.errors import UsageError
@@ -116,15 +115,15 @@ def render_package_target_label(*, repo_name: str, package_id: str, target_name:
 
 
 def open_editor_path(path: Path, *, missing_editor_label: str = "path") -> int:
-    editor_command = resolve_editor_command()
-    if editor_command is None:
+    command = editor_command([str(path)])
+    if command is None:
         print(f"No editor configured. {missing_editor_label}: {terminal_safe_line(str(path))}")
         return 0
 
     try:
         result = current_command_runtime().run(
             CommandRequest(
-                command=ArgvCommand((*editor_command, str(path))),
+                command=command,
                 io="tty",
             )
         )
