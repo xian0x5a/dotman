@@ -574,9 +574,7 @@ def observe_scope(
                         context.tracked_state.state_root, item.repo.config.state_key,
                         read_only=preview,
                     ))
-                    lifecycles[identity.repo] = SyncBaseLifecycle(
-                        store, operation=operation, preview=preview,
-                    )
+                    lifecycles[identity.repo] = SyncBaseLifecycle(store, preview=preview)
             except (OSError, ValueError, SyncBaseStoreError) as exc:
                 store_warnings[identity.repo] = Diagnostic("base-unavailable", str(exc), "warning")
                 # A store that was never created holds no Base, even when creating it fails.

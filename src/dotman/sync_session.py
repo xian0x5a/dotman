@@ -1582,11 +1582,11 @@ class ProposalSession:
             with SyncBaseStore.open(
                 self._context.tracked_state.state_root, item.repo.config.state_key,
             ) as store:
-                lifecycle = SyncBaseLifecycle(store, operation=self.operation, preview=False)
+                lifecycle = SyncBaseLifecycle(store, preview=False)
                 completion = lifecycle.complete(
                     replace(self._frozen_bases[observation.identity], payload=row.proposal.repository),
                     ProposalCompletion(
-                        intent=row.proposal.intent, approved=True,
+                        approved=True,
                         publication_effects="succeeded" if row.proposal.publication_effects else "not-required",
                         primary_effect="succeeded" if row.proposal.primary_source_change is not None else "not-required",
                     ),

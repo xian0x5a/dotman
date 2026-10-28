@@ -121,7 +121,7 @@ def info_sync_base(context, text: str):
         ))
     with _open(context, repo) as store, store.read_transaction():
         # Exact inspection must not decode unrelated records.
-        return _detail(unit, SyncBaseLifecycle(store, operation="sync", preview=True).inspect(unit))
+        return _detail(unit, SyncBaseLifecycle(store, preview=True).inspect(unit))
 
 
 def list_sync_bases(context):
@@ -133,7 +133,7 @@ def list_sync_bases(context):
         if not _store_exists(context, repo):
             continue
         with _open(context, repo) as store, store.read_transaction():
-            lifecycle = SyncBaseLifecycle(store, operation="sync", preview=True)
+            lifecycle = SyncBaseLifecycle(store, preview=True)
             for key in store.identities():
                 try:
                     identity = _identity(key.decode("utf-8"))
