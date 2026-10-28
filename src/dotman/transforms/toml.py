@@ -1259,13 +1259,11 @@ class TomlTransformEngine(BaseTransformEngine):
             prefix="exact",
             is_default=True,
             description="exact TOML key path",
-            examples=("model", "mcp_servers.playwright.env.PLAYWRIGHT_MCP_EXTENSION_TOKEN"),
         ),
         SelectorSpec(
             name="table_regex",
             prefix="re",
             description="regex matching dotted TOML table or key paths",
-            examples=(r"^projects\.", r"^widget\.[^.]+\.enabled$"),
         ),
     )
 

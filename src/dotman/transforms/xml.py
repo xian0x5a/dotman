@@ -459,7 +459,7 @@ def render_xml_output(
     if base_root is None:
         if overlay_root is None:
             raise UsageError(f"base XML file not found: {base_path}")
-        root = etree.Element(overlay_root.tag)
+        root = copy_document(overlay_root)
     else:
         root = build_tree_with_selector_action(
             base_root,
@@ -467,13 +467,8 @@ def render_xml_output(
             effective_selector_action,
             node_regexes,
         )
-
-    if overlay_root is not None:
-        if base_root is None:
-            root = copy_document(overlay_root)
-        else:
-            preserved_root = root
-            root = overlay_with_base_slots(base_root, preserved_root, overlay_root)
+        if overlay_root is not None:
+            root = overlay_with_base_slots(base_root, root, overlay_root)
 
     if sort_attributes:
         sort_xml_attributes(root)
@@ -510,13 +505,11 @@ class XmlTransformEngine(BaseTransformEngine):
             prefix="exact",
             is_default=True,
             description="fnmatch-style XML node path matcher",
-            examples=("config/WindowGeometry", "config/*WindowState"),
         ),
         SelectorSpec(
             name="node_regex",
             prefix="re",
             description="regex matching XML node paths",
-            examples=(r"^config/Window", r"/(Geometry|State)$"),
         ),
     )
 

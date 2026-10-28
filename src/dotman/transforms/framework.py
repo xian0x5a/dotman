@@ -190,7 +190,6 @@ class SelectorSpec:
     description: str
     prefix: str
     is_default: bool = False
-    examples: tuple[str, ...] = ()
     supported_modes: frozenset[TransformMode] = field(
         default_factory=lambda: frozenset({TransformMode.CLEANUP, TransformMode.MERGE})
     )
