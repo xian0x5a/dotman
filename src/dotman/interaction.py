@@ -34,6 +34,13 @@ class ChoiceRequest(Generic[ChoiceValue]):
     header_text: str
     options: tuple[ChoiceOption[ChoiceValue], ...]
 
+    def __post_init__(self) -> None:
+        # A pick is returned as its value, so two options with one value would
+        # silently resolve to the same choice (#341).
+        values = [option.value for option in self.options]
+        if len(set(values)) != len(values):
+            raise ValueError(f"choice options must have distinct values: {values!r}")
+
 
 @dataclass(frozen=True)
 class ConfirmationRequest:
