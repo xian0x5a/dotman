@@ -968,6 +968,8 @@ class SyncBaseStore:
             # A corrupt record is unavailable, not permission to overwrite it silently.
             # Decoding enforces the current epoch and one canonical encoding, so an
             # equal decoded record means the stored bytes already match `content`.
+            # Skipping also skips re-running the directory fsync; a failed one was
+            # already reported, and retrying fsync after an error proves little.
             if self._read_file(directory, name, record.identity, location=location) == record:
                 return
             temporary = f".{uuid.uuid4().hex}.tmp"
