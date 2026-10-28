@@ -286,8 +286,9 @@ Source. Staging order is Primary Source, configured Additional Sources, then
 statically discovered Jinja dependencies. A custom Editor receives all staged
 paths as shell positional parameters through `"$@"`, plus scalar environment
 values `DOTMAN_EDITOR_PRIMARY_PATH` and `DOTMAN_EDITOR_TRANSACTIONAL_ROOT`
-identifying the Primary path and transactional root. Only staged sources
-are editable; review evidence is read-only.
+identifying the Primary path and transactional root, and
+`DOTMAN_EDITOR_REVIEW_PATH` naming the read-only repository/live review file.
+Only staged sources are editable; review evidence is read-only.
 
 The default Editor chooses the first available entry in this order:
 `VISUAL`, `EDITOR`, `GIT_EDITOR`, Git's configured editor, `sensible-editor`,

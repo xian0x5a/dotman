@@ -245,9 +245,6 @@ Proposal.
 
 Provider defaults, inheritance, staging order and command environment are owned
 by [repository configuration](repository.md#projection-and-editor-configuration).
-The standalone reconcile helpers and their exact arguments are documented in
-the [CLI reference](cli.md). They are low-level commands, not the Sync or Pull
-session lifecycle.
 
 ## Built-In `dotman render jinja`
 

@@ -81,10 +81,9 @@ def test_no_confirm_is_global_command_policy() -> None:
     assert build_parser().parse_args(["--no-confirm", "push"]).no_confirm
 
 
-@pytest.mark.parametrize("command", [["edit", "config"], ["reconcile", "editor", "--repo-path", "repo", "--live-path", "live"]])
-def test_no_confirm_rejects_editor_commands_before_opening(command, capsys, monkeypatch) -> None:
+def test_no_confirm_rejects_editor_commands_before_opening(capsys, monkeypatch) -> None:
     monkeypatch.setattr("dotman.cli_interaction.open_editor_path", lambda *a, **kw: pytest.fail("editor opened"))
-    assert main(["--no-confirm", *command]) == 1
+    assert main(["--no-confirm", "edit", "config"]) == 1
     assert "--no-confirm" in capsys.readouterr().err
 
 

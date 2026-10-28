@@ -9,7 +9,7 @@ source = "files/config/nvim/init.lua.tmpl"
 path = "~/.config/nvim/init.lua"
 render = "sh hooks/render.sh"
 compare = { repo = "render", live = "raw" }
-editor = { run = "sh hooks/reconcile.sh", io = "tty" }
+editor = { run = "sh hooks/editor.sh", io = "tty" }
 
 [hooks]
 guard_pull = '''

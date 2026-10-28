@@ -75,7 +75,6 @@ def test_top_level_help_uses_command_placeholder_and_summaries(capsys) -> None:
     assert "Patch review content back into repo source" in output
     assert "Open a tracked package, target, local override, config" in output
     assert "repo path" in output
-    assert "Re-run a reconcile helper subcommand" in output
     assert "Render built-in template helpers" in output
     assert "Run a standalone structure-agnostic text rewrite" in output
     assert "Run a standalone structured transform" in output
@@ -173,16 +172,6 @@ def test_removed_installed_subcommands_are_rejected(capsys, args: tuple[str, ...
     assert exc_info.value.code == 2
     assert f"invalid choice: '{rejected_token}'" in capsys.readouterr().err
 
-def test_reconcile_editor_help_uses_explicit_option_placeholders(capsys) -> None:
-    output = capture_parser_help(capsys, "reconcile", "editor")
-    assert "--repo-path <repo-path>" in output
-    assert "--live-path <live-path>" in output
-    assert "--review-repo-path <review-repo-path>" in output
-    assert "--review-live-path <review-live-path>" in output
-    assert "--additional-source <source-path>" in output
-    assert "--editor <editor-command>" in output
-
-
 def test_capture_help_lists_patch_shortcut(capsys) -> None:
     output = capture_parser_help(capsys, "capture")
     assert "usage: dotman capture [-h] <capture-command> ..." in output
@@ -203,24 +192,11 @@ def test_capture_patch_help_uses_explicit_option_placeholders(capsys) -> None:
     assert "--var <key=value>" in output
 
 
-def test_reconcile_help_lists_jinja_shortcut(capsys) -> None:
-    output = capture_parser_help(capsys, "reconcile")
-    assert "usage: dotman reconcile [-h] <reconcile-command> ..." in output
-    assert "reconcile commands:" in output
-    assert "editor" in output
-    assert "Open repo and live files in an editor" in output
-    assert "jinja" in output
-    assert "Reconcile a Jinja source with its recursive template" in output
-
-
-
-def test_reconcile_jinja_help_uses_explicit_option_placeholders(capsys) -> None:
-    output = capture_parser_help(capsys, "reconcile", "jinja")
-    assert "usage: dotman reconcile jinja [-h] --repo-path <repo-path>" in output
-    assert "--live-path <live-path>" in output
-    assert "--review-repo-path <review-repo-path>" in output
-    assert "--review-live-path <review-live-path>" in output
-    assert "--editor <editor-command>" in output
+def test_reset_help_lists_sync_base_command(capsys) -> None:
+    output = capture_parser_help(capsys, "reset")
+    assert "usage: dotman reset [-h] <reset-command> ..." in output
+    assert "reset commands:" in output
+    assert "sync-base" in output
 
 
 def test_render_help_uses_nested_command_placeholder_and_summaries(capsys) -> None:
