@@ -1,4 +1,5 @@
 import subprocess
+from contextlib import contextmanager
 
 import pytest
 
@@ -379,3 +380,69 @@ def test_child_add_add_since_missing_base_keeps_repository_executable(tmp_path, 
         row, = session.view.rows
         assert row.diagnostics == ()
         assert row.proposal.repository == DirectoryChildPresent(b"new\n", repo_exec)
+
+
+@contextmanager
+def changed_children_session(root, monkeypatch, count):
+    """A session over `count` children whose repo side changed since their stored Bases, all approved."""
+    engine = directory_engine(root, monkeypatch)
+    repo, live = root / "repo/packages/app/tree", root / "live/tree"
+    names = [f"child{index:02}" for index in range(count)]
+    for name in names:
+        put(repo, name, b"old"); put(live, name, b"old")
+    commit(root)
+    with open_directory(engine, preview=False):
+        pass
+    for name in names:
+        put(repo, name, b"new")
+    commit(root)
+    with open_directory(engine, preview=False) as session:
+        for row in session.view.rows:
+            command(session, SetApproval, row.row_id, True)
+        yield engine, session
+
+
+def test_execution_validates_each_store_once_whatever_the_child_count(tmp_path, monkeypatch):
+    from dotman.sync_base_store import _PrivateLayout
+
+    validations = []
+    validate_tree = _PrivateLayout.validate_tree
+    monkeypatch.setattr(_PrivateLayout, "validate_tree", lambda self: (validations.append(self), validate_tree(self))[1])
+    counts = {}
+    for count in (2, 20):
+        root = tmp_path / str(count)
+        with changed_children_session(root, monkeypatch, count) as (engine, session):
+            validations.clear()
+            result = session.execute().result
+            counts[count] = len(validations)
+            assert [unit.status for unit in result.units] == ["converged"] * count
+        # Every child checkpointed its new Base, so the acknowledgments really ran.
+        with open_directory(engine, preview=False) as session:
+            assert {obs.base.record.payload for obs in session.view.observations} == {DirectoryChildPresent(b"new", False)}
+    # One writable store (one repo) per execution, not one per acknowledged child.
+    assert counts == {2: 1, 20: 1}
+
+
+def test_interrupt_mid_execution_closes_the_opened_store(tmp_path, monkeypatch):
+    from dotman.sync_base_lifecycle import SyncBaseLifecycle
+    from dotman.sync_base_store import SyncBaseStore
+
+    opened, closed = [], []
+    open_store, close_store, complete = SyncBaseStore.open, SyncBaseStore.close, SyncBaseLifecycle.complete
+    monkeypatch.setattr(SyncBaseStore, "open", classmethod(lambda cls, *a, **kw: opened.append(open_store(*a, **kw)) or opened[-1]))
+    monkeypatch.setattr(SyncBaseStore, "close", lambda self: (closed.append(self), close_store(self))[1])
+    calls = []
+
+    def interrupt_second_completion(self, *args, **kwargs):
+        calls.append(args)
+        if len(calls) == 2:
+            raise KeyboardInterrupt
+        return complete(self, *args, **kwargs)
+
+    with changed_children_session(tmp_path, monkeypatch, 3) as (_engine, session):
+        opened.clear()
+        monkeypatch.setattr(SyncBaseLifecycle, "complete", interrupt_second_completion)
+        # The apply loop reports the interrupt as an aborted result rather than propagating it.
+        assert session.execute().result.status == "aborted"
+    assert len(calls) == 2 and opened
+    assert all(any(store is done for done in closed) for store in opened)
