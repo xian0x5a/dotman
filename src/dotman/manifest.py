@@ -410,6 +410,46 @@ def normalize_editor(value: Any, *, manifest_path: Path, target_name: str, defau
     )
 
 
+def merge_preset_compare(preset_compare: Any, own_compare: Any, *, preset_context: str, context: str) -> dict[str, Any]:
+    """Validate a preset's and an owner's compare tables and merge them.
+
+    Comparison sides are inherited independently: an explicit side replaces
+    only that side while the other side remains from the preset.
+    """
+    if preset_compare is not None and not isinstance(preset_compare, dict):
+        raise UsageError(f"{preset_context} must be a table")
+    if own_compare is not None and not isinstance(own_compare, dict):
+        raise UsageError(f"{context} must be a table")
+    if preset_compare is not None:
+        validate_supported_keys(preset_compare, supported_keys={"repo", "live"}, context=preset_context)
+    if own_compare is not None:
+        validate_supported_keys(own_compare, supported_keys={"repo", "live"}, context=context)
+    return {**(preset_compare or {}), **(own_compare or {})}
+
+
+def merge_preset_editor(
+    preset_editor: Any,
+    own_editor: Any,
+    *,
+    fallback: EditorSpec,
+    manifest_path: Path,
+    target_name: str,
+    default_elevation: DefaultCommandElevationMode,
+) -> EditorSpec:
+    """Normalize an owner's editor over its preset's, or `fallback` without one.
+
+    Provider selection is atomic, while Additional Sources are inherited
+    independently, keeping each entry's root, when the owner omits them.
+    """
+    def normalize(value: Any) -> EditorSpec:
+        return normalize_editor(value, manifest_path=manifest_path, target_name=target_name, default_elevation=default_elevation)
+
+    base = normalize(preset_editor) if preset_editor is not None else fallback
+    if own_editor is None:
+        return base
+    return _merge_editor_specs(base, normalize(own_editor), override_explicit=True)
+
+
 def normalize_target_type(value: Any, *, context: str) -> str | None:
     return normalize_optional_string_enum(value, context=context, key="type", allowed=VALID_TARGET_TYPE_VALUES)
 
@@ -566,54 +606,21 @@ def normalize_target_path_rules(
         target_context, rule_key = f"package manifest {manifest_path} target '{target_name}'", f"path_rules.{name}"
         render = normalize_projection(val("render", inherited_render), context=target_context, key=f"{rule_key}.render", default=inherited_render, builtins=("raw", "jinja"))
         capture = normalize_projection(val("capture", inherited_capture), context=target_context, key=f"{rule_key}.capture", default=inherited_capture, builtins=("raw", "patch"))
-        preset_compare = preset_payload.get("compare")
-        rule_compare = payload.get("compare")
-        if preset_compare is not None and not isinstance(preset_compare, dict):
-            raise UsageError(f"package manifest {manifest_path} target '{target_name}' path_rules.{name}.preset compare must be a table")
-        if rule_compare is not None and not isinstance(rule_compare, dict):
-            raise UsageError(f"package manifest {manifest_path} target '{target_name}' path_rules.{name}.compare must be a table")
-        if preset_compare is not None:
-            validate_supported_keys(preset_compare, supported_keys={"repo", "live"},
-                                    context=f"package manifest {manifest_path} target '{target_name}' path_rules.{name}.preset compare")
-        if rule_compare is not None:
-            validate_supported_keys(rule_compare, supported_keys={"repo", "live"},
-                                    context=f"package manifest {manifest_path} target '{target_name}' path_rules.{name}.compare")
-        compare_payload = dict(preset_compare or {})
-        compare_payload.update(rule_compare or {})
+        compare_payload = merge_preset_compare(
+            preset_payload.get("compare"), payload.get("compare"),
+            preset_context=f"{rule_context}.preset compare", context=f"{rule_context}.compare",
+        )
         compare_repo = normalize_compare_side(compare_payload.get("repo"), side="repo", field_name="compare.repo",
                                               default=inherited_compare_repo, context=rule_context)
         compare_live = normalize_compare_side(compare_payload.get("live"), side="live", field_name="compare.live",
                                               default=inherited_compare_live, context=rule_context)
-        preset_editor_payload = preset_payload.get("editor")
-        rule_editor_payload = payload.get("editor")
-        editor_label = f"{target_name} path_rules.{name}"
-        base_editor = (
-            normalize_editor(
-                preset_editor_payload,
-                manifest_path=manifest_path,
-                target_name=editor_label,
-                default_elevation=default_command_elevation,
-            )
-            if preset_editor_payload is not None
+        editor = merge_preset_editor(
+            preset_payload.get("editor"), payload.get("editor"),
             # The target's sources are inherited, not declared by this rule.
-            else replace(inherited_editor or EditorSpec(), additional_sources_explicit=False)
+            fallback=replace(inherited_editor or EditorSpec(), additional_sources_explicit=False),
+            manifest_path=manifest_path, target_name=f"{target_name} path_rules.{name}",
+            default_elevation=default_command_elevation,
         )
-        if rule_editor_payload is None:
-            editor = base_editor
-        else:
-            override_editor = normalize_editor(
-                rule_editor_payload,
-                manifest_path=manifest_path,
-                target_name=editor_label,
-                default_elevation=default_command_elevation,
-            )
-            # Provider metadata is replaced atomically, while omitted source
-            # declarations retain each inherited entry's original root.
-            editor = _merge_editor_specs(
-                base_editor,
-                override_editor,
-                override_explicit=True,
-            )
         chmod = val("chmod", None)
         if chmod is not None and (not isinstance(chmod, str) or _invalid_chmod(chmod)):
             raise UsageError(f"package manifest {manifest_path} target '{target_name}' path_rules.{name}.chmod must be 3 or 4 octal digits")
@@ -702,49 +709,15 @@ def build_target_spec(
         raise UsageError(f"package manifest {manifest_path} target '{target_name}' chmod must be 3 or 4 octal digits")
     render = normalize_projection(value("render"), context=target_context, key="render", default="raw", builtins=("raw", "jinja"))
     capture = normalize_projection(value("capture"), context=target_context, key="capture", default="raw", builtins=("raw", "patch"))
-    # Preset comparison sides are independently inherited: an explicit side
-    # replaces only that side while the other side remains from the preset.
-    preset_compare = preset_payload.get("compare")
-    target_compare = target_payload.get("compare")
-    if preset_compare is not None and not isinstance(preset_compare, dict):
-        raise UsageError(f"package manifest {manifest_path} target '{target_name}' preset compare must be a table")
-    if target_compare is not None and not isinstance(target_compare, dict):
-        raise UsageError(f"package manifest {manifest_path} target '{target_name}' compare must be a table")
-    compare_payload = dict(preset_compare or {})
-    compare_payload.update(target_compare or {})
-    compare_payload = compare_payload or None
+    compare_payload = merge_preset_compare(
+        preset_payload.get("compare"), target_payload.get("compare"),
+        preset_context=f"{target_context} preset compare", context=f"{target_context} compare",
+    ) or None
     compare_repo, compare_live = normalize_compare(compare_payload, manifest_path=manifest_path, target_name=target_name)
-    preset_editor_payload = preset_payload.get("editor")
-    target_editor_payload = target_payload.get("editor")
-    if target_editor_payload is None:
-        editor = normalize_editor(
-            preset_editor_payload,
-            manifest_path=manifest_path,
-            target_name=target_name,
-            default_elevation=default_command_elevation,
-        )
-    elif isinstance(target_editor_payload, dict) and isinstance(preset_editor_payload, dict):
-        # Provider selection is atomic, while Additional Sources are inherited
-        # independently when the override omits them.
-        merged_editor_payload = dict(target_editor_payload)
-        if (
-            "additional_sources" not in merged_editor_payload
-            and "additional_sources" in preset_editor_payload
-        ):
-            merged_editor_payload["additional_sources"] = preset_editor_payload["additional_sources"]
-        editor = normalize_editor(
-            merged_editor_payload,
-            manifest_path=manifest_path,
-            target_name=target_name,
-            default_elevation=default_command_elevation,
-        )
-    else:
-        editor = normalize_editor(
-            target_editor_payload,
-            manifest_path=manifest_path,
-            target_name=target_name,
-            default_elevation=default_command_elevation,
-        )
+    editor = merge_preset_editor(
+        preset_payload.get("editor"), target_payload.get("editor"), fallback=EditorSpec(),
+        manifest_path=manifest_path, target_name=target_name, default_elevation=default_command_elevation,
+    )
     ignore_payload = read_target_ignore_table(target_payload=target_payload, preset_payload=preset_payload,
                                               manifest_path=manifest_path, target_name=target_name)
     patterns = (
