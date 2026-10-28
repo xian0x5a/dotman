@@ -8,16 +8,16 @@ from pathlib import Path
 import plistlib
 
 import pytest
-import yaml
 
 from dotman import cli
+from tests.helpers import dump_yaml, read_yaml
 
 MAPPING_FORMATS = {
     "json": (lambda data: json.dumps(data).encode(), lambda content: json.loads(content)),
     # Keep insertion order so tests can pin key order.
     "yaml": (
-        lambda data: yaml.safe_dump(data, sort_keys=False).encode(),
-        lambda content: yaml.safe_load(content),
+        lambda data: dump_yaml(data).encode(),
+        read_yaml,
     ),
     "plist": (lambda data: plistlib.dumps(data, sort_keys=False), plistlib.loads),
 }

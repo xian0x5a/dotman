@@ -4,9 +4,9 @@ import io
 from pathlib import Path
 
 import pytest
-import yaml
 
 from dotman import cli
+from tests.helpers import read_yaml
 
 
 def test_root_yaml_stdin_stdout_selection(monkeypatch, capsys) -> None:
@@ -14,7 +14,7 @@ def test_root_yaml_stdin_stdout_selection(monkeypatch, capsys) -> None:
 
     assert cli.main(["transform", "yaml", "-", "-", "--mode", "cleanup", "--selectors", "keep"]) == 0
 
-    assert yaml.safe_load(capsys.readouterr().out) == {"keep": "yes"}
+    assert read_yaml(capsys.readouterr().out) == {"keep": "yes"}
 
 
 def test_root_yaml_cleanup_without_selectors_is_identity(tmp_path: Path, capsys) -> None:
@@ -23,7 +23,7 @@ def test_root_yaml_cleanup_without_selectors_is_identity(tmp_path: Path, capsys)
 
     assert cli.main(["transform", "yaml", str(base), "--mode", "cleanup", "--stdout"]) == 0
 
-    assert yaml.safe_load(capsys.readouterr().out) == {"a": 1, "b": 2}
+    assert read_yaml(capsys.readouterr().out) == {"a": 1, "b": 2}
 
 
 def test_root_yaml_merge_compare_text_and_permissions(tmp_path: Path) -> None:
@@ -82,7 +82,7 @@ def test_root_yaml_overlay_stdin_and_multiple_stdin_rejection(
     base.write_text('local: "yes"\nmanaged: "old"\n', encoding="utf-8")
     monkeypatch.setattr("sys.stdin", io.StringIO('managed: "stdin"\n'))
     assert cli.main(["transform", "yaml", str(base), str(output), "--mode", "merge", "--overlay-file", "-", "--selectors", "local"]) == 0
-    assert yaml.safe_load(output.read_text()) == {"local": "yes", "managed": "stdin"}
+    assert read_yaml(output.read_text()) == {"local": "yes", "managed": "stdin"}
 
     monkeypatch.setattr("sys.stdin", io.StringIO(""))
     assert cli.main(["transform", "yaml", "-", str(output), "--mode", "merge", "--overlay-file", "-", "--selectors", "local"]) == 2

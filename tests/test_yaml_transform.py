@@ -3,14 +3,14 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-import yaml
 
 from dotman import cli
 import dotman.transforms.yaml as MODULE
+from tests.helpers import read_yaml
 
 
 def load_yaml(path: Path) -> dict:
-    return yaml.safe_load(path.read_text(encoding="utf-8"))
+    return read_yaml(path.read_text(encoding="utf-8"))
 
 
 def test_yaml_engine_declares_typed_selectors() -> None:
@@ -48,29 +48,10 @@ def test_yaml_11_boolean_words_load_as_strings_and_keep_plain_spelling(tmp_path:
     )
 
 
-def test_serialized_yaml_uses_two_space_fallback_indent(tmp_path: Path) -> None:
-    input_path = tmp_path / "input.yaml"
-    output_path = tmp_path / "output.yaml"
+def test_flow_collections_keep_their_style(tmp_path: Path) -> None:
+    source = "alpha: 1\nbeta: {nested: true}\nlist: [1, 2]\n"
 
-    input_path.write_text("alpha: 1\nbeta: {nested: true}\n", encoding="utf-8")
-
-    exit_code = cli.main(
-        [
-            "transform",
-            "yaml",
-            str(input_path),
-            str(output_path),
-            "--mode",
-            "cleanup",
-        ]
-    )
-
-    assert exit_code == 0
-    assert output_path.read_text(encoding="utf-8") == (
-        "alpha: 1\n"
-        "beta:\n"
-        "  nested: true\n"
-    )
+    assert run_yaml_cleanup(tmp_path, source) == source
 
 
 def test_serialized_yaml_preserves_compare_file_indent(tmp_path: Path) -> None:
@@ -78,7 +59,7 @@ def test_serialized_yaml_preserves_compare_file_indent(tmp_path: Path) -> None:
     compare_path = tmp_path / "compare.yaml"
     output_path = tmp_path / "output.yaml"
 
-    input_path.write_text("settings: {alpha: 1, beta: true}\n", encoding="utf-8")
+    input_path.write_text("settings:\n  alpha: 1\n  beta: true\n", encoding="utf-8")
     compare_path.write_text(
         "settings:\n"
         "    alpha: 1\n"
@@ -863,8 +844,8 @@ def test_strings_that_yaml_readers_could_resolve_as_non_strings_are_quoted(tmp_p
     assert output == source
 
 
-def test_plain_equals_sign_value_is_a_string(tmp_path: Path) -> None:
-    assert MODULE.parse_yaml_text(run_yaml_cleanup(tmp_path, "separator: =\n")) == {"separator": "="}
+def test_plain_equals_sign_value_is_kept(tmp_path: Path) -> None:
+    assert run_yaml_cleanup(tmp_path, "separator: =\n") == "separator: =\n"
 
 
 def test_comment_only_base_is_an_empty_mapping(tmp_path: Path) -> None:
@@ -882,7 +863,8 @@ def test_comment_only_base_is_an_empty_mapping(tmp_path: Path) -> None:
 
 def test_invalid_yaml_is_a_clean_cli_error(tmp_path: Path, capsys) -> None:
 
-    for index, source in enumerate(["a: [1\n", "a: 1\n---\nb: 2\n", "r: !Ref foo\n"]):
+    # yes and "yes" are the same YAML 1.2 string, so they are duplicate keys.
+    for index, source in enumerate(["a: [1\n", "a: 1\n---\nb: 2\n", "a: 1\na: 2\n", 'yes: a\n"yes": b\n']):
         input_path = tmp_path / f"input{index}.yaml"
         input_path.write_text(source, encoding="utf-8")
 
@@ -907,35 +889,33 @@ def test_stdin_base_indent_is_preserved(monkeypatch, capsys) -> None:
     assert capsys.readouterr().out == source
 
 
-def test_plain_scalars_yaml_11_and_12_read_differently_keep_their_spelling(tmp_path: Path) -> None:
-    # YAML 1.1 reads these as sexagesimal, octal, underscored, binary, or signed
-    # hex ints, booleans, or timestamps; YAML 1.2 reads them as strings or other
-    # numbers (0777 is 777, 1e3 is 1000.0). Any rewrite changes one reading.
+def test_plain_scalars_keep_their_spelling(tmp_path: Path) -> None:
     source = (
         "port: 22:22\n"
         "mode: 0777\n"
         "count: 1_000\n"
         "bits: 0b101\n"
+        "hex: 0x1F\n"
         "negative_hex: -0x1F\n"
         "scale: 1e3\n"
         "octal: 0o17\n"
         "leading: 09\n"
         "enabled: yes\n"
         "short: y\n"
-        "when: 2001-12-14t21:59:43.10-05:00\n"
         "on: off\n"
+        "ref: !Ref foo\n"
+        "pair: !GetAtt [a, b]\n"
     )
 
     assert run_yaml_cleanup(tmp_path, source) == source
 
 
-def test_plain_scalars_both_yaml_versions_agree_on_keep_their_type(tmp_path: Path) -> None:
-    source = "a: true\nb: 12\nc: 1.5\nd: null\ne: 0x1F\nf: -.inf\n"
+def test_plain_scalars_resolve_by_yaml_1_2(tmp_path: Path) -> None:
+    source = "a: true\nb: 0777\nc: 1e3\nd: null\ne: 0x1F\nf: -.inf\ng: yes\nh: 22:22\n"
 
-    assert [type(value) for value in MODULE.parse_yaml_text(source).values()] == [
-        bool, int, float, type(None), int, float
-    ]
-    assert run_yaml_cleanup(tmp_path, source) == "a: true\nb: 12\nc: 1.5\nd: null\ne: 31\nf: -.inf\n"
+    assert read_yaml(run_yaml_cleanup(tmp_path, source)) == {
+        "a": True, "b": 777, "c": 1000.0, "d": None, "e": 31, "f": float("-inf"), "g": "yes", "h": "22:22"
+    }
 
 
 def test_compare_file_reuse_distinguishes_plain_and_quoted_ambiguous_scalars(tmp_path: Path) -> None:
@@ -970,15 +950,9 @@ def test_selectors_match_keys_by_their_yaml_spelling(tmp_path: Path) -> None:
     ) == "keep: f\n"
 
 
-@pytest.mark.parametrize("spelling", ["0777", "yes", "22:22"])
-def test_plain_ambiguous_key_and_quoted_key_of_the_same_spelling_stay_distinct(
-    spelling: str, tmp_path: Path
-) -> None:
-    # Every YAML 1.1 reader sees two keys here (a number or bool, and a string).
-    source = f'{spelling}: plain\n"{spelling}": quoted\n'
+def test_plain_number_key_and_quoted_key_of_the_same_spelling_stay_distinct(tmp_path: Path) -> None:
+    source = '0777: plain\n"0777": quoted\n'
 
-    assert yaml.safe_load(
-        run_yaml_cleanup(tmp_path, source, "--selector-type", "remove", "--selectors", "absent")
-    ) == yaml.safe_load(source)
+    assert run_yaml_cleanup(tmp_path, source, "--selector-type", "remove", "--selectors", "absent") == source
     # Selectors match keys by spelling, so both are selected.
-    assert run_yaml_cleanup(tmp_path, source, "--selector-type", "remove", "--selectors", spelling) == "{}\n"
+    assert run_yaml_cleanup(tmp_path, source, "--selector-type", "remove", "--selectors", "0777") == "{}\n"
