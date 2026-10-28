@@ -16,6 +16,7 @@ def test_restore_command_runner_declares_only_restore() -> None:
             "declaring commands must not load config"
         ),
         use_color=False,
+        interaction=None,
     )
 
     assert runner.command_names == frozenset({"restore"})

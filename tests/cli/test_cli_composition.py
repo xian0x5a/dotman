@@ -97,15 +97,6 @@ def test_interaction_required_error_colors_follow_stderr(capsys, monkeypatch) ->
     assert "\x1b[" not in capsys.readouterr().err
 
 
-def test_no_confirm_disables_terminal_interaction_scope(monkeypatch) -> None:
-    from dotman import cli_interaction, interaction_policy
-    monkeypatch.setattr("sys.stdin", StringIO())
-    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
-    with interaction_policy.interaction_scope(no_confirm=True):
-        assert not cli_interaction.interactive_mode_enabled(json_output=False)
-    assert cli_interaction.interactive_mode_enabled(json_output=False)
-
-
 @pytest.mark.parametrize("json_output", [False, True])
 def test_push_requires_execution_consent_without_terminal(json_output, tmp_path, monkeypatch, capsys) -> None:
     from tests.helpers import write_manager_config

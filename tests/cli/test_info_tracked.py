@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import dotman.cli_interaction as cli
 from dotman.cli import main
+from dotman.interaction import ChoiceRequest, ScriptedInteraction
 
 from tests.helpers import (
     EXAMPLE_REPO,
@@ -23,9 +23,7 @@ def test_info_tracked_cli_interactively_selects_ambiguous_package(
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
-    answers = iter(["2"])
-    monkeypatch.setattr(cli, "prompt", lambda _message: next(answers))
+    interaction = ScriptedInteraction(choices=["beta:sunshine"])
 
     config_path = write_named_manager_config(
         tmp_path,
@@ -59,15 +57,16 @@ def test_info_tracked_cli_interactively_selects_ambiguous_package(
             "info",
             "tracked",
             "sunshine",
-        ]
+        ],
+        interaction=interaction,
     )
 
     assert exit_code == 0
-    output = capsys.readouterr().out
-    assert "Select a tracked package for 'sunshine':" in output
-    assert "alpha:sunshine" in output
-    assert "beta:sunshine" in output
-    assert "beta:sunshine" in output
+    [request] = interaction.requests
+    assert isinstance(request, ChoiceRequest)
+    assert request.header_text == "Select a tracked package for 'sunshine':"
+    assert [option.label for option in request.options] == ["alpha:sunshine", "beta:sunshine"]
+    assert capsys.readouterr().out.startswith("beta:sunshine\n")
 
 def test_info_tracked_cli_emits_package_details_for_tracked_package(
     tmp_path: Path,
@@ -629,8 +628,6 @@ def test_info_tracked_cli_uses_resolver_for_ambiguous_multi_instance_identity_in
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setattr(cli, "interactive_mode_enabled", lambda *, json_output: True)
-    monkeypatch.setattr(cli, "select_menu_option", lambda **_kwargs: 1)
 
     repo_root = tmp_path / "repo"
     write_multi_instance_repo(repo_root)
@@ -664,7 +661,8 @@ def test_info_tracked_cli_uses_resolver_for_ambiguous_multi_instance_identity_in
             "info",
             "tracked",
             "profiled",
-        ]
+        ],
+        interaction=ScriptedInteraction(choices=["fixture:profiled<work>"]),
     )
 
     assert exit_code == 0

@@ -16,7 +16,8 @@ from dotman.models import AdditionalSource
 from dotman.command_runtime import CommandRequest, CommandResult, current_command_runtime
 from dotman.file_access import chmod, read_bytes, write_bytes_atomic as sudo_write_bytes_atomic
 from dotman.printable import terminal_safe_line
-from dotman.terminal import colors_enabled, read_prompt_line
+from dotman.interaction import ConfirmationRequest, TerminalInteraction
+from dotman.terminal import colors_enabled
 
 
 ANSI_RESET = "\033[0m"
@@ -33,10 +34,6 @@ class EditableSourceCopy:
     editable_copy_path: Path
     original_bytes: bytes = b""
     original_mode: int | None = None
-
-
-def prompt(message: str) -> str:
-    return read_prompt_line(message, input_stream=sys.stdin, output_stream=sys.stdout)
 
 
 def style_text(text: str, *codes: str) -> str:
@@ -185,19 +182,16 @@ def _reconcile_write_confirmation_prompt() -> str:
 
 
 def _confirm_reconcile_write(*, changed_sources: list[EditableSourceCopy], approve_write: bool = False, quiet: bool = False) -> bool:
-    if not quiet:
-        print("Reconciled repo source changes:")
-        for changed_source in changed_sources:
-            print(f"  - {terminal_safe_line(str(changed_source.destination_path))}")
+    change_list = None if quiet else "Reconciled repo source changes:\n" + "".join(
+        f"  - {terminal_safe_line(str(changed_source.destination_path))}\n" for changed_source in changed_sources
+    )
     if approve_write:
+        if change_list is not None:
+            sys.stdout.write(change_list)
         return True
-    while True:
-        answer = prompt(_reconcile_write_confirmation_prompt()).strip().lower()
-        if answer in {"n", "no"}:
-            return False
-        if answer in {"y", "yes"}:
-            return True
-        print("invalid confirmation: enter 'y' or 'n'", file=sys.stderr)
+    return TerminalInteraction().confirm(
+        ConfirmationRequest(prompt=_reconcile_write_confirmation_prompt(), message=change_list)
+    )
 
 
 def _write_confirmed_sources(changed_sources: list[EditableSourceCopy]) -> None:

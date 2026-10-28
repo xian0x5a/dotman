@@ -1,14 +1,24 @@
 from __future__ import annotations
 
 import re
+from io import StringIO
 from pathlib import Path
 
 import dotman.cli_interaction as cli
 from dotman import cli_style
 import pytest
 from dotman.cli import main
-from dotman.command_runtime import ArgvCommand, CommandResult, MemoryCommandRuntime
+from dotman.interaction import (
+    ChoiceOption,
+    ChoiceRequest,
+    ConfirmationRequest,
+    ScriptedInteraction,
+    TerminalInteraction,
+    TextInputRequest,
+)
 from dotman.models import UiConfig, UiMenusConfig
+from dotman.resolver import resolve_match
+from dotman.terminal import ESCAPE_INPUT
 from dotman.ui_context import ui_config_scope
 
 from tests.helpers import EXAMPLE_REPO, write_manager_config, write_named_manager_config_with_state_keys
@@ -53,65 +63,41 @@ def test_render_package_target_label_renders_package_instance_targets() -> None:
     ) == "example:profiled<work>.managed"
 
 
-def test_select_menu_option_prefers_fzf_for_long_lists(monkeypatch) -> None:
-    monkeypatch.setattr(cli, "_should_use_fzf_for_selection", lambda _option_labels: True)
-    monkeypatch.setattr(cli, "_fzf_available", lambda: True)
-    monkeypatch.setattr(cli, "_select_menu_option_with_prompt", lambda **_kwargs: pytest.fail("prompt fallback should not run"))
-    monkeypatch.setattr(cli, "_select_menu_option_with_fzf", lambda **_kwargs: 1)
+def test_resolve_match_ranks_leftmost_selector_segments_first() -> None:
+    interaction = ScriptedInteraction(choices=["sandbox:sunshine"])
 
-    assert cli.select_menu_option(header_text="Select a package:", option_labels=["alpha", "beta"]) == 1
-
-def test_resolve_candidate_match_ranks_leftmost_selector_segments_first(monkeypatch) -> None:
-    captured: dict[str, object] = {}
-
-    def fake_select_menu_option(**kwargs):
-        captured.update(kwargs)
-        return 0
-
-    monkeypatch.setattr(cli, "select_menu_option", fake_select_menu_option)
-
-    selected = cli.resolve_candidate_match(
+    selected = resolve_match(
+        interaction,
         exact_matches=[],
         partial_matches=[
             ("sandbox", "host/linux-meta"),
             ("sandbox", "sunshine"),
         ],
         query_text="s",
-        interactive=True,
         exact_header_text="unused",
         partial_header_text="Select a selector match for 's':",
         option_resolver=lambda match: cli.ResolverOption(
             display_label=f"{match[0]}:{match[1]}",
             match_fields=cli.build_selector_match_fields(repo_name=match[0], selector=match[1]),
         ),
-        exact_name_resolver=lambda match: f"{match[0]}:{match[1]}",
-        exact_error_text="unused",
-        partial_error_text="unused",
+        value_resolver=lambda match: f"{match[0]}:{match[1]}",
         not_found_text="unused",
     )
 
     assert selected == ("sandbox", "sunshine")
-    assert captured["option_labels"] == ["sandbox:sunshine", "sandbox:host/linux-meta"]
+    [request] = interaction.requests
+    assert isinstance(request, ChoiceRequest)
+    assert [option.label for option in request.options] == ["sandbox:sunshine", "sandbox:host/linux-meta"]
 
-def test_resolve_candidate_match_routes_unique_partial_through_menu_by_default(monkeypatch) -> None:
-    captured: dict[str, object] = {}
+def test_resolve_match_routes_unique_partial_through_menu() -> None:
+    # A unique partial match is a one-item menu, not a yes/no confirmation.
+    interaction = ScriptedInteraction(choices=["beta"])
 
-    def fake_select_menu_option(**kwargs):
-        captured.update(kwargs)
-        return 0
-
-    monkeypatch.setattr(cli, "select_menu_option", fake_select_menu_option)
-    monkeypatch.setattr(
-        cli,
-        "prompt",
-        lambda _message: (_ for _ in ()).throw(AssertionError("expected resolver menu, not partial confirmation")),
-    )
-
-    selected = cli.resolve_candidate_match(
+    selected = resolve_match(
+        interaction,
         exact_matches=[],
         partial_matches=["beta"],
         query_text="bet",
-        interactive=True,
         exact_header_text="unused",
         partial_header_text="Select a repo for local overrides:",
         option_resolver=lambda match: cli.ResolverOption(
@@ -119,59 +105,18 @@ def test_resolve_candidate_match_routes_unique_partial_through_menu_by_default(m
             match_fields=(match,),
             field_kinds=("repo",),
         ),
-        exact_name_resolver=lambda match: match,
-        exact_error_text="unused",
-        partial_error_text="unused",
+        value_resolver=lambda match: match,
         not_found_text="unused",
     )
 
     assert selected == "beta"
-    assert captured["header_text"] == "Select a repo for local overrides:"
-    assert captured["option_labels"] == ["beta"]
+    assert interaction.requests == [
+        ChoiceRequest(
+            header_text="Select a repo for local overrides:",
+            options=(ChoiceOption(value="beta", label="beta", display_fields=("beta",)),),
+        )
+    ]
 
-
-def test_select_menu_option_with_prompt_renders_bottom_up_by_default(monkeypatch, capsys) -> None:
-    monkeypatch.setattr(cli, "ui_menus_bottom_up_enabled", lambda: True)
-    monkeypatch.setattr(cli, "prompt", lambda _message: "")
-
-    assert cli._select_menu_option_with_prompt(
-        header_text="Select a package:",
-        option_labels=["alpha", "beta", "gamma"],
-    ) == 0
-
-    output = capsys.readouterr().out
-    assert output.index("  3) gamma") < output.index("  2) beta") < output.index("  1) alpha")
-
-def test_select_menu_option_with_fzf_uses_structured_display_fields(monkeypatch) -> None:
-    captured: dict[str, object] = {}
-
-    runtime = MemoryCommandRuntime([CommandResult(exit_code=0, stdout=b"2 sandbox/host/linux-meta [group]\n")])
-    monkeypatch.setattr(cli, "current_command_runtime", lambda: runtime)
-    monkeypatch.setattr(cli, "ui_menus_bottom_up_enabled", lambda: True)
-
-    selected_index = cli._select_menu_option_with_fzf(
-        header_text="Select a package:",
-        option_labels=["sandbox/sunshine [package]", "sandbox/host/linux-meta [group]"],
-        option_display_fields=[
-            ("sandbox/sunshine", "[package]"),
-            ("sandbox/host/linux-meta", "[group]"),
-        ],
-    )
-
-    request = runtime.requests[0]
-    assert isinstance(request.command, ArgvCommand)
-    captured["command"] = request.command.arguments
-    captured["input"] = request.input.decode("utf-8")
-    assert selected_index == 1
-    assert "--wrap" in captured["command"]
-    assert "--with-nth=2.." in captured["command"]
-    assert not any(argument.startswith("--accept-nth") for argument in captured["command"])
-    assert "--layout=reverse-list" not in captured["command"]
-    assert "--layout=reverse" not in captured["command"]
-    assert captured["input"] == (
-        "1 sandbox/sunshine [package]\n"
-        "2 sandbox/host/linux-meta [group]\n"
-    )
 
 def test_run_diff_review_menu_prints_separator_before_each_diff_for_all(
     monkeypatch,
@@ -205,13 +150,12 @@ def test_run_diff_review_menu_prints_separator_before_each_diff_for_all(
             after_bytes=b"after\n",
         ),
     ]
-    prompts = iter(["a", "s"])
+    interaction = ScriptedInteraction(text_inputs=["a", "s"])
     inspected: list[str] = []
 
-    monkeypatch.setattr(cli, "prompt", lambda _message, **_options: next(prompts))
     monkeypatch.setattr(cli, "run_review_item_diff", lambda item: inspected.append(item.target_name))
 
-    assert cli.run_diff_review_menu(review_items, operation="push") is True
+    assert cli.run_diff_review_menu(review_items, interaction=interaction, operation="push") is True
 
     output = capsys.readouterr().out
     assert inspected == ["gitconfig", "zshrc"]
@@ -239,12 +183,11 @@ def test_run_diff_review_menu_prints_footer_after_single_inspect(
         before_bytes=b"before\n",
         after_bytes=b"after\n",
     )
-    prompts = iter(["1", "s"])
+    interaction = ScriptedInteraction(text_inputs=["1", "s"])
 
-    monkeypatch.setattr(cli, "prompt", lambda _message, **_options: next(prompts))
     monkeypatch.setattr(cli, "run_review_item_diff", lambda item: None)
 
-    assert cli.run_diff_review_menu([review_item], operation="push") is True
+    assert cli.run_diff_review_menu([review_item], interaction=interaction, operation="push") is True
 
     output = capsys.readouterr().out
     assert "----- Diff 1/1: example:git.gitconfig [update] -----" in output
@@ -269,11 +212,10 @@ def test_run_diff_review_menu_list_command_reprints_menu(
         before_bytes=b"before\n",
         after_bytes=b"after\n",
     )
-    prompts = iter(["list", "s"])
+    interaction = ScriptedInteraction(text_inputs=["list", "s"])
 
-    monkeypatch.setattr(cli, "prompt", lambda _message, **_options: next(prompts))
 
-    assert cli.run_diff_review_menu([review_item], operation="push") is True
+    assert cli.run_diff_review_menu([review_item], interaction=interaction, operation="push") is True
 
     output = capsys.readouterr().out
     assert output.count("Review pending diffs for push:") == 2
@@ -343,13 +285,12 @@ def test_run_diff_review_menu_default_command_views_next_diff(
             after_bytes=b"after\n",
         ),
     ]
-    prompts = iter(["", "", "s"])
+    interaction = ScriptedInteraction(text_inputs=["", "", "s"])
     inspected: list[str] = []
 
-    monkeypatch.setattr(cli, "prompt", lambda _message, **_options: next(prompts))
     monkeypatch.setattr(cli, "run_review_item_diff", lambda item: inspected.append(item.target_name))
 
-    assert cli.run_diff_review_menu(review_items, operation="push") is True
+    assert cli.run_diff_review_menu(review_items, interaction=interaction, operation="push") is True
 
     assert inspected == ["gitconfig", "zshrc"]
     output = capsys.readouterr().out
@@ -402,13 +343,12 @@ def test_run_diff_review_menu_next_command_uses_last_viewed_file(
             after_bytes=b"after\n",
         ),
     ]
-    prompts = iter(["2", "n", "s"])
+    interaction = ScriptedInteraction(text_inputs=["2", "n", "s"])
     inspected: list[str] = []
 
-    monkeypatch.setattr(cli, "prompt", lambda _message, **_options: next(prompts))
     monkeypatch.setattr(cli, "run_review_item_diff", lambda item: inspected.append(item.target_name))
 
-    assert cli.run_diff_review_menu(review_items, operation="push") is True
+    assert cli.run_diff_review_menu(review_items, interaction=interaction, operation="push") is True
 
     assert inspected == ["zshrc", "init_lua"]
     output = capsys.readouterr().out
@@ -430,29 +370,49 @@ def test_run_diff_review_menu_next_command_at_end_prompts_for_continue(monkeypat
         before_bytes=b"before\n",
         after_bytes=b"after\n",
     )
-    prompt_messages: list[str] = []
-    prompts = iter(["", "", ""])
+    interaction = ScriptedInteraction(text_inputs=["", ""], confirmations=[True])
     inspected: list[str] = []
 
-    def fake_prompt(message: str, **_options: object) -> str:
-        prompt_messages.append(message)
-        return next(prompts)
-
-    monkeypatch.setattr(cli, "prompt", fake_prompt)
     monkeypatch.setattr(cli, "run_review_item_diff", lambda item: inspected.append(item.target_name))
 
-    assert cli.run_diff_review_menu([review_item], operation="push") is True
+    assert cli.run_diff_review_menu([review_item], interaction=interaction, operation="push") is True
 
     assert inspected == ["gitconfig"]
-    assert prompt_messages == [
-        '\nReview command ("?", number, "n", "a", "l", "s", Esc; default: next): ',
-        '\nReview command ("?", number, "n", "a", "l", "s", Esc; default: next): ',
-        'Continue? [Y/n] ',
+    review_command_request = TextInputRequest(
+        prompt='\nReview command ("?", number, "n", "a", "l", "s", Esc; default: next): ',
+        escape_result=ESCAPE_INPUT,
+    )
+    assert interaction.requests == [
+        review_command_request,
+        review_command_request,
+        ConfirmationRequest(prompt="Continue? [Y/n] ", default=True),
     ]
 
 
-def test_print_selection_header_prepends_blank_line(capsys) -> None:
-    cli.print_selection_header("Review pending diffs for pull:")
+def test_run_diff_review_menu_aborts_on_escape() -> None:
+    review_item = cli.ReviewItem(
+        selection_label="example:git@basic",
+        package_id="git",
+        target_name="gitconfig",
+        action="update",
+        operation="restore",
+        repo_path=Path("/repo/gitconfig"),
+        live_path=Path("/live/gitconfig"),
+        source_path="/repo/gitconfig",
+        destination_path="/live/gitconfig",
+        before_bytes=b"before\n",
+        after_bytes=b"after\n",
+    )
+
+    assert cli.run_diff_review_menu(
+        [review_item],
+        interaction=ScriptedInteraction(text_inputs=[ESCAPE_INPUT]),
+        operation="restore",
+    ) is False
+
+
+def test_review_menu_header_prepends_blank_line(capsys) -> None:
+    cli.print_review_menu_items([], operation="pull")
 
     assert capsys.readouterr().out == "\nReview pending diffs for pull:\n"
 
@@ -484,52 +444,46 @@ def test_parse_review_command_rejects_legacy_continue_shortcut() -> None:
         cli.parse_review_command("c", 1)
 
 
-def test_confirm_review_continue_skips_prompt_when_no_confirm(monkeypatch) -> None:
-    monkeypatch.setattr(cli, "prompt", lambda _message: (_ for _ in ()).throw(AssertionError("prompt should not run")))
-
-    assert cli.confirm_review_continue(no_confirm=True) is True
-
-
-def test_select_menu_option_renders_bottom_up_by_default(monkeypatch, capsys) -> None:
-    monkeypatch.delenv("DOTMAN_MENU_BOTTOM_UP", raising=False)
-    monkeypatch.setattr(cli, "prompt", lambda _message: "")
-
-    selected_index = cli.select_menu_option(
+@pytest.mark.parametrize(
+    ("env_value", "ui_config", "bottom_up"),
+    [
+        pytest.param(None, None, True, id="default-bottom-up"),
+        pytest.param("0", None, False, id="env-disables"),
+        pytest.param(None, UiConfig(menus=UiMenusConfig(bottom_up=False)), False, id="manager-config-disables"),
+    ],
+)
+def test_terminal_menu_order_follows_bottom_up_setting(
+    monkeypatch,
+    env_value: str | None,
+    ui_config: UiConfig | None,
+    bottom_up: bool,
+) -> None:
+    if env_value is None:
+        monkeypatch.delenv("DOTMAN_MENU_BOTTOM_UP", raising=False)
+    else:
+        monkeypatch.setenv("DOTMAN_MENU_BOTTOM_UP", env_value)
+    output_stream = StringIO()
+    interaction = TerminalInteraction(
+        input_stream=StringIO("\n"),
+        output_stream=output_stream,
+        fzf_available=lambda: False,
+        use_color=False,
+    )
+    request = ChoiceRequest(
         header_text="Select a profile:",
-        option_labels=["basic", "work", "host/linux"],
+        options=tuple(ChoiceOption(value=label, label=label) for label in ("basic", "work", "host/linux")),
     )
 
-    output = capsys.readouterr().out
-    assert selected_index == 0
-    assert output.index("  3) host/linux") < output.index("  2) work") < output.index("  1) basic")
+    if ui_config is None:
+        selected = interaction.choose(request)
+    else:
+        with ui_config_scope(ui_config):
+            selected = interaction.choose(request)
 
-def test_select_menu_option_can_disable_bottom_up_with_env(monkeypatch, capsys) -> None:
-    monkeypatch.setenv("DOTMAN_MENU_BOTTOM_UP", "0")
-    monkeypatch.setattr(cli, "prompt", lambda _message: "")
-
-    selected_index = cli.select_menu_option(
-        header_text="Select a profile:",
-        option_labels=["basic", "work", "host/linux"],
-    )
-
-    output = capsys.readouterr().out
-    assert selected_index == 0
-    assert output.index("  1) basic") < output.index("  2) work") < output.index("  3) host/linux")
-
-
-def test_select_menu_option_uses_manager_bottom_up_default(monkeypatch, capsys) -> None:
-    monkeypatch.delenv("DOTMAN_MENU_BOTTOM_UP", raising=False)
-    monkeypatch.setattr(cli, "prompt", lambda _message: "")
-
-    with ui_config_scope(UiConfig(menus=UiMenusConfig(bottom_up=False))):
-        selected_index = cli.select_menu_option(
-            header_text="Select a profile:",
-            option_labels=["basic", "work", "host/linux"],
-        )
-
-    output = capsys.readouterr().out
-    assert selected_index == 0
-    assert output.index("  1) basic") < output.index("  2) work") < output.index("  3) host/linux")
+    output = output_stream.getvalue()
+    positions = [output.index("  1) basic"), output.index("  2) work"), output.index("  3) host/linux")]
+    assert selected == "basic"
+    assert positions == sorted(positions, reverse=bottom_up)
 
 
 def test_print_review_item_compacts_long_paths(capsys) -> None:

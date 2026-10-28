@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -74,7 +75,7 @@ def test_reconcile_editor_subcommand_invokes_editor_with_transactional_source_co
 
     runtime = MemoryCommandRuntime([run_editor])
     monkeypatch.setattr(reconcile_module, "current_command_runtime", lambda: runtime)
-    monkeypatch.setattr(reconcile_module, "prompt", lambda _message: "y")
+    monkeypatch.setattr("sys.stdin", StringIO("y\n"))
 
     exit_code = main(
         [
