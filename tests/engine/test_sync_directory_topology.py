@@ -333,3 +333,20 @@ def test_blocker_without_canonical_identity_is_an_unmanaged_conflict(tmp_path, m
         assert diagnostic.code == "structural-conflict"
         assert diagnostic.message == "main:app.tree/node: requires deletion of node/caf\\xe9"
     assert blocked.read_bytes() == b"private"
+
+
+# Siblings such as "a-b", "a.b" and "a0" sort around the "a/" prefix run.
+MIXED_LEAVES = ("", "a", "a-b", "a.b", "a/b", "a/b-c", "a/b/c", "a/b/c/d", "a/b0", "a0", "ab", "x/y/z")
+
+
+@pytest.mark.parametrize("relative", sorted({*MIXED_LEAVES, "a/b/c/d/e", "x", "x/y", "a/q", "missing"} - {""}))
+@pytest.mark.parametrize("repository", [True, False])
+def test_blockers_match_ancestor_or_descendant_leaves(relative, repository):
+    from dotman.sync_directory import DirectoryCensus
+
+    leaves = tuple(sorted(MIXED_LEAVES))
+    census = DirectoryCensus((), leaves if repository else (), () if repository else leaves)
+    expected = tuple(path for path in leaves if path != relative and (
+        relative.startswith(path + "/") or path.startswith(relative + "/")))
+    assert census.blockers(relative, repository=repository) == expected
+    assert census.blockers(relative, repository=not repository) == ()

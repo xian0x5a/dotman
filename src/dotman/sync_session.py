@@ -1399,8 +1399,6 @@ class ProposalSession:
                                    "would-apply" if preview and row.approved and not aborted else "pending")
             for row in self.view.rows if isinstance(row, AdditionalRow)
         ) if preview or aborted else self._additional_results
-        if any(change.status == "execution-failed" for change in additional):
-            status = "failed"
         commits, commit_steps = ((), ()) if preview or aborted else self._commit(run_completed=status == "completed")
         if any(item.status == "interrupted" for item in commits):
             status = "aborted"
@@ -1582,11 +1580,11 @@ class ProposalSession:
             with SyncBaseStore.open(
                 self._context.tracked_state.state_root, item.repo.config.state_key,
             ) as store:
-                lifecycle = SyncBaseLifecycle(store, operation=self.operation, preview=False)
+                lifecycle = SyncBaseLifecycle(store, preview=False)
                 completion = lifecycle.complete(
                     replace(self._frozen_bases[observation.identity], payload=row.proposal.repository),
                     ProposalCompletion(
-                        intent=row.proposal.intent, approved=True,
+                        approved=True,
                         publication_effects="succeeded" if row.proposal.publication_effects else "not-required",
                         primary_effect="succeeded" if row.proposal.primary_source_change is not None else "not-required",
                     ),

@@ -299,7 +299,7 @@ class _PrivateLayout:
         return [] if bases is None else sorted(self.file_names(bases[1]))
 
     def remove_group_if_empty(self, name: str) -> None:
-        path, descriptor = self._groups[name]
+        descriptor = self._groups[name][1]
         if self.file_names(descriptor):
             return
         bases = self._bases
@@ -618,16 +618,8 @@ class SyncBaseStore:
     """Private per-unit records with atomic replacement and short nonblocking locks."""
 
     def __init__(
-        self,
-        manager_root: Path,
-        state_key: str,
-        layout: _PrivateLayout,
-        lock_descriptor: int,
-        *,
-        read_only: bool,
+        self, layout: _PrivateLayout, lock_descriptor: int, *, read_only: bool
     ) -> None:
-        self.manager_state_root = manager_root
-        self.repo_state_key = state_key
         self.repo_state_directory = layout.directory
         self.read_only = read_only
         self._layout = layout
@@ -703,7 +695,7 @@ class SyncBaseStore:
                 with _locked(lock, write=False):
                     layout.validate_tree()
                     cls._require_layout(layout)
-                return cls(manager_root, state_key, layout, lock, read_only=read_only)
+                return cls(layout, lock, read_only=read_only)
             except BaseException:
                 layout.close()
                 raise
@@ -974,7 +966,12 @@ class SyncBaseStore:
             directory_path, directory_descriptor = directory
             name = location[1]
             # A corrupt record is unavailable, not permission to overwrite it silently.
-            self._read_file(directory, name, record.identity, location=location)
+            # Decoding enforces the current epoch and one canonical encoding, so an
+            # equal decoded record means the stored bytes already match `content`.
+            # Skipping also skips re-running the directory fsync; a failed one was
+            # already reported, and retrying fsync after an error proves little.
+            if self._read_file(directory, name, record.identity, location=location) == record:
+                return
             temporary = f".{uuid.uuid4().hex}.tmp"
             descriptor = self._layout._open_file_descriptor(directory, temporary, create=True)
             try:

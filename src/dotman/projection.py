@@ -270,7 +270,7 @@ def build_target_metadata(
                     probe_command=None,
                     render_command=render_command,
                     capture_command=capture_command,
-                    compare_repo=target.compare_repo if target.compare_repo != "raw" else "raw",
+                    compare_repo=target.compare_repo,
                     compare_live=target.compare_live,
                     ignore_patterns=ignore_patterns,
                     gitignore_enabled=gitignore_enabled,

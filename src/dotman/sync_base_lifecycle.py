@@ -64,25 +64,20 @@ class BaseInspection:
     failure: SyncBaseStoreError | None = None
 
 
-EffectStatus = Literal["not-required", "pending", "succeeded", "failed"]
+EffectStatus = Literal["not-required", "succeeded"]
 
 
 @dataclass(frozen=True)
 class ProposalCompletion:
     """Final unit-owned effects only; Additional Sources and hooks are not operands."""
 
-    intent: Literal["use-repository", "use-live", "merge", "editor"]
     approved: bool
-    included: bool = True
-    materialized: bool = True
     primary_effect: EffectStatus = "not-required"
     publication_effects: EffectStatus = "not-required"
 
     def __post_init__(self) -> None:
-        if self.intent not in ("use-repository", "use-live", "merge", "editor"):
-            raise ValueError("invalid final Proposal intent")
         if any(
-            value not in ("not-required", "pending", "succeeded", "failed")
+            value not in ("not-required", "succeeded")
             for value in (self.primary_effect, self.publication_effects)
         ):
             raise ValueError("invalid required-effect result")
@@ -91,30 +86,14 @@ class ProposalCompletion:
     def ready(self) -> bool:
         return (
             self.approved
-            and self.included
-            and self.materialized
             and self.primary_effect in ("not-required", "succeeded")
             and self.publication_effects in ("not-required", "succeeded")
         )
 
-    @property
-    def live_fact(self) -> str:
-        if self.primary_effect == self.publication_effects == "not-required":
-            return "approved-no-write"
-        return {
-            "use-repository": "published-repository-outcome",
-            "use-live": "frozen-live-capture-input",
-            "merge": "frozen-merged-live-outcome",
-            "editor": "rematerialized-policy-outcome",
-        }[self.intent]
-
 
 @dataclass(frozen=True)
 class BaseLifecycleResult:
-    converged: bool = False
     acknowledged: bool = False
-    deleted: bool = False
-    live_fact: str | None = None
     failure: SyncBaseStoreError | None = None
 
     @property
@@ -145,17 +124,8 @@ def record_matches_identity(
 class SyncBaseLifecycle:
     """No session orchestration: invoke each method at its documented boundary."""
 
-    def __init__(
-        self,
-        store: SyncBaseStore,
-        *,
-        operation: Literal["push", "pull", "sync"],
-        preview: bool = False,
-    ) -> None:
-        if operation not in ("push", "pull", "sync"):
-            raise ValueError("invalid Base operation")
+    def __init__(self, store: SyncBaseStore, *, preview: bool = False) -> None:
         self.store = store
-        self.operation = operation
         self.preview = preview
 
     def inspect(self, unit: BaseUnit) -> BaseInspection:
@@ -178,58 +148,25 @@ class SyncBaseLifecycle:
             )
         return BaseInspection("usable", record=record)
 
-    def direct_agreement(
-        self,
-        frozen: FrozenBaseUnit,
-        *,
-        fresh_observation: bool = True,
-        participating: bool = True,
-    ) -> BaseLifecycleResult:
+    def direct_agreement(self, frozen: FrozenBaseUnit) -> BaseLifecycleResult:
         """Immediately after actual direct Observation, before review or hooks."""
-        if (
-            self.preview
-            or not fresh_observation
-            or not participating
-            or not frozen.unit.eligible
-        ):
+        if self.preview or not frozen.unit.eligible:
             return BaseLifecycleResult()
-        return self._acknowledge(
-            frozen, live_fact="direct-agreement"
-        )
+        return self._acknowledge(frozen)
 
     def complete(
-        self,
-        frozen: FrozenBaseUnit,
-        proposal: ProposalCompletion,
-        *,
-        qualified: bool = True,
+        self, frozen: FrozenBaseUnit, proposal: ProposalCompletion
     ) -> BaseLifecycleResult:
         """At the unit's earliest ordered completion point, before its target post-hook."""
-        if self.preview or not proposal.ready:
+        if self.preview or not proposal.ready or not frozen.unit.eligible:
             return BaseLifecycleResult()
-        if not frozen.unit.eligible or not qualified:
-            return BaseLifecycleResult(converged=True)
-        result = self._acknowledge(
-            frozen,
-            live_fact=proposal.live_fact,
-        )
-        return BaseLifecycleResult(
-            converged=True,
-            acknowledged=result.acknowledged,
-            live_fact=result.live_fact,
-            failure=result.failure,
-        )
+        return self._acknowledge(frozen)
 
-    def _acknowledge(
-        self,
-        frozen: FrozenBaseUnit,
-        *,
-        live_fact: str,
-    ) -> BaseLifecycleResult:
+    def _acknowledge(self, frozen: FrozenBaseUnit) -> BaseLifecycleResult:
         try:
             self.store.replace(frozen.record())
         except SyncBaseStoreDurabilityError as exc:
-            return BaseLifecycleResult(acknowledged=True, live_fact=live_fact, failure=exc)
+            return BaseLifecycleResult(acknowledged=True, failure=exc)
         except SyncBaseStoreError as exc:
             return BaseLifecycleResult(failure=exc)
-        return BaseLifecycleResult(acknowledged=True, live_fact=live_fact)
+        return BaseLifecycleResult(acknowledged=True)

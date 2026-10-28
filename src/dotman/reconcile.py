@@ -32,7 +32,6 @@ MENU_HINT_STYLE = ("2",)
 class EditableSourceCopy:
     destination_path: Path
     editable_copy_path: Path
-    original_text: str
     original_bytes: bytes = b""
     original_mode: int | None = None
 
@@ -187,7 +186,6 @@ def _write_editable_source_copies(
     for index, source_path in enumerate(source_paths, start=1):
         editable_copy_path = root / f"editable-{index}-{source_path.name}"
         original_bytes = source_bytes[source_path] if source_bytes is not None and source_path in source_bytes else read_bytes(source_path)
-        original_text = original_bytes.decode("utf-8", errors="replace")
         editable_copy_path.write_bytes(original_bytes)
         original_mode = stat.S_IMODE(source_path.stat().st_mode) if preserve_primary_executable and index == 1 else None
         if original_mode is not None:
@@ -196,7 +194,6 @@ def _write_editable_source_copies(
             EditableSourceCopy(
                 destination_path=source_path,
                 editable_copy_path=editable_copy_path,
-                original_text=original_text,
                 original_bytes=original_bytes,
                 original_mode=original_mode,
             )
