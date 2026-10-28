@@ -7,32 +7,18 @@ from typing import Any
 import yaml
 
 from dotman.transforms.framework import (
-    BaseTransformEngine,
+    MappingTransformEngine,
     SelectorSpec,
-    TransformMode,
     TransformOutput,
     TransformRequest,
-    compile_selector_regexes,
-    iter_key_paths,
-    merge_overlay_data,
-    select_data,
-    select_key_paths,
-    subtract_excluded_key_paths,
-    split_quoted_key_path,
-    values_strictly_equal,
     read_input_text,
-    decode_reference_text,
-    read_reference_bytes,
     read_reference_text,
-    without_emptied_mappings,
+    semantically_unchanged_compare_output,
+    values_strictly_equal,
 )
 
 
 YamlDict = dict[Any, Any]
-YamlKeyPath = tuple[str, ...]
-# The empty key path selects the whole document.
-DOCUMENT_ROOT_KEY_PATH: YamlKeyPath = ()
-KeyRegex = re.Pattern[str]
 DEFAULT_YAML_INDENT = 2
 _NULL_TAG = "tag:yaml.org,2002:null"
 _BOOL_TAG = "tag:yaml.org,2002:bool"
@@ -221,18 +207,6 @@ def load_yaml(path: Path, *, stdin_bytes: bytes | None = None) -> YamlDict:
     return loaded
 
 
-def compile_key_regexes(raw_key_regexes: tuple[str, ...]) -> tuple[KeyRegex, ...]:
-    return compile_selector_regexes(raw_key_regexes, "YAML key selector")
-
-
-def parse_yaml_key_path(raw_key: str) -> YamlKeyPath:
-    return split_quoted_key_path(raw_key, "YAML")
-
-
-def parse_yaml_key_paths(raw_key_paths: tuple[str, ...]) -> tuple[YamlKeyPath, ...]:
-    return tuple(parse_yaml_key_path(raw_key) for raw_key in raw_key_paths)
-
-
 def detect_yaml_indent(text: str | None) -> int | None:
     if text is None:
         return None
@@ -283,56 +257,11 @@ def yaml_text(data: YamlDict, indent: int = DEFAULT_YAML_INDENT) -> str:
     )
 
 
-def get_existing_bytes_if_semantically_unchanged(
-    path: Path,
-    data: YamlDict,
-) -> bytes | None:
-    existing_bytes = read_reference_bytes(path)
-    existing_text = decode_reference_text(existing_bytes)
-    if existing_text is None:
-        return None
-    try:
-        existing_data = parse_yaml_text(existing_text)
-    except Exception:
-        return None
-
-    if not values_strictly_equal(existing_data, data):
-        return None
-
-    return existing_bytes
-
-
-def build_yaml_output(
-    data: YamlDict,
-    *,
-    mode_reference_path: Path | None,
-    compare_path: Path | None = None,
-    indent_reference_paths: tuple[Path | None, ...] = (),
-    stdin_bytes: bytes | None = None,
-) -> TransformOutput:
-    if compare_path is not None:
-        existing_bytes = get_existing_bytes_if_semantically_unchanged(compare_path, data)
-        if existing_bytes is not None:
-            return TransformOutput(
-                content=existing_bytes,
-                mode_reference_path=mode_reference_path,
-                reused_compare_path=compare_path,
-            )
-
-    indent = select_yaml_indent(
-        compare_path,
-        *indent_reference_paths,
-        stdin_bytes=stdin_bytes,
-    )
-    return TransformOutput(
-        content=yaml_text(data, indent=indent),
-        mode_reference_path=mode_reference_path,
-    )
-
-
-class YamlTransformEngine(BaseTransformEngine):
+class YamlTransformEngine(MappingTransformEngine):
     name = "yaml"
-    SUPPORTS_EXCLUDED_SELECTORS = True
+    KEY_PATH_FORMAT_NAME = "YAML"
+    KEY_REGEX_DESCRIPTION = "YAML key selector"
+    COMPARE_FILE_HELP = "Optional YAML file to compare against for semantic no-op text reuse"
     SELECTOR_SPECS = (
         SelectorSpec(
             name="key",
@@ -347,87 +276,27 @@ class YamlTransformEngine(BaseTransformEngine):
         ),
     )
 
-    def requires_selectors(self) -> bool:
-        return False
+    load = staticmethod(load_yaml)
+    key_text = staticmethod(yaml_key_text)
 
-    def configure_parser(self, parser) -> None:
-        parser.add_argument(
-            "--compare-file",
-            type=Path,
-            help="Optional YAML file to compare against for semantic no-op text reuse",
-        )
-
-    def build_engine_options(self, parsed_args) -> dict[str, Any]:
-        return {
-            "compare_path": parsed_args.compare_file,
-            "stdout": parsed_args.stdout,
-            "stdin_bytes": parsed_args.stdin_bytes,
-        }
-
-    def validate_request(self, request: TransformRequest) -> None:
-        super().validate_request(request)
-        parse_yaml_key_paths(request.selector_values("key"))
-        compile_key_regexes(request.selector_values("key_regex"))
-        parse_yaml_key_paths(request.excluded_selector_values("key"))
-        compile_key_regexes(request.excluded_selector_values("key_regex"))
-
-    def transform(self, request: TransformRequest) -> TransformOutput:
-        self.validate_request(request)
-        exact_key_paths = parse_yaml_key_paths(request.selector_values("key"))
-        selected_key_regexes = compile_key_regexes(request.selector_values("key_regex"))
-
-        base_data = load_yaml(
-            request.base_path,
-            stdin_bytes=request.engine_option("stdin_bytes"),
-        )
-        selected_key_paths = select_key_paths(
-            base_data,
-            exact_key_paths,
-            selected_key_regexes,
-            key_text=yaml_key_text,
-        )
-        if request.has_excluded_selectors():
-            selected_key_paths = subtract_excluded_key_paths(
-                iter_key_paths(base_data, key_text=yaml_key_text),
-                selected_key_paths if request.has_included_selectors() else None,
-                select_key_paths(
-                    base_data,
-                    parse_yaml_key_paths(request.excluded_selector_values("key")),
-                    compile_key_regexes(request.excluded_selector_values("key_regex")),
-                    key_text=yaml_key_text,
-                ),
-            )
-        # Only an absent selector list means identity. Selectors that match
-        # nothing must still select nothing.
-        transformed_data = (
-            select_data(
-                base_data, request.selector_action, selected_key_paths, key_text=yaml_key_text
-            )
-            if request.has_selectors()
-            else dict(base_data)
-        )
-        transformed_data = without_emptied_mappings(transformed_data, base_data)
-
-        if request.mode == TransformMode.MERGE:
-            assert request.overlay_path is not None
-            overlay_data = load_yaml(
-                request.overlay_path,
-                stdin_bytes=request.engine_option("stdin_bytes"),
-            )
-            transformed_data = merge_overlay_data(
-                base_data,
-                transformed_data,
-                overlay_data,
-                # Without selectors the whole base is one selection, so the overlay
-                # replaces each top-level key it shares with the base.
-                selected_key_paths if request.has_selectors() else (DOCUMENT_ROOT_KEY_PATH,),
-                key_text=yaml_key_text,
-            )
-
-        return build_yaml_output(
-            transformed_data,
+    def build_output(self, data: YamlDict, request: TransformRequest) -> TransformOutput:
+        compare_path = request.engine_option("compare_path")
+        reused_output = semantically_unchanged_compare_output(
+            compare_path,
+            data,
+            lambda content: parse_yaml_text(content.decode("utf-8-sig")),
             mode_reference_path=request.base_path,
-            compare_path=request.engine_option("compare_path"),
-            indent_reference_paths=(request.base_path, request.overlay_path),
+        )
+        if reused_output is not None:
+            return reused_output
+
+        indent = select_yaml_indent(
+            compare_path,
+            request.base_path,
+            request.overlay_path,
             stdin_bytes=request.engine_option("stdin_bytes"),
+        )
+        return TransformOutput(
+            content=yaml_text(data, indent=indent),
+            mode_reference_path=request.base_path,
         )
