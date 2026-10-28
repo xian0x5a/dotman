@@ -6,6 +6,8 @@ import pytest
 
 from dotman.engine import DotmanEngine
 from dotman.interaction import ChoiceRequest, ScriptedInteraction
+from dotman.interaction_policy import InteractionRequiredError
+from dotman.track_resolution import TrackResolver
 from dotman.untrack_resolution import (
     UntrackEntryRequest,
     UntrackGroupRequest,
@@ -207,3 +209,29 @@ def test_untrack_resolver_describes_remaining_tracking_after_removal(tmp_path: P
     assert [entry.package_entry.selector for entry in remaining.package_entries] == [
         "core-cli-meta"
     ]
+
+
+def test_track_and_untrack_report_the_same_no_exact_match_line(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    (repo_root / "profiles").mkdir(parents=True)
+    (repo_root / "profiles" / "basic.toml").write_text("", encoding="utf-8")
+    (repo_root / "profiles" / "work.toml").write_text("", encoding="utf-8")
+    (repo_root / "packages" / "alpha").mkdir(parents=True)
+    (repo_root / "packages" / "alpha" / "package.toml").write_text("", encoding="utf-8")
+    (repo_root / "groups").mkdir()
+    (repo_root / "groups" / "bundle.toml").write_text('members = ["alpha"]\n', encoding="utf-8")
+    config_path = write_named_manager_config(tmp_path, {"fixture": repo_root})
+    write_tracked_packages_state(
+        tmp_path / "state",
+        repo_name="fixture",
+        entries=[("alpha", "basic")],
+    )
+    engine = DotmanEngine.from_config_path(config_path)
+
+    with pytest.raises(InteractionRequiredError) as track_error:
+        TrackResolver(engine).resolve("fixture:bundle@bas")
+    with pytest.raises(InteractionRequiredError) as untrack_error:
+        UntrackResolver(engine).resolve("fixture:bundle@bas")
+
+    assert str(track_error.value) == "no exact match for 'bas'; use exact name 'basic'"
+    assert str(untrack_error.value) == str(track_error.value)

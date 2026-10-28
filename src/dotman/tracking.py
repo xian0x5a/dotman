@@ -721,20 +721,14 @@ def record_tracked_package_entry(
     validate: bool = True,
 ) -> None:
     state = context.tracked_state
-    repo = get_repository(state, binding.repo)
-    raw_entries_by_repo = raw_tracked_package_entries_by_repo(state)
-    normalized = normalize_tracked_package_entry_set(
-        state,
-        persisted_tracked_package_entries_for_repo(repo, raw_entries_by_repo.get(repo.config.name, [])),
-        expand_tracked_package_entry_in_repo(repo, binding),
-    )
-    raw_entries_by_repo[repo.config.name] = normalized
+    raw_entries_by_repo = _raw_tracked_package_entries_with_additions(state, [binding])
     if validate:
         validate_tracked_package_entries(
             context,
             effective_tracked_package_entries_by_repo(state, raw_entries_by_repo),
         )
-    write_tracked_package_entries(repo, normalized)
+    repo = get_repository(state, binding.repo)
+    write_tracked_package_entries(repo, raw_entries_by_repo[repo.config.name])
 
 
 
@@ -766,6 +760,16 @@ def _tracked_package_entries_with_additions(
     bindings: list[FullSpecSelector],
 ) -> dict[str, list[FullSpecSelector]]:
     state = context.tracked_state
+    return effective_tracked_package_entries_by_repo(
+        state,
+        _raw_tracked_package_entries_with_additions(state, bindings),
+    )
+
+
+def _raw_tracked_package_entries_with_additions(
+    state: TrackedStateContext,
+    bindings: list[FullSpecSelector],
+) -> dict[str, list[FullSpecSelector]]:
     raw_entries_by_repo = raw_tracked_package_entries_by_repo(state)
     for binding in bindings:
         repo = get_repository(state, binding.repo)
@@ -774,7 +778,7 @@ def _tracked_package_entries_with_additions(
             persisted_tracked_package_entries_for_repo(repo, raw_entries_by_repo.get(repo.config.name, [])),
             expand_tracked_package_entry_in_repo(repo, binding),
         )
-    return effective_tracked_package_entries_by_repo(state, raw_entries_by_repo)
+    return raw_entries_by_repo
 
 
 
@@ -851,7 +855,6 @@ def remove_persisted_tracked_package_entry(
     *,
     operation: str = "untrack",
 ) -> FullSpecSelector:
-    from dotman.collisions import TrackedTargetConflictError
 
     state = context.tracked_state
     persisted_entries = read_tracked_package_entries_file(tracked_packages_file_path(record.state_dir))
@@ -861,16 +864,15 @@ def remove_persisted_tracked_package_entry(
     if record.repo is not None:
         raw_entries_by_repo = raw_tracked_package_entries_by_repo(state)
         raw_entries_by_repo[record.repo.config.name] = remaining
-        try:
-            validate_tracked_package_entries(
-                context,
-                effective_tracked_package_entries_by_repo(state, raw_entries_by_repo),
-            )
-        except TrackedTargetConflictError as exc:
-            binding_label = f"{record.package_entry.repo}:{record.package_entry.selector}@{record.package_entry.profile}"
-            raise UsageError(
-                f"cannot {operation} '{binding_label}': removing this binding would expose {exc}"
-            ) from None
+        binding = record.package_entry
+        _validate_remaining_tracked_package_entries(
+            context,
+            raw_entries_by_repo,
+            failure_prefix=(
+                f"cannot {operation} '{binding.repo}:{binding.selector}@{binding.profile}': "
+                "removing this binding"
+            ),
+        )
     write_tracked_package_entries_file(record.state_dir, remaining)
     return record.package_entry
 
@@ -882,7 +884,6 @@ def remove_tracked_package_entries(
     operation: str = "untrack",
     operation_label: str | None = None,
 ) -> list[FullSpecSelector]:
-    from dotman.collisions import TrackedTargetConflictError
 
     state = context.tracked_state
     unique_bindings = list(dict.fromkeys(bindings))
@@ -908,22 +909,37 @@ def remove_tracked_package_entries(
     if not removed:
         return []
 
-    try:
-        validate_tracked_package_entries(
-            context,
-            effective_tracked_package_entries_by_repo(state, raw_entries_by_repo),
-        )
-    except TrackedTargetConflictError as exc:
-        label = operation_label or ", ".join(f"{binding.repo}:{binding.selector}@{binding.profile}" for binding in removed)
-        raise UsageError(
-            f"cannot {operation} '{label}': removing these bindings would expose {exc}"
-        ) from None
+    label = operation_label or ", ".join(f"{binding.repo}:{binding.selector}@{binding.profile}" for binding in removed)
+    _validate_remaining_tracked_package_entries(
+        context,
+        raw_entries_by_repo,
+        failure_prefix=f"cannot {operation} '{label}': removing these bindings",
+    )
 
     for repo_name, remaining in remaining_by_repo.items():
         repo = get_repository(state, repo_name)
         write_tracked_package_entries_file(repo.config.state_path, remaining)
 
     return removed
+
+
+
+def _validate_remaining_tracked_package_entries(
+    context: "PlanningContext",
+    raw_entries_by_repo: dict[str, list[FullSpecSelector]],
+    *,
+    failure_prefix: str,
+) -> None:
+    """Refuse a removal whose remaining entries expose a target conflict."""
+    from dotman.collisions import TrackedTargetConflictError
+
+    try:
+        validate_tracked_package_entries(
+            context,
+            effective_tracked_package_entries_by_repo(context.tracked_state, raw_entries_by_repo),
+        )
+    except TrackedTargetConflictError as exc:
+        raise UsageError(f"{failure_prefix} would expose {exc}") from None
 
 
 

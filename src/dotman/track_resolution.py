@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Literal, TypeVar
+from typing import Literal
 
 from dotman import cli_style
 from dotman.collisions import TrackedTargetConflictError
@@ -20,14 +20,11 @@ from dotman.package_resolution import UnresolvedSelectorError, parse_full_spec_s
 from dotman.repository import MissingExtendsParentError, Repository
 from dotman.resolver import (
     ResolverOption,
-    build_profile_field_kinds,
-    build_profile_match_fields,
-    build_selector_field_kinds,
-    build_selector_match_fields,
-    rank_resolver_matches,
+    build_profile_option,
+    build_selector_option,
+    resolve_match,
 )
 
-Match = TypeVar("Match")
 TrackDisposition = Literal["ready", "kept", "skipped"]
 
 
@@ -427,27 +424,15 @@ class TrackResolver:
             match: tuple[Repository, str, SelectorKind],
         ) -> ResolverOption:
             repo, matched_selector, selector_kind = match
-            return ResolverOption(
-                display_label=cli_style.render_selector_match_label(
-                    repo_name=repo.config.name,
-                    selector=matched_selector,
-                    selector_kind=selector_kind,
-                    use_color=self._use_color,
-                ),
-                display_fields=cli_style.build_selector_match_display_fields(
-                    repo_name=repo.config.name,
-                    selector=matched_selector,
-                    selector_kind=selector_kind,
-                    use_color=self._use_color,
-                ),
-                match_fields=build_selector_match_fields(
-                    repo_name=repo.config.name,
-                    selector=matched_selector,
-                ),
-                field_kinds=build_selector_field_kinds(),
+            return build_selector_option(
+                repo_name=repo.config.name,
+                selector=matched_selector,
+                selector_kind=selector_kind,
+                use_color=self._use_color,
             )
 
-        repo, resolved_selector, selector_kind = self._resolve_match(
+        repo, resolved_selector, selector_kind = resolve_match(
+            self._interaction,
             exact_matches=exact_matches,
             partial_matches=partial_matches,
             query_text=selector,
@@ -511,17 +496,14 @@ class TrackResolver:
         if self._interaction is not None and not exact_matches and not partial_matches:
             selection_matches = list(available_profiles)
             partial_header_text = f"Select a profile for {repo_name}:{selector}:"
-        return self._resolve_match(
+        return resolve_match(
+            self._interaction,
             exact_matches=exact_matches,
             partial_matches=selection_matches,
             query_text=requested_profile,
             exact_header_text=f"Select a profile for {repo_name}:{selector}:",
             partial_header_text=partial_header_text,
-            option_resolver=lambda profile: ResolverOption(
-                display_label=profile,
-                match_fields=build_profile_match_fields(profile=profile),
-                field_kinds=build_profile_field_kinds(),
-            ),
+            option_resolver=build_profile_option,
             value_resolver=lambda profile: profile,
             exact_error_text=(
                 f"profile '{requested_profile}' is defined multiple times in repo '{repo_name}'"
@@ -534,83 +516,3 @@ class TrackResolver:
                 f"profile '{requested_profile}' did not match any profile in repo '{repo_name}'"
             ),
         )
-
-    def _resolve_match(
-        self,
-        *,
-        exact_matches: Sequence[Match],
-        partial_matches: Sequence[Match],
-        query_text: str,
-        exact_header_text: str,
-        partial_header_text: str,
-        option_resolver,
-        value_resolver,
-        exact_error_text: str,
-        partial_error_text: str,
-        not_found_text: str,
-    ) -> Match:
-        ranked_exact = rank_resolver_matches(
-            exact_matches,
-            query=query_text,
-            option_resolver=option_resolver,
-        )
-        ranked_partial = rank_resolver_matches(
-            partial_matches,
-            query=query_text,
-            option_resolver=option_resolver,
-        )
-        if len(ranked_exact) == 1:
-            return ranked_exact[0]
-        if ranked_exact:
-            return self._choose(
-                ranked_exact,
-                header_text=exact_header_text,
-                option_resolver=option_resolver,
-                value_resolver=value_resolver,
-                noninteractive_error=exact_error_text,
-            )
-        if ranked_partial:
-            if self._interaction is None:
-                if len(ranked_partial) == 1:
-                    raise InteractionRequiredError(
-                        f"no exact match for '{query_text}'; use exact name '{value_resolver(ranked_partial[0])}'"
-                    )
-                raise InteractionRequiredError(partial_error_text)
-            return self._choose(
-                ranked_partial,
-                header_text=partial_header_text,
-                option_resolver=option_resolver,
-                value_resolver=value_resolver,
-                noninteractive_error=partial_error_text,
-            )
-        raise UsageError(not_found_text)
-
-    def _choose(
-        self,
-        matches: Sequence[Match],
-        *,
-        header_text: str,
-        option_resolver,
-        value_resolver,
-        noninteractive_error: str,
-    ) -> Match:
-        if self._interaction is None:
-            raise InteractionRequiredError(noninteractive_error)
-        values = {value_resolver(match): match for match in matches}
-        selected_value = self._interaction.choose(
-            ChoiceRequest(
-                header_text=header_text,
-                options=tuple(
-                    ChoiceOption(
-                        value=value_resolver(match),
-                        label=option_resolver(match).display_label,
-                        display_fields=(
-                            option_resolver(match).display_fields
-                            or (option_resolver(match).display_label,)
-                        ),
-                    )
-                    for match in matches
-                ),
-            )
-        )
-        return values[selected_value]
