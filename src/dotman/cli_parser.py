@@ -441,7 +441,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     list_subparsers.add_parser("sync-bases", help="List currently usable Sync Bases")
     reset_parser = subparsers.add_parser("reset", help="Discard exact Sync Base ancestry")
-    reset_subparsers = reset_parser.add_subparsers(dest="reset_command", required=True)
+    reset_subparsers = reset_parser.add_subparsers(
+        dest="reset_command",
+        required=True,
+        title="reset commands",
+        metavar="<reset-command>",
+    )
     reset_base_parser = reset_subparsers.add_parser("sync-base", help="Immediately reset one exact Sync Base, or every unusable one")
     reset_base_target = reset_base_parser.add_mutually_exclusive_group(required=True)
     reset_base_target.add_argument(
@@ -528,91 +533,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Prepared live-side review file path",
     )
     add_jinja_context_arguments(capture_patch_parser)
-
-    reconcile_parser = subparsers.add_parser(
-        "reconcile",
-        help="Re-run a reconcile helper subcommand",
-        description="Re-run a reconcile helper subcommand",
-    )
-    reconcile_subparsers = reconcile_parser.add_subparsers(
-        dest="reconcile_helper",
-        required=True,
-        title="reconcile commands",
-        metavar="<reconcile-command>",
-    )
-
-    reconcile_editor_parser = reconcile_subparsers.add_parser(
-        "editor",
-        help="Open repo and live files in an editor for reconcile review",
-        description="Open repo and live files in an editor for reconcile review",
-    )
-    reconcile_editor_parser.add_argument(
-        "--repo-path",
-        required=True,
-        metavar="<repo-path>",
-        help="Path to the repo copy of the target file",
-    )
-    reconcile_editor_parser.add_argument(
-        "--live-path",
-        required=True,
-        metavar="<live-path>",
-        help="Path to the live copy of the target file",
-    )
-    reconcile_editor_parser.add_argument(
-        "--review-repo-path",
-        metavar="<review-repo-path>",
-        help="Optional prepared repo-side review file path",
-    )
-    reconcile_editor_parser.add_argument(
-        "--review-live-path",
-        metavar="<review-live-path>",
-        help="Optional prepared live-side review file path",
-    )
-    reconcile_editor_parser.add_argument(
-        "--additional-source",
-        action="append",
-        default=[],
-        metavar="<source-path>",
-        help="Additional repo source file to include in transactional reconcile editing",
-    )
-    reconcile_editor_parser.add_argument(
-        "--editor",
-        metavar="<editor-command>",
-        help="Editor command to run instead of the default editor",
-    )
-
-    reconcile_jinja_parser = reconcile_subparsers.add_parser(
-        "jinja",
-        help="Reconcile a Jinja source with its recursive template dependencies",
-        description="Reconcile a Jinja source with its recursive template dependencies",
-    )
-    reconcile_jinja_parser.add_argument(
-        "--repo-path",
-        required=True,
-        metavar="<repo-path>",
-        help="Path to the repo copy of the target file",
-    )
-    reconcile_jinja_parser.add_argument(
-        "--live-path",
-        required=True,
-        metavar="<live-path>",
-        help="Path to the live copy of the target file",
-    )
-    reconcile_jinja_parser.add_argument(
-        "--review-repo-path",
-        metavar="<review-repo-path>",
-        help="Optional prepared repo-side review file path",
-    )
-    reconcile_jinja_parser.add_argument(
-        "--review-live-path",
-        metavar="<review-live-path>",
-        help="Optional prepared live-side review file path",
-    )
-    reconcile_jinja_parser.add_argument(
-        "--editor",
-        metavar="<editor-command>",
-        help="Editor command to run instead of the default editor",
-    )
 
     render_parser = subparsers.add_parser(
         "render",

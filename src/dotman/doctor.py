@@ -176,7 +176,7 @@ def _editor_dependency_check() -> DoctorCheck:
             key="editor",
             status="warn",
             detail="no editor configured",
-            hint="Optional: set $VISUAL or $EDITOR, or install an editor such as nano, for add/edit/reconcile review flows.",
+            hint="Optional: set $VISUAL or $EDITOR, or install an editor such as nano, for add, edit and Sync Editor flows.",
         )
     editor_path = shutil.which(editor_command[0])
     if editor_path is None:
