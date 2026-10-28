@@ -10,19 +10,31 @@ from __future__ import annotations
 import copy
 import datetime
 import io
-from collections import Counter
-from collections.abc import Callable, Iterator
+import warnings
+from collections.abc import Callable
+from enum import Enum, auto
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
 from ruamel.yaml import YAML
-from ruamel.yaml.comments import CommentedKeyMap, CommentedKeySeq, CommentedMap, CommentedSeq, CommentedSet, TaggedScalar, merge_attrib
-from ruamel.yaml.error import CommentMark, YAMLError
+from ruamel.yaml.comments import (
+    Comment,
+    CommentedKeyMap,
+    CommentedKeySeq,
+    CommentedMap,
+    CommentedSeq,
+    CommentedSet,
+    Format,
+    TaggedScalar,
+    merge_attrib,
+)
+from ruamel.yaml.error import CommentMark, ReusedAnchorWarning, YAMLError
 from ruamel.yaml.nodes import MappingNode, Node, ScalarNode, SequenceNode
 from ruamel.yaml.representer import RoundTripRepresenter
 from ruamel.yaml.scalarbool import ScalarBoolean
 from ruamel.yaml.scalarstring import FoldedScalarString, LiteralScalarString
+from ruamel.yaml.tag import Tag
 from ruamel.yaml.tokens import CommentToken
 
 from dotman.transforms.framework import (
@@ -107,7 +119,10 @@ def round_trip_yaml(layout: YamlLayout = YamlLayout()) -> YAML:
 
 
 def parse_yaml_text(text: str) -> Any:
-    return round_trip_yaml().load(text)
+    with warnings.catch_warnings():
+        # Redefining an anchor is valid YAML; later aliases use the latest one.
+        warnings.simplefilter("ignore", ReusedAnchorWarning)
+        return round_trip_yaml().load(text)
 
 
 def plain_value(value: Any) -> Any:
@@ -278,42 +293,67 @@ def flatten_merge(mapping: CommentedMap) -> None:
     for key, value in effective_items(mapping):
         mapping[key] = value
     for source in merge_sources(mapping):
-        source._ref.remove(mapping)
+        if mapping in source._ref:
+            source._ref.remove(mapping)
     delattr(mapping, merge_attrib)
+
+
+class CommentPlacement(Enum):
+    # The rest of the value's own line, then whole comment lines.
+    AFTER_VALUE = auto()
+    # Whole comment lines only, as ruamel stores them after a block scalar.
+    WHOLE_LINES = auto()
+    # Whole comment lines in a sequence's end list, after a final flow item.
+    SEQUENCE_END = auto()
 
 
 @dataclass(frozen=True)
 class CommentSlot:
-    """The ruamel comment token after a value: rest of the value's line, then whole lines.
+    """The ruamel comment storage after a value.
 
-    The whole lines belong to whatever follows, usually the next key's leading
-    comment. After a block scalar the token holds only whole lines.
+    Its whole comment lines belong to whatever follows, usually the next
+    key's leading comment.
     """
 
-    entry: list[Any]
+    tokens: list[Any]
     index: int
-    after_block_scalar: bool
+    placement: CommentPlacement
+
+    def text(self) -> str:
+        if self.placement == CommentPlacement.SEQUENCE_END:
+            return "".join(token.value for token in self.tokens)
+        token = self.tokens[self.index]
+        return "" if token is None else token.value
 
     def split(self) -> tuple[str, str]:
-        token = self.entry[self.index]
-        if token is None:
-            return "", ""
-        if self.after_block_scalar:
-            return "", token.value
-        own_line, newline, following = token.value.partition("\n")
+        """(rest of the value's line, whole lines after it)."""
+        if self.placement != CommentPlacement.AFTER_VALUE:
+            return "", self.text()
+        own_line, newline, following = self.text().partition("\n")
         return own_line + newline, following
 
     def set(self, own_line: str, following: str) -> None:
-        if self.after_block_scalar or not following:
-            text = own_line + following
-        else:
+        if self.placement == CommentPlacement.AFTER_VALUE and following:
             text = (own_line or "\n") + following
-        if not text:
-            self.entry[self.index] = None
-        elif self.entry[self.index] is None:
-            self.entry[self.index] = CommentToken(text, CommentMark(0), None)
         else:
-            self.entry[self.index].value = text
+            text = own_line + following
+        existing = self.tokens[self.index] if len(self.tokens) > self.index else None
+        if not text:
+            token = None
+        elif existing is None:
+            token = CommentToken(text, CommentMark(0), None)
+        else:
+            # The existing token keeps the column of an end-of-line comment.
+            existing.value = text
+            token = existing
+        if self.placement == CommentPlacement.SEQUENCE_END:
+            self.tokens[:] = [] if token is None else [token]
+        else:
+            self.tokens[self.index] = token
+
+
+def is_flow_collection(value: Any) -> bool:
+    return isinstance(value, (CommentedMap, CommentedSeq)) and bool(value.fa.flow_style())
 
 
 def trailing_comment_slot(container: CommentedMap | CommentedSeq, key: Any) -> CommentSlot:
@@ -326,10 +366,19 @@ def trailing_comment_slot(container: CommentedMap | CommentedSeq, key: Any) -> C
     if isinstance(value, CommentedMap) and own_keys(value) and not value.fa.flow_style():
         return trailing_comment_slot(value, own_keys(value)[-1])
     if isinstance(value, CommentedSeq) and value and not value.fa.flow_style():
+        if is_flow_collection(value[-1]):
+            return CommentSlot(value.ca.end, 0, CommentPlacement.SEQUENCE_END)
         return trailing_comment_slot(value, len(value) - 1)
     index = _MAPPING_COMMENT_SLOT if isinstance(container, CommentedMap) else _SEQUENCE_COMMENT_SLOT
-    entry = container.ca.items.setdefault(key, [None, None, None, None])
-    return CommentSlot(entry, index, isinstance(value, (LiteralScalarString, FoldedScalarString)))
+    tokens = container.ca.items.setdefault(key, [None, None, None, None])
+    is_block_scalar = isinstance(value, (LiteralScalarString, FoldedScalarString))
+    return CommentSlot(tokens, index, CommentPlacement.WHOLE_LINES if is_block_scalar else CommentPlacement.AFTER_VALUE)
+
+
+def append_following_comment(container: CommentedMap, key: Any, following: str) -> None:
+    slot = trailing_comment_slot(container, key)
+    own_line, current_following = slot.split()
+    slot.set(own_line, current_following + following)
 
 
 def detach_from_merging_mappings(mapping: CommentedMap) -> None:
@@ -339,12 +388,12 @@ def detach_from_merging_mappings(mapping: CommentedMap) -> None:
     mapping._ref.clear()
 
 
-def delete_key(mapping: CommentedMap, key: Any) -> None:
+def delete_key(mapping: CommentedMap, key: Any) -> str:
     """Delete key with its own comments, keeping the comment that introduces the next key.
 
     ruamel stores the comment lines between two keys after the first key's
     value, so a plain delete would take the next key's comment and leave the
-    deleted key's behind.
+    deleted key's behind. Returns those lines when no key is left to hold them.
     """
     # A merged-in key, or an own key overriding one, cannot be removed while the merge stays.
     if any(key in dict(effective_items(source)) for source in merge_sources(mapping)):
@@ -353,15 +402,20 @@ def delete_key(mapping: CommentedMap, key: Any) -> None:
     keys = own_keys(mapping)
     position = keys.index(key)
     _, following = trailing_comment_slot(mapping, key).split()
+    del mapping[key]
     if position > 0:
         # The previous key's trailing lines were the deleted key's leading comment.
         previous_slot = trailing_comment_slot(mapping, keys[position - 1])
         previous_own_line, _ = previous_slot.split()
         previous_slot.set(previous_own_line, following)
-    elif following and position + 1 < len(keys):
-        before_entry = mapping.ca.items.setdefault(keys[position + 1], [None, None, None, None])
-        before_entry[1] = [CommentToken(following, CommentMark(0), None)]
-    del mapping[key]
+        return ""
+    if not following:
+        return ""
+    if len(keys) > 1:
+        before_tokens = mapping.ca.items.setdefault(keys[1], [None, None, None, None])
+        before_tokens[1] = [CommentToken(following, CommentMark(0), None)]
+        return ""
+    return following
 
 
 def replace_value(container: CommentedMap, key: Any, value: Any) -> None:
@@ -370,60 +424,52 @@ def replace_value(container: CommentedMap, key: Any, value: Any) -> None:
     A value from another document drops the lines after it, which introduced
     its next key there.
     """
+    keys_before = own_keys(container)
     following = ""
-    if key in own_keys(container):
+    if key in keys_before:
         old_slot = trailing_comment_slot(container, key)
         own_line, following = old_slot.split()
         old_slot.set(own_line, "")
     container[key] = value
+    keys_after = own_keys(container)
+    if key not in keys_before and len(keys_after) > 1 and keys_after[-1] == key:
+        # An appended key takes over the lines that followed the mapping's old last key.
+        previous_slot = trailing_comment_slot(container, keys_after[-2])
+        previous_own_line, following = previous_slot.split()
+        previous_slot.set(previous_own_line, "")
     new_slot = trailing_comment_slot(container, key)
     new_own_line, _ = new_slot.split()
     new_slot.set(new_own_line, following)
 
 
-def yaml_children(value: Any) -> list[Any]:
-    """Keys, values and merge sources of a mapping, or items of a sequence."""
-    if isinstance(value, CommentedMap):
-        pairs = list(value.non_merged_items())
-        return [*(key for key, _ in pairs), *(child for _, child in pairs), *merge_sources(value)]
-    if isinstance(value, (CommentedSeq, CommentedSet)):
-        return list(value)
-    return []
+def copy_presentation(source: CommentedMap | CommentedSeq, copied: CommentedMap | CommentedSeq) -> None:
+    for attribute in (Comment.attrib, Format.attrib, Tag.attrib):
+        if hasattr(source, attribute):
+            setattr(copied, attribute, copy.deepcopy(getattr(source, attribute)))
 
 
-def walk_yaml_values(value: Any) -> Iterator[Any]:
-    """Every value reachable from value, once each, including aliased and merged ones."""
-    seen: set[int] = set()
-    pending = [value]
-    while pending:
-        current = pending.pop()
-        if id(current) in seen:
-            continue
-        seen.add(id(current))
-        yield current
-        pending.extend(yaml_children(current))
+def tree_copy(value: Any) -> Any:
+    """A copy that shares nothing: aliases become copies, `<<` merges become own keys, anchors go.
 
-
-def shared_containers(document: CommentedMap) -> set[int]:
-    """ids of mappings and sequences that aliases or `<<` merges reach from more than one place."""
-    references: Counter[int] = Counter()
-    for value in walk_yaml_values(document):
-        references.update(id(child) for child in yaml_children(value) if isinstance(child, (CommentedMap, CommentedSeq)))
-    return {container_id for container_id, count in references.items() if count > 1}
-
-
-def foreign_value(value: Any) -> Any:
-    """A private copy of a value from another document, without anchor names.
-
-    Its anchor names could repeat the target's and redirect target aliases;
-    ruamel names anchors itself where the copy still shares structure.
+    Comments, tags and flow style stay. Editing a tree copy cannot change
+    another place, and its anchor names cannot redirect another document's
+    aliases.
     """
-    copied = copy.deepcopy(value)
-    for item in walk_yaml_values(copied):
-        anchor = getattr(item, "anchor", None)
-        if anchor is not None:
-            anchor.value = None
-    return copied
+    if isinstance(value, CommentedMap):
+        copied_mapping = CommentedMap()
+        for key, child in effective_items(value):
+            copied_mapping[key] = tree_copy(child)
+        copy_presentation(value, copied_mapping)
+        return copied_mapping
+    if isinstance(value, CommentedSeq):
+        copied_sequence = CommentedSeq(tree_copy(item) for item in value)
+        copy_presentation(value, copied_sequence)
+        return copied_sequence
+    if getattr(getattr(value, "anchor", None), "value", None) is not None:
+        copied_scalar = copy.deepcopy(value)
+        copied_scalar.anchor.value = None
+        return copied_scalar
+    return value
 
 
 def strict_key(key: Any) -> tuple[type, Any]:
@@ -431,15 +477,12 @@ def strict_key(key: Any) -> tuple[type, Any]:
     return type(plain_key), plain_key
 
 
-def apply_desired_mapping(target: CommentedMap, desired: Mapping[Any, Any], shared: set[int] | None) -> None:
-    """Edit target in place until it holds desired, touching only what differs.
-
-    With shared container ids given, a shared or merged-in mapping is copied
-    before an edit, so its other aliases and merges keep the old value.
-    """
+def apply_desired_mapping(target: CommentedMap, desired: Mapping[Any, Any]) -> None:
+    """Edit target in place until it holds desired, touching only what differs."""
     desired_keys = {strict_key(key) for key in desired}
-    for key in [key for key, _ in effective_items(target) if strict_key(key) not in desired_keys]:
-        delete_key(target, key)
+    orphaned_comment = "".join(
+        delete_key(target, key) for key in [key for key, _ in effective_items(target) if strict_key(key) not in desired_keys]
+    )
     for key, value in desired.items():
         current_items = dict(effective_items(target))
         if key in current_items:
@@ -447,18 +490,13 @@ def apply_desired_mapping(target: CommentedMap, desired: Mapping[Any, Any], shar
             if values_strictly_equal(plain_value(current), plain_value(value)):
                 continue
             if isinstance(current, CommentedMap) and isinstance(value, Mapping):
-                if shared is not None and (id(current) in shared or key not in own_keys(target)):
-                    current = unanchored_copy(current)
-                    replace_value(target, key, current)
-                apply_desired_mapping(current, value, shared)
+                apply_desired_mapping(current, value)
                 continue
-        replace_value(target, key, foreign_value(value))
-
-
-def unanchored_copy(mapping: CommentedMap) -> CommentedMap:
-    copied = copy.deepcopy(mapping)
-    copied.anchor.value = None
-    return copied
+        replace_value(target, key, tree_copy(value))
+    remaining_keys = own_keys(target)
+    if orphaned_comment and remaining_keys:
+        # The deleted keys' last comment lines introduced what follows this mapping.
+        append_following_comment(target, remaining_keys[-1], orphaned_comment)
 
 
 def patched_yaml_text(load_target: Callable[[], CommentedMap], desired: YamlDict, layout: YamlLayout) -> str:
@@ -466,16 +504,28 @@ def patched_yaml_text(load_target: Callable[[], CommentedMap], desired: YamlDict
 
     Editing an aliased or merged mapping in place keeps anchors, but changes
     every place that shares it. When the written text shows that changed a
-    place that must keep its value, the edit is redone on copies.
+    place that must keep its value, the edit is redone on a tree copy of the
+    document, which shares nothing.
     """
     expected = plain_value(desired)
-    for copy_shared in (False, True):
-        target = load_target()
-        apply_desired_mapping(target, desired, shared_containers(target) if copy_shared else None)
+    for prepare in (lambda document: document, tree_copy):
+        target = prepare(load_target())
+        apply_desired_mapping(target, desired)
         text = yaml_text(target, layout)
         if values_strictly_equal(plain_value(parse_yaml_text(text)), expected):
             return text
     raise ValueError("cannot write the transformed YAML without changing its data")
+
+
+def target_line_ending(path: Path | None, stdin_bytes: bytes | None) -> str:
+    text = None if path is None else read_input_text(path, stdin_bytes=stdin_bytes)
+    return "\r\n" if text is not None and "\r\n" in text else "\n"
+
+
+def with_line_ending(text: str, line_ending: str) -> str:
+    # ruamel writes LF but keeps the CRLF read inside comment tokens.
+    lf_text = text.replace("\r\n", "\n")
+    return lf_text if line_ending == "\n" else lf_text.replace("\n", line_ending)
 
 
 def yaml_text(document: CommentedMap, layout: YamlLayout) -> str:
@@ -529,4 +579,5 @@ class YamlTransformEngine(MappingTransformEngine):
             return CommentedMap() if document is None else document
 
         layout = select_yaml_layout(compare_path, request.base_path, request.overlay_path, stdin_bytes=stdin_bytes)
-        return TransformOutput(content=patched_yaml_text(load_target, data, layout), mode_reference_path=request.base_path)
+        text = patched_yaml_text(load_target, data, layout)
+        return TransformOutput(content=with_line_ending(text, target_line_ending(target_path, stdin_bytes)), mode_reference_path=request.base_path)
