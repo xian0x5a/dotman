@@ -2,7 +2,6 @@
 
 JSON output of the flag: {"status": "reset", "dropped": <int total records removed>}.
 """
-import json
 
 import pytest
 

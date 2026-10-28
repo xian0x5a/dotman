@@ -8,7 +8,6 @@ from pathlib import Path
 
 from dotman.errors import UsageError
 from dotman.templates import (
-    JinjaRenderError,
     build_template_context,
     render_template_file,
     resolve_cpu_arch,
