@@ -902,3 +902,46 @@ def test_emptied_element_drops_its_indentation(
     transform_xml(input_path, output_path, node_matchers=selectors, selector_action=selector_action)
 
     assert expected_empty_element in output_path.read_text(encoding="utf-8")
+
+
+NAMESPACED_XML = """<root xmlns="urn:x" xmlns:p="urn:p">
+  <a>1</a>
+  <p:c>2</p:c>
+  <s>
+    <i>b</i>
+    <i>a</i>
+  </s>
+</root>
+"""
+
+
+@pytest.mark.parametrize(
+    ("flags", "expected_children", "expected_items"),
+    [
+        (["--selector-type", "retain", "--selectors", "root/a"], ["{urn:x}a"], []),
+        (["--selector-type", "remove", "--selectors", "root/a"], ["{urn:p}c", "{urn:x}s"], ["b", "a"]),
+        (["--selector-type", "retain", "--selectors", "root/p:c"], ["{urn:p}c"], []),
+        (["--selector-type", "retain", "--selectors", "re:^root/(a|s)$"], ["{urn:x}a", "{urn:x}s"], ["b", "a"]),
+        (
+            ["--selector-type", "remove", "--selectors", "root/a", "--sort-children", "root/s"],
+            ["{urn:p}c", "{urn:x}s"],
+            ["a", "b"],
+        ),
+    ],
+    ids=["default-ns-retain", "default-ns-remove", "prefixed-retain", "default-ns-regex", "default-ns-sort-children"],
+)
+def test_selectors_match_element_names_as_written_under_namespaces(
+    flags, expected_children, expected_items, tmp_path: Path
+) -> None:
+    input_path = tmp_path / "input.xml"
+    output_path = tmp_path / "output.xml"
+    input_path.write_text(NAMESPACED_XML, encoding="utf-8")
+
+    exit_code = cli.main(["transform", "xml", str(input_path), str(output_path), "--mode", "cleanup", *flags])
+
+    assert exit_code == 0
+    output_text = output_path.read_text(encoding="utf-8")
+    assert 'xmlns="urn:x"' in output_text and 'xmlns:p="urn:p"' in output_text
+    root = ET.fromstring(output_text)
+    assert [child.tag for child in root] == expected_children
+    assert [item.text for item in root.iterfind("{urn:x}s/{urn:x}i")] == expected_items
