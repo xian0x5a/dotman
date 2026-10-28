@@ -136,11 +136,8 @@ def _write_tracked_binding_state(state_root: Path, *, repo_name: str, selector: 
 
 def test_edit_config_cli_prints_selected_config_path_when_no_editor_is_configured(
     tmp_path: Path,
-    monkeypatch,
     capsys,
 ) -> None:
-    monkeypatch.delenv("VISUAL", raising=False)
-    monkeypatch.delenv("EDITOR", raising=False)
 
     config_path = tmp_path / "broken.toml"
     config_path.write_text("not valid toml = [", encoding="utf-8")
@@ -177,11 +174,8 @@ def test_edit_config_cli_opens_selected_config_without_loading_it(
 
 def test_edit_repo_cli_prints_selected_repo_path_when_no_editor_is_configured(
     tmp_path: Path,
-    monkeypatch,
     capsys,
 ) -> None:
-    monkeypatch.delenv("VISUAL", raising=False)
-    monkeypatch.delenv("EDITOR", raising=False)
 
     repo_root = tmp_path / "repo"
     _write_edit_repo(repo_root)
@@ -237,11 +231,8 @@ def test_edit_repo_cli_rejects_non_exact_repo_in_non_interactive_mode(
 
 def test_edit_local_cli_prints_repo_local_override_path_when_no_editor_is_configured(
     tmp_path: Path,
-    monkeypatch,
     capsys,
 ) -> None:
-    monkeypatch.delenv("VISUAL", raising=False)
-    monkeypatch.delenv("EDITOR", raising=False)
 
     repo_root = tmp_path / "repo"
     _write_edit_repo(repo_root)
@@ -444,11 +435,8 @@ def test_edit_local_cli_requires_repo_when_multiple_repos_in_non_interactive_mod
 
 def test_edit_cli_prints_package_directory_when_no_editor_is_configured(
     tmp_path: Path,
-    monkeypatch,
     capsys,
 ) -> None:
-    monkeypatch.delenv("VISUAL", raising=False)
-    monkeypatch.delenv("EDITOR", raising=False)
 
     repo_root = tmp_path / "repo"
     _write_edit_repo(repo_root)
@@ -561,11 +549,8 @@ def test_edit_cli_sugar_keeps_repo_qualified_target_query_target_intent(
 
 def test_edit_target_cli_prints_repo_file_path_when_no_editor_is_configured(
     tmp_path: Path,
-    monkeypatch,
     capsys,
 ) -> None:
-    monkeypatch.delenv("VISUAL", raising=False)
-    monkeypatch.delenv("EDITOR", raising=False)
 
     repo_root = tmp_path / "repo"
     _write_edit_repo(repo_root)

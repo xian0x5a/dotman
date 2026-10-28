@@ -96,8 +96,6 @@ def test_pull_jinja_editor_discovers_nested_dependencies_after_configured_source
 
 @pytest.mark.parametrize("discovery", ["VISUAL", "EDITOR", "GIT_EDITOR", "git"])
 def test_pull_default_editor_discovery(tmp_path, monkeypatch, discovery):
-    for key in ("VISUAL", "EDITOR", "GIT_EDITOR"):
-        monkeypatch.delenv(key, raising=False)
     editor = tmp_path / "editor"
     editor.write_text('#!/bin/sh\nprintf edited > "$1"\n')
     editor.chmod(0o755)

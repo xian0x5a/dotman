@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import shlex
 import shutil
 import sys
 from collections.abc import Callable, Sequence
@@ -13,7 +12,6 @@ from dotman import cli_emit, cli_style
 from dotman.add import (
     AddOperationResult,
     AddReviewResult,
-    add_editor_available,
     review_add_manifest,
 )
 from dotman.command_runtime import (
@@ -25,6 +23,7 @@ from dotman.diff_review import (
     ReviewItem,
     run_review_item_diff,
 )
+from dotman.editor import resolve_editor_command
 from dotman.engine import DotmanEngine
 from dotman.interaction import Interaction, choose_with_fzf
 from dotman.errors import UsageError
@@ -117,11 +116,11 @@ def render_package_target_label(*, repo_name: str, package_id: str, target_name:
 
 
 def open_editor_path(path: Path, *, missing_editor_label: str = "path") -> int:
-    if not add_editor_available():
+    editor_command = resolve_editor_command()
+    if editor_command is None:
         print(f"No editor configured. {missing_editor_label}: {terminal_safe_line(str(path))}")
         return 0
 
-    editor_command = _resolve_editor_command()
     try:
         result = current_command_runtime().run(
             CommandRequest(
@@ -132,16 +131,6 @@ def open_editor_path(path: Path, *, missing_editor_label: str = "path") -> int:
     except FileNotFoundError as exc:
         raise ValueError("editor command was not found") from exc
     return result.exit_code
-
-
-def _resolve_editor_command() -> list[str]:
-    editor_value = os.environ.get("VISUAL") or os.environ.get("EDITOR")
-    if not editor_value:
-        raise ValueError("edit requires $VISUAL or $EDITOR")
-    editor_command = [argument for argument in shlex.split(editor_value) if argument != "-d"]
-    if not editor_command:
-        raise ValueError("edit requires a non-empty $VISUAL or $EDITOR")
-    return editor_command
 
 
 def resolve_variable_text(
@@ -831,7 +820,7 @@ class StateRuntime:
     interaction: Interaction | None
 
     def add_editor_available(self) -> bool:
-        return add_editor_available()
+        return resolve_editor_command() is not None
 
     def review_add_manifest(self, result: AddOperationResult) -> AddReviewResult | None:
         return review_add_manifest(result)

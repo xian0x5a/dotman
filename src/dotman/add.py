@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import difflib
 import os
-import shlex
 import stat
 import tempfile
 from dataclasses import dataclass, replace
@@ -12,6 +11,7 @@ from dotman.atomic_files import write_text_atomic
 from dotman.collisions import TargetClaim, validate_target_collisions
 from dotman.command_runtime import ArgvCommand, CommandRequest, current_command_runtime
 from dotman.config import expand_path
+from dotman.editor import resolve_editor_command
 from dotman.errors import UsageError
 from dotman.ignore import GitIgnoreChain, collect_gitignore_chain
 from dotman.manifest import (
@@ -429,14 +429,10 @@ def append_target_block(*, before_text: str, target_block: str) -> str:
     return f"{stripped}\n\n{target_block}"
 
 
-def add_editor_available() -> bool:
-    return bool(os.environ.get("VISUAL") or os.environ.get("EDITOR"))
-
-
 def review_add_manifest(result: AddOperationResult) -> AddReviewResult | None:
-    if not add_editor_available():
+    editor_command = resolve_editor_command()
+    if editor_command is None:
         return None
-    editor_command = _normalize_editor_command(_resolve_editor_command())
     with tempfile.TemporaryDirectory(prefix="dotman-add-review-") as temp_dir:
         temp_root = Path(temp_dir)
         before_path = temp_root / "package-before.toml"
@@ -471,17 +467,6 @@ def review_add_manifest(result: AddOperationResult) -> AddReviewResult | None:
             exit_code=command_result.exit_code,
             manifest_text=editable_path.read_text(encoding="utf-8"),
         )
-
-
-def _resolve_editor_command() -> list[str]:
-    editor_value = os.environ.get("VISUAL") or os.environ.get("EDITOR")
-    if not editor_value:
-        raise ValueError("add review requires $VISUAL or $EDITOR")
-    return shlex.split(editor_value)
-
-
-def _normalize_editor_command(editor_command: list[str]) -> list[str]:
-    return [argument for argument in editor_command if argument != "-d"]
 
 
 def _build_add_review_content(*, result: AddOperationResult, manifest_path: Path, before_path: Path, after_path: Path, editable_path: Path) -> str:

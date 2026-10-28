@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import os
-import shlex
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from dotman.editor import resolve_editor_command
 from dotman.models import FullSpecSelector, TrackedPackageEntryIssue
 from dotman.repository import Repository
 from dotman.tracking import (
@@ -163,29 +162,21 @@ def _command_dependency_check(
 
 
 def _editor_dependency_check() -> DoctorCheck:
-    editor_value = os.environ.get("VISUAL") or os.environ.get("EDITOR")
-    if not editor_value:
+    try:
+        editor_command = resolve_editor_command()
+    except ValueError as exc:
+        return DoctorCheck(
+            key="editor",
+            status="warn",
+            detail=str(exc),
+            hint="Fix the first editor setting found among $VISUAL, $EDITOR, $GIT_EDITOR and git's core.editor.",
+        )
+    if editor_command is None:
         return DoctorCheck(
             key="editor",
             status="warn",
             detail="no editor configured",
-            hint="Optional: set $VISUAL or $EDITOR for add/edit/reconcile review flows.",
-        )
-    try:
-        editor_command = [argument for argument in shlex.split(editor_value) if argument != "-d"]
-    except ValueError:
-        return DoctorCheck(
-            key="editor",
-            status="warn",
-            detail="editor command could not be parsed",
-            hint="Fix $VISUAL or $EDITOR so it contains a valid shell-style command.",
-        )
-    if not editor_command:
-        return DoctorCheck(
-            key="editor",
-            status="warn",
-            detail="editor command is empty after parsing",
-            hint="Fix $VISUAL or $EDITOR so it names an editor command.",
+            hint="Optional: set $VISUAL or $EDITOR, or install an editor such as nano, for add/edit/reconcile review flows.",
         )
     editor_path = shutil.which(editor_command[0])
     if editor_path is None:
@@ -193,7 +184,7 @@ def _editor_dependency_check() -> DoctorCheck:
             key="editor",
             status="warn",
             detail=f"configured editor '{editor_command[0]}' was not found",
-            hint="Install that editor or point $VISUAL/$EDITOR at an installed one.",
+            hint="Install that editor or point $VISUAL or $EDITOR at an installed one.",
         )
     return DoctorCheck(
         key="editor",
