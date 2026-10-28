@@ -1399,8 +1399,6 @@ class ProposalSession:
                                    "would-apply" if preview and row.approved and not aborted else "pending")
             for row in self.view.rows if isinstance(row, AdditionalRow)
         ) if preview or aborted else self._additional_results
-        if any(change.status == "execution-failed" for change in additional):
-            status = "failed"
         commits, commit_steps = ((), ()) if preview or aborted else self._commit(run_completed=status == "completed")
         if any(item.status == "interrupted" for item in commits):
             status = "aborted"

@@ -57,7 +57,6 @@ class BaseEvidence:
     reason: str | None = None
     record: SyncBaseRecord | None = None
     acknowledged: bool = False
-    deleted: bool = False
 
 
 @dataclass(frozen=True)
@@ -384,11 +383,11 @@ def _discard_ineligible_bases(
     inputs: _ResolvedInputs,
     *,
     preview: bool,
-) -> tuple[dict[ResolvedSyncTarget, bool], dict[ResolvedSyncTarget, Diagnostic]]:
+) -> dict[ResolvedSyncTarget, Diagnostic]:
     """Resolved configured policy is authoritative before volatile Guards."""
-    deleted, warnings = {}, {}
+    warnings = {}
     if preview:
-        return deleted, warnings
+        return warnings
     with ExitStack() as resources:
         stores = {}
         for identity, (item, metadata) in inputs.items():
@@ -401,10 +400,10 @@ def _discard_ineligible_bases(
                     stores[identity.repo] = resources.enter_context(SyncBaseStore.open(
                         context.tracked_state.state_root, item.repo.config.state_key,
                     ))
-                deleted[identity] = stores[identity.repo].delete(unit.identity_bytes)
+                stores[identity.repo].delete(unit.identity_bytes)
             except (OSError, ValueError, SyncBaseStoreError) as exc:
                 warnings[identity] = Diagnostic("base-maintenance-failed", str(exc), "warning")
-    return deleted, warnings
+    return warnings
 
 
 def observe_scope(
@@ -452,9 +451,9 @@ def observe_scope(
         for child_identity, (item, child) in _stored_children(context, directory_inputs, selected_children).items()
         if participates(child)
     } if read_bases and not preview else {}
-    maintenance, checkpoint_warnings = _discard_ineligible_bases(
+    checkpoint_warnings = _discard_ineligible_bases(
         context, {**inputs, **stored_children}, preview=preview,
-    ) if read_bases else ({}, {})
+    ) if read_bases else {}
     configured_directional = directional
     eligibility = evaluate_directional_guards(
         directional, command_runtime=context.projection.command_runtime, run_noop=run_noop,
@@ -600,7 +599,6 @@ def observe_scope(
                 "unavailable" if eligible else "not-applicable",
                 # A Base that could not be read may still exist; never call it absent.
                 ("unreadable" if identity.repo in unreadable_repos and unit is not None else "absent") if eligible else "ineligible",
-                deleted=maintenance.get(identity, False),
             )
             if lifecycle is not None:
                 try:

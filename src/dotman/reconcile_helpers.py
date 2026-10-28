@@ -7,9 +7,6 @@ from dotman.reconcile import run_basic_reconcile
 from dotman.templates import discover_template_file_dependencies
 
 
-BUILTIN_JINJA_RECONCILE = "jinja"
-
-
 def run_jinja_reconcile(
     *,
     repo_path: str,
@@ -37,4 +34,4 @@ def run_jinja_reconcile(
     )
 
 
-__all__ = ["BUILTIN_JINJA_RECONCILE", "run_jinja_reconcile"]
+__all__ = ["run_jinja_reconcile"]
