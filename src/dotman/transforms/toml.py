@@ -695,8 +695,14 @@ def inline_value(value: Any) -> Any:
 
     A dotted key inside an inline table (`{a.b = 1}`) parses to a table, and
     tomlkit refuses to put a table into an inline table, so such tables are
-    rebuilt as nested inline tables (`{a = {b = 1}}`).
+    rebuilt as nested inline tables (`{a = {b = 1}}`). An array of tables
+    (`[[a]]`) becomes an array of inline tables (`a = [{b = 1}]`) for the same
+    reason.
     """
+    if isinstance(value, AoT):
+        rebuilt_array = tomlkit.array()
+        rebuilt_array.extend(inline_value(table) for table in value.body)
+        return rebuilt_array
     if not is_table_like(value):
         return copy.deepcopy(value)
     rebuilt = tomlkit.inline_table()
@@ -995,9 +1001,8 @@ def adapt_merged_value(
     # Container lookups return booleans as plain bool, which has no trivia.
     value = tomlkit.item(copy.deepcopy(as_single_table(value)))
     if merged_is_inline and isinstance(value, (Table, AoT)):
-        # Inline tables cannot hold [table] or [[array]] sections; let tomlkit
-        # rebuild the plain data in inline form.
-        return tomlkit.item(value.unwrap(), _parent=tomlkit.inline_table())
+        # Inline tables cannot hold [table] or [[array]] sections.
+        return inline_value(value)
     if merged_is_inline != isinstance(source_container, InlineTable):
         # Line breaks and comments of a key-value line are invalid inside an
         # inline table, and a value parsed inline has no line break of its own.

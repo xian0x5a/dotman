@@ -1620,6 +1620,21 @@ def test_merge_moves_a_dotted_key_table_into_an_overlay_inline_table(tmp_path: P
     assert tomllib.loads(output) == {"e": {"a": {"x": 1}, "y": 2}}
 
 
+def test_merge_spaces_tables_moved_into_an_overlay_inline_table_like_tomlkit(
+    tmp_path: Path,
+) -> None:
+    output = run_toml_transform(
+        tmp_path,
+        "[e]\na.x = 1\na.z = 3\n\n[[e.l]]\nn = 1\n",
+        "--selectors",
+        "e.a",
+        "e.l",
+        overlay_text="e = {y = 2}\n",
+    )
+
+    assert output == "e = {a = {x = 1, z = 3}, l = [{n = 1}], y = 2}\n"
+
+
 def test_retained_split_table_keeps_the_comment_above_its_header(tmp_path: Path) -> None:
     output = run_toml_transform(
         tmp_path, "[e.f]\nx = 1\n\n# about e\n[e]\ny = 2\n", "--selectors", "e"
