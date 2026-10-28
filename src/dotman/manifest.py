@@ -747,19 +747,6 @@ def build_target_spec(
         default_command_elevation=default_command_elevation, inherited_render=render,
         inherited_capture=capture, inherited_compare_repo=compare_repo, inherited_compare_live=compare_live,
         inherited_editor=editor, inherited_sync_policy=sync_policy)
-    if probe is not None:
-        if sync_policy == "push-only-delete":
-            raise UsageError(
-                f"package manifest {manifest_path} target '{target_name}' uses probe and cannot use push-only-delete; use push-only"
-            )
-        forbidden = sorted(name for name, item in {
-            "source": source, "path": path, "type": target_type, "chmod": chmod,
-            "render": None if render == "raw" else render, "capture": None if capture == "raw" else capture,
-            "compare": compare_payload, "editor": None if editor == EditorSpec() else editor,
-            "ignore": patterns if patterns is not None else ignore_command, "path_rules": path_rules or None,
-        }.items() if item is not None)
-        if forbidden:
-            raise UsageError(f"package manifest {manifest_path} target '{target_name}' uses probe and must not define: {', '.join(forbidden)}")
     return TargetSpec(name=target_name, declared_in=manifest_path.parent, source=source, path=path, probe=probe,
                       target_type=target_type, sync_policy=sync_policy, chmod=chmod, render=render, capture=capture,
                       editor=editor, compare_repo=compare_repo, compare_live=compare_live,
@@ -1016,8 +1003,41 @@ def validate_patch_capture(owner: str, *, render: str, capture: str, compare_rep
         raise UsageError(f'{owner} capture = "patch" requires compare.repo = "render" and compare.live = "raw"')
 
 
+def validate_probe_target_config(*, repo_name: str, package: PackageSpec, target: TargetSpec) -> None:
+    if target.probe is None:
+        return
+    target_label = repo_qualified_target_text(repo_name=repo_name, package_id=package.id, target_name=target.name)
+    if resolve_sync_policy(package=package, target=target) == "push-only-delete":
+        raise UsageError(f"target '{target_label}' uses probe and cannot use push-only-delete; use push-only")
+    forbidden_probe_fields = {
+        "source": target.source,
+        "path": target.path,
+        "type": target.target_type,
+        "chmod": target.chmod,
+        "render": target.render if target.render_explicit else None,
+        "capture": target.capture if target.capture_explicit else None,
+        "editor": target.editor if target.editor_explicit else None,
+        "compare": (
+            {"repo": target.compare_repo, "live": target.compare_live}
+            if target.compare_repo_explicit or target.compare_live_explicit
+            else None
+        ),
+        "ignore": target.ignore_patterns if target.ignore_patterns is not None else target.ignore_command,
+        "path_rules": target.path_rules or None,
+    }
+    forbidden = sorted(name for name, value in forbidden_probe_fields.items() if value is not None)
+    if forbidden:
+        raise UsageError(
+            f"target '{target_label}' uses probe and must not define: "
+            + ", ".join(forbidden)
+        )
+
+
 def _validate_resolved_package(package: PackageSpec, *, repo_name: str) -> PackageSpec:
     for target in (package.targets or {}).values():
+        # Checked on every effective target, disabled or untracked included, so a
+        # misconfigured probe fails on first resolution rather than only at sync.
+        validate_probe_target_config(repo_name=repo_name, package=package, target=target)
         target_label = repo_qualified_target_text(repo_name=repo_name, package_id=package.id, target_name=target.name)
         for rule in target.path_rules:
             if not rule.pattern.strip():

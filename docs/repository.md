@@ -194,7 +194,7 @@ preset = "jinja-patch"
 - Targets may define `sync_policy` to narrow or widen the package-level operation gate for that target.
 - Use `push-only` for forward-managed targets, `pull-only` for reverse-only targets, `both` for targets that can participate in both operations, and `push-only-delete` for targets whose live file should be removed on Push or Sync while the repo source is retained.
 - Targets may define `probe` as a side-effect-free planning command instead of file payload fields.
-- A probe target does not define `source`, `path`, `type`, `chmod`, `render`, `capture`, `editor`, pull views, ignore rules, or path rules.
+- A probe target does not define `source`, `path`, `type`, `chmod`, `render`, `capture`, `editor`, pull views, ignore rules, or path rules. Setting one, even to its default value such as `render = "raw"`, is an error. Dotman checks the effective target after `extends` and patches whenever it resolves the package, so the error appears before any list, search or sync output, also for disabled targets and untracked packages.
 - Probe exit codes are:
   - `0`: active; the target appears in normal selection and makes package/target hooks eligible.
   - `100`: inactive/noop; the target stays out of normal selection and hooks run only if explicitly noop-eligible.
