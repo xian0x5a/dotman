@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -9,7 +7,6 @@ import re
 from typing import Any
 from xml.parsers.expat import ExpatError
 
-from dotman.transforms.cli import run_engine_cli
 from dotman.transforms.framework import (
     BaseTransformEngine,
     SelectorAction,
@@ -178,16 +175,10 @@ def stripped_plist_value(value: Any, selector: PlistPathSelector) -> Any:
 def filter_retained_keys(
     data: PlistDict,
     retained_key_paths: tuple[PlistKeyPath, ...],
-    retained_key_regexes: tuple[KeyRegex, ...] = (),
 ) -> PlistDict:
-    selected_key_paths = selected_plist_key_paths(
-        data,
-        retained_key_paths,
-        retained_key_regexes,
-    )
     retained_value = retained_plist_value(
         data,
-        build_plist_path_selector(selected_key_paths),
+        build_plist_path_selector(retained_key_paths),
     )
     return {} if retained_value is _MISSING else retained_value
 
@@ -195,19 +186,13 @@ def filter_retained_keys(
 def filter_stripped_keys(
     data: PlistDict,
     stripped_key_paths: tuple[PlistKeyPath, ...],
-    stripped_key_regexes: tuple[KeyRegex, ...] = (),
 ) -> PlistDict:
-    if not stripped_key_paths and not stripped_key_regexes:
+    if not stripped_key_paths:
         return dict(data)
 
-    selected_key_paths = selected_plist_key_paths(
-        data,
-        stripped_key_paths,
-        stripped_key_regexes,
-    )
     stripped_value = stripped_plist_value(
         data,
-        build_plist_path_selector(selected_key_paths),
+        build_plist_path_selector(stripped_key_paths),
     )
     return {} if stripped_value is _MISSING else stripped_value
 
@@ -216,11 +201,10 @@ def select_plist_data(
     data: PlistDict,
     selector_action: SelectorAction,
     selected_key_paths: tuple[PlistKeyPath, ...],
-    selected_key_regexes: tuple[KeyRegex, ...] = (),
 ) -> PlistDict:
     if selector_action == SelectorAction.REMOVE:
-        return filter_stripped_keys(data, selected_key_paths, selected_key_regexes)
-    return filter_retained_keys(data, selected_key_paths, selected_key_regexes)
+        return filter_stripped_keys(data, selected_key_paths)
+    return filter_retained_keys(data, selected_key_paths)
 
 
 def child_overlay_selector(selector: PlistPathSelector, key: str) -> PlistPathSelector:
@@ -351,13 +335,11 @@ class PlistTransformEngine(BaseTransformEngine):
             prefix="exact",
             is_default=True,
             description="exact plist dictionary key path",
-            examples=("NSUserKeyEquivalents", "settings.window.width"),
         ),
         SelectorSpec(
             name="key_regex",
             prefix="re",
             description="regex matching dotted plist dictionary key paths",
-            examples=(r"^NS", r"^settings\.window\."),
         ),
     )
 
@@ -445,11 +427,3 @@ class PlistTransformEngine(BaseTransformEngine):
             mode_reference_path=request.base_path,
             compare_path=request.engine_option("compare_path"),
         )
-
-
-def main(argv: list[str] | None = None) -> int:
-    return run_engine_cli(PlistTransformEngine(), argv=argv)
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

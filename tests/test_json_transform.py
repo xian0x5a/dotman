@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from dotman import cli
 import dotman.transforms.json as MODULE
 
 
@@ -25,8 +26,10 @@ def test_serialized_json_uses_two_space_fallback_indent(tmp_path: Path) -> None:
 
     input_path.write_text('{"alpha":1,"beta":{"nested":true}}\n', encoding="utf-8")
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "json",
             str(input_path),
             str(output_path),
             "--mode",
@@ -56,8 +59,10 @@ def test_serialized_json_preserves_compare_file_indent(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "json",
             str(input_path),
             str(output_path),
             "--mode",
@@ -83,8 +88,10 @@ def test_merge_with_missing_base_preserves_overlay_file_indent(tmp_path: Path) -
         encoding="utf-8",
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "json",
             str(live_path),
             str(output_path),
             "--mode",
@@ -108,8 +115,10 @@ def test_compare_file_preserves_existing_text(tmp_path: Path) -> None:
     input_path.write_text('{"alpha":1,"beta":true}\n', encoding="utf-8")
     compare_path.write_text('{\n  "alpha": 1,\n  "beta": true\n}\n', encoding="utf-8")
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "json",
             str(input_path),
             str(output_path),
             "--mode",
@@ -142,8 +151,10 @@ def test_cleanup_retain_key_path_keeps_selected_nested_object_key(tmp_path: Path
         encoding="utf-8",
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "json",
             str(input_path),
             str(output_path),
             "--mode",
@@ -179,8 +190,10 @@ def test_cleanup_remove_key_path_strips_selected_nested_object_key(tmp_path: Pat
         encoding="utf-8",
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "json",
             str(input_path),
             str(output_path),
             "--mode",
@@ -213,8 +226,10 @@ def test_cleanup_key_path_accepts_quoted_dotted_key_parts(tmp_path: Path) -> Non
         encoding="utf-8",
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "json",
             str(input_path),
             str(output_path),
             "--mode",
@@ -249,8 +264,10 @@ def test_cleanup_remove_key_strips_selected_top_level_keys(tmp_path: Path) -> No
         encoding="utf-8",
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "json",
             str(input_path),
             str(output_path),
             "--mode",
@@ -286,8 +303,10 @@ def test_cleanup_retain_key_regex_keeps_matching_nested_key_paths(tmp_path: Path
         encoding="utf-8",
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "json",
             str(input_path),
             str(output_path),
             "--mode",
@@ -320,8 +339,10 @@ def test_cleanup_remove_key_regex_strips_matching_nested_key_paths(tmp_path: Pat
         encoding="utf-8",
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "json",
             str(input_path),
             str(output_path),
             "--mode",
@@ -358,8 +379,10 @@ def test_cleanup_remove_key_regex_strips_matching_top_level_keys(tmp_path: Path)
         encoding="utf-8",
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "json",
             str(input_path),
             str(output_path),
             "--mode",
@@ -409,8 +432,10 @@ def test_merge_retain_key_preserves_selected_live_keys_and_reapplies_repo_conten
         encoding="utf-8",
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "json",
             str(live_path),
             str(output_path),
             "--mode",
@@ -452,8 +477,10 @@ def test_merge_remove_key_regex_preserves_unselected_nested_live_keys(tmp_path: 
         encoding="utf-8",
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "json",
             str(live_path),
             str(output_path),
             "--mode",
@@ -500,8 +527,10 @@ def test_merge_retain_key_regex_preserves_matching_live_keys_and_reapplies_repo_
         encoding="utf-8",
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "json",
             str(live_path),
             str(output_path),
             "--mode",
@@ -558,8 +587,10 @@ def test_merge_retain_key_preserves_live_order_and_drops_deleted_repo_keys(
         encoding="utf-8",
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "json",
             str(live_path),
             str(output_path),
             "--mode",
@@ -609,8 +640,10 @@ def test_merge_remove_key_path_preserves_unselected_nested_live_keys(tmp_path: P
         encoding="utf-8",
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "json",
             str(live_path),
             str(output_path),
             "--mode",
@@ -645,8 +678,10 @@ def test_merge_remove_key_path_preserves_nested_repo_deletions(tmp_path: Path) -
     )
     repo_path.write_text("{}\n", encoding="utf-8")
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "json",
             str(live_path),
             str(output_path),
             "--mode",
@@ -680,8 +715,10 @@ def test_merge_retain_key_path_preserves_selected_nested_live_keys(tmp_path: Pat
         encoding="utf-8",
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "json",
             str(live_path),
             str(output_path),
             "--mode",
@@ -715,8 +752,10 @@ def test_merge_top_level_object_key_still_replaces_with_overlay_value(tmp_path: 
         encoding="utf-8",
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "json",
             str(live_path),
             str(output_path),
             "--mode",
@@ -764,8 +803,10 @@ def test_merge_remove_key_preserves_unselected_live_keys(tmp_path: Path) -> None
         encoding="utf-8",
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "json",
             str(live_path),
             str(output_path),
             "--mode",
@@ -790,7 +831,6 @@ def test_merge_remove_key_preserves_unselected_live_keys(tmp_path: Path) -> None
 def test_stdin_base_indent_is_preserved(monkeypatch, capsys) -> None:
     import io
 
-    from dotman import cli
 
     source = '{\n\t"settings": {\n\t\t"a": 1\n\t}\n}\n'
     monkeypatch.setattr("sys.stdin", io.StringIO(source))
@@ -804,12 +844,11 @@ def test_lone_surrogate_escape_survives_output(tmp_path: Path) -> None:
     output_path = tmp_path / "output.json"
     input_path.write_text('{"a": "\\ud800", "b": 1}\n', encoding="utf-8")
 
-    assert MODULE.main([str(input_path), str(output_path), "--mode", "cleanup", "--selectors", "a"]) == 0
+    assert cli.main(["transform", "json", str(input_path), str(output_path), "--mode", "cleanup", "--selectors", "a"]) == 0
     assert load_json(output_path) == {"a": "\ud800"}
 
 
 def test_number_out_of_float_range_is_an_error_not_infinity(tmp_path: Path, capsys) -> None:
-    from dotman import cli
 
     input_path = tmp_path / "input.json"
     input_path.write_text('{"a": 1e400, "b": 1}\n', encoding="utf-8")
@@ -822,7 +861,6 @@ def test_number_out_of_float_range_is_an_error_not_infinity(tmp_path: Path, caps
 
 @pytest.mark.parametrize("token", ["NaN", "Infinity", "-Infinity"])
 def test_non_json_number_token_is_an_error_not_passed_through(token: str, tmp_path: Path, capsys) -> None:
-    from dotman import cli
 
     input_path = tmp_path / "input.json"
     input_path.write_text(f'{{"a": {token}, "b": 1}}\n', encoding="utf-8")

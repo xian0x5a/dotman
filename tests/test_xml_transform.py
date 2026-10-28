@@ -6,6 +6,7 @@ import xml.etree.ElementTree as ET
 
 import pytest
 
+from dotman import cli
 from dotman.transforms import xml as MODULE
 from dotman.transforms.framework import emit_transform_output
 
@@ -70,8 +71,10 @@ def test_main_accepts_typed_selector_flags(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "xml",
             str(live_path),
             str(output_path),
             "--mode",
@@ -115,8 +118,10 @@ def test_main_accepts_regex_node_selector_flags(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "xml",
             str(live_path),
             str(output_path),
             "--mode",
@@ -152,8 +157,10 @@ def test_main_accepts_sort_children_flags(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "xml",
             str(input_path),
             str(output_path),
             "--mode",
@@ -208,6 +215,7 @@ def test_strip_nodes_removes_selected_live_only_xml_paths(tmp_path: Path) -> Non
             "config/timeForNewReleaseCheck",
         ],
         sort_attributes=True,
+        selector_action=MODULE.SelectorAction.REMOVE,
     )
 
     root = parse_xml(output_path)
@@ -392,6 +400,7 @@ def test_merge_with_compare_file_preserves_live_order_and_bytes_when_semanticall
         overlay_path=str(repo_path),
         node_matchers=["config/WindowGeometry"],
         compare_path=str(live_path),
+        selector_action=MODULE.SelectorAction.RETAIN,
     )
 
     assert output_path.read_text(encoding="utf-8") == live_text
@@ -411,6 +420,7 @@ def test_merge_without_compare_file_reserializes_semantically_equal_output(
         str(output_path),
         overlay_path=str(repo_path),
         node_matchers=["config/WindowGeometry"],
+        selector_action=MODULE.SelectorAction.RETAIN,
     )
 
     assert output_path.read_text(encoding="utf-8") != live_text
@@ -491,6 +501,7 @@ def test_cleanup_with_compare_file_treats_selected_child_lists_as_semantically_e
         node_matchers=["config/WindowGeometry"],
         compare_path=repo_path,
         child_sort_parent_matchers=["config/mutedDictionaries"],
+        selector_action=MODULE.SelectorAction.REMOVE,
     )
 
     assert output_path.read_text(encoding="utf-8") == repo_text
@@ -585,7 +596,7 @@ def test_pretty_output_preserves_blank_lines_inside_text(tmp_path: Path) -> None
     output_path = tmp_path / "output.xml"
     input_path.write_text("<doc><script>line1\n\n    \nline4</script><drop/></doc>", encoding="utf-8")
 
-    transform_xml(input_path, output_path, node_matchers=["doc/drop"])
+    transform_xml(input_path, output_path, node_matchers=["doc/drop"], selector_action=MODULE.SelectorAction.REMOVE)
 
     assert parse_xml(output_path).findtext("script") == "line1\n\n    \nline4"
 
@@ -598,7 +609,7 @@ def test_pretty_output_preserves_mixed_content(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    transform_xml(input_path, output_path, node_matchers=["doc/drop"])
+    transform_xml(input_path, output_path, node_matchers=["doc/drop"], selector_action=MODULE.SelectorAction.REMOVE)
 
     assert [ET.tostring(p, encoding="unicode").strip() for p in parse_xml(output_path)] == [
         "<p>Hello <b>world</b> again</p>",
@@ -615,7 +626,7 @@ def test_pretty_output_indents_element_only_content(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    transform_xml(input_path, output_path, node_matchers=["config/drop"])
+    transform_xml(input_path, output_path, node_matchers=["config/drop"], selector_action=MODULE.SelectorAction.REMOVE)
 
     assert output_path.read_text(encoding="utf-8") == (
         '<?xml version="1.0" ?>\n'
@@ -637,7 +648,7 @@ def test_removing_an_element_keeps_the_text_that_follows_it(tmp_path: Path) -> N
         encoding="utf-8",
     )
 
-    transform_xml(input_path, output_path, node_matchers=["doc/p/b"])
+    transform_xml(input_path, output_path, node_matchers=["doc/p/b"], selector_action=MODULE.SelectorAction.REMOVE)
 
     assert [ET.tostring(p, encoding="unicode").strip() for p in parse_xml(output_path)] == [
         "<p>Hello  world</p>",
@@ -650,7 +661,6 @@ MALFORMED_XML = "<config><a></config>"
 
 @pytest.mark.parametrize("operand", ["base", "overlay", "stdin"])
 def test_malformed_xml_fails_cleanly_naming_its_source(operand, tmp_path, monkeypatch, capsys) -> None:
-    from dotman import cli
 
     good_path = tmp_path / "good.xml"
     good_path.write_text("<config/>", encoding="utf-8")
@@ -674,7 +684,6 @@ def test_malformed_xml_fails_cleanly_naming_its_source(operand, tmp_path, monkey
 
 
 def test_missing_base_file_fails_cleanly(tmp_path, capsys) -> None:
-    from dotman import cli
 
     missing_path = tmp_path / "missing.xml"
 
@@ -703,7 +712,7 @@ def test_cleanup_keeps_comments_instructions_doctype_and_namespace_prefixes(tmp_
         encoding="utf-8",
     )
 
-    transform_xml(input_path, output_path, node_matchers=["config/drop"])
+    transform_xml(input_path, output_path, node_matchers=["config/drop"], selector_action=MODULE.SelectorAction.REMOVE)
 
     assert output_path.read_text(encoding="utf-8") == (
         '<?xml version="1.0" ?>\n'
@@ -780,6 +789,7 @@ def test_sort_children_moves_leading_comments_with_their_elements(tmp_path: Path
         output_path,
         node_matchers=["config/drop"],
         child_sort_parent_matchers=["config/list"],
+        selector_action=MODULE.SelectorAction.REMOVE,
     )
 
     assert output_path.read_text(encoding="utf-8") == (
@@ -803,7 +813,7 @@ def test_compare_file_differing_only_in_comments_is_not_reused(tmp_path: Path) -
     input_path.write_text("<config><!-- note --><a>1</a></config>", encoding="utf-8")
     compare_path.write_text("<config><a>1</a></config>", encoding="utf-8")
 
-    transform_xml(input_path, output_path, node_matchers=["config/drop"], compare_path=compare_path)
+    transform_xml(input_path, output_path, node_matchers=["config/drop"], compare_path=compare_path, selector_action=MODULE.SelectorAction.REMOVE)
 
     assert "<!-- note -->" in output_path.read_text(encoding="utf-8")
 
@@ -818,7 +828,7 @@ def test_external_entities_are_kept_as_references_not_resolved(tmp_path: Path) -
         encoding="utf-8",
     )
 
-    transform_xml(input_path, output_path, node_matchers=["config/drop"])
+    transform_xml(input_path, output_path, node_matchers=["config/drop"], selector_action=MODULE.SelectorAction.REMOVE)
 
     output_text = output_path.read_text(encoding="utf-8")
     assert "SECRET" not in output_text
@@ -829,7 +839,6 @@ def test_external_entities_are_kept_as_references_not_resolved(tmp_path: Path) -
 def test_merge_that_keeps_an_entity_the_output_doctype_lacks_is_an_error(
     overlay_doctype: str, tmp_path: Path, capsys
 ) -> None:
-    from dotman import cli
 
     live_path = tmp_path / "live.xml"
     repo_path = tmp_path / "repo.xml"
@@ -869,7 +878,7 @@ def test_compare_file_ignores_only_layout_between_child_elements(
     input_path.write_text(input_text, encoding="utf-8")
     compare_path.write_text(compare_text, encoding="utf-8")
 
-    transform_xml(input_path, output_path, node_matchers=["config/drop"], compare_path=compare_path)
+    transform_xml(input_path, output_path, node_matchers=["config/drop"], compare_path=compare_path, selector_action=MODULE.SelectorAction.REMOVE)
 
     assert (output_path.read_text(encoding="utf-8") == compare_text) is reused
 

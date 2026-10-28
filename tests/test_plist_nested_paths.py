@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import plistlib
 
+from dotman import cli
 from dotman.transforms import plist as MODULE
 
 
@@ -31,8 +32,10 @@ def test_cleanup_retain_quoted_dotted_top_level_key(tmp_path: Path) -> None:
         {"com.apple.keyboard.fnState": True, "other": False},
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "plist",
             str(input_path),
             str(output_path),
             "--mode",
@@ -62,8 +65,10 @@ def test_cleanup_retain_nested_key_path_keeps_only_selected_key(tmp_path: Path) 
         },
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "plist",
             str(input_path),
             str(output_path),
             "--mode",
@@ -92,8 +97,10 @@ def test_cleanup_remove_regex_strips_matching_nested_key_paths(tmp_path: Path) -
         },
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "plist",
             str(input_path),
             str(output_path),
             "--mode",
@@ -124,8 +131,10 @@ def test_merge_remove_nested_path_preserves_unselected_live_keys(tmp_path: Path)
     )
     write_plist(repo_path, {"settings": {"managed": "new"}})
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "plist",
             str(live_path),
             str(output_path),
             "--mode",
@@ -152,8 +161,10 @@ def test_merge_retain_nested_path_preserves_selected_live_key(tmp_path: Path) ->
     write_plist(live_path, {"settings": {"managed": "old", "noise": "keep"}})
     write_plist(repo_path, {"settings": {"managed": "new"}})
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "plist",
             str(live_path),
             str(output_path),
             "--mode",

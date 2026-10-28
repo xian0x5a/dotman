@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 from __future__ import annotations
 
 import copy
@@ -28,7 +26,6 @@ from tomlkit.items import (
 from tomlkit.toml_document import TOMLDocument
 
 from dotman.errors import UsageError
-from dotman.transforms.cli import run_engine_cli
 from dotman.transforms.framework import (
     BaseTransformEngine,
     SelectorAction,
@@ -695,10 +692,19 @@ def inline_value(value: Any) -> Any:
 
     A dotted key inside an inline table (`{a.b = 1}`) parses to a table, and
     tomlkit refuses to put a table into an inline table, so such tables are
-    rebuilt as nested inline tables (`{a = {b = 1}}`).
+    rebuilt as nested inline tables (`{a = {b = 1}}`). An array of tables
+    (`[[a]]`) becomes an array of inline tables (`a = [{b = 1}]`) for the same
+    reason.
     """
+    if isinstance(value, AoT):
+        rebuilt_array = tomlkit.array()
+        rebuilt_array.extend(inline_value(table) for table in value.body)
+        return rebuilt_array
     if not is_table_like(value):
-        return copy.deepcopy(value)
+        copied = copy.deepcopy(value)
+        if isinstance(copied, Item):
+            clear_line_trivia(copied, trail="")
+        return copied
     rebuilt = tomlkit.inline_table()
     for key_name in child_key_names(value):
         rebuilt[key_name] = inline_value(body_item(value, key_name))
@@ -995,17 +1001,21 @@ def adapt_merged_value(
     # Container lookups return booleans as plain bool, which has no trivia.
     value = tomlkit.item(copy.deepcopy(as_single_table(value)))
     if merged_is_inline and isinstance(value, (Table, AoT)):
-        # Inline tables cannot hold [table] or [[array]] sections; let tomlkit
-        # rebuild the plain data in inline form.
-        return tomlkit.item(value.unwrap(), _parent=tomlkit.inline_table())
+        # Inline tables cannot hold [table] or [[array]] sections.
+        return inline_value(value)
     if merged_is_inline != isinstance(source_container, InlineTable):
-        # Line breaks and comments of a key-value line are invalid inside an
-        # inline table, and a value parsed inline has no line break of its own.
-        value.trivia.indent = ""
-        value.trivia.comment_ws = ""
-        value.trivia.comment = ""
-        value.trivia.trail = "" if merged_is_inline else "\n"
+        # A value parsed inline has no line break of its own.
+        clear_line_trivia(value, trail="" if merged_is_inline else "\n")
     return value
+
+
+def clear_line_trivia(value: Item, *, trail: str) -> None:
+    # Comment lines, indentation and line breaks around a key-value line are
+    # invalid inside an inline table, so values moved across styles drop them.
+    value.trivia.indent = ""
+    value.trivia.comment_ws = ""
+    value.trivia.comment = ""
+    value.trivia.trail = trail
 
 
 def trivia_identity_text(entries: list[TriviaEntry]) -> str:
@@ -1259,13 +1269,11 @@ class TomlTransformEngine(BaseTransformEngine):
             prefix="exact",
             is_default=True,
             description="exact TOML key path",
-            examples=("model", "mcp_servers.playwright.env.PLAYWRIGHT_MCP_EXTENSION_TOKEN"),
         ),
         SelectorSpec(
             name="table_regex",
             prefix="re",
             description="regex matching dotted TOML table or key paths",
-            examples=(r"^projects\.", r"^widget\.[^.]+\.enabled$"),
         ),
     )
 
@@ -1344,11 +1352,3 @@ class TomlTransformEngine(BaseTransformEngine):
             compare_path=compare_path,
             stdin_bytes=stdin_bytes,
         )
-
-
-def main(argv: list[str] | None = None) -> int:
-    return run_engine_cli(TomlTransformEngine(), argv=argv)
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

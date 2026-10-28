@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -9,7 +7,6 @@ from typing import Any
 
 import yaml
 
-from dotman.transforms.cli import run_engine_cli
 from dotman.transforms.framework import (
     BaseTransformEngine,
     SelectorAction,
@@ -339,15 +336,10 @@ def stripped_yaml_value(value: Any, selector: YamlPathSelector) -> Any:
 def filter_retained_keys(
     data: YamlDict,
     retained_key_paths: tuple[YamlKeyPath, ...],
-    retained_key_regexes: tuple[KeyRegex, ...] = (),
 ) -> YamlDict:
     path_selector = build_yaml_path_selector(retained_key_paths)
     retained_data: YamlDict = {}
     for key, value in data.items():
-        if matches_key_regexes((yaml_key_text(key),), retained_key_regexes):
-            retained_data[key] = value
-            continue
-
         child_selector = path_selector.children.get(yaml_key_text(key))
         if child_selector is None:
             continue
@@ -362,17 +354,13 @@ def filter_retained_keys(
 def filter_stripped_keys(
     data: YamlDict,
     stripped_key_paths: tuple[YamlKeyPath, ...],
-    stripped_key_regexes: tuple[KeyRegex, ...] = (),
 ) -> YamlDict:
-    if not stripped_key_paths and not stripped_key_regexes:
+    if not stripped_key_paths:
         return dict(data)
 
     path_selector = build_yaml_path_selector(stripped_key_paths)
     stripped_data: YamlDict = {}
     for key, value in data.items():
-        if matches_key_regexes((yaml_key_text(key),), stripped_key_regexes):
-            continue
-
         child_selector = path_selector.children.get(yaml_key_text(key))
         if child_selector is None:
             stripped_data[key] = value
@@ -389,11 +377,10 @@ def select_yaml_data(
     data: YamlDict,
     selector_action: SelectorAction,
     selected_key_paths: tuple[YamlKeyPath, ...],
-    selected_key_regexes: tuple[KeyRegex, ...] = (),
 ) -> YamlDict:
     if selector_action == SelectorAction.REMOVE:
-        return filter_stripped_keys(data, selected_key_paths, selected_key_regexes)
-    return filter_retained_keys(data, selected_key_paths, selected_key_regexes)
+        return filter_stripped_keys(data, selected_key_paths)
+    return filter_retained_keys(data, selected_key_paths)
 
 
 def child_overlay_selector(selector: YamlPathSelector, key: str) -> YamlPathSelector:
@@ -409,7 +396,6 @@ def overlay_yaml_objects(
     preserved_base_data: YamlDict,
     overlay_data: YamlDict,
     path_selector: YamlPathSelector,
-    whole_key_regexes: tuple[KeyRegex, ...] = (),
 ) -> YamlDict:
     merged_data: YamlDict = {}
 
@@ -427,7 +413,6 @@ def overlay_yaml_objects(
             # keys selection kept survive.
             if (
                 not child_selector.include_subtree
-                and not matches_key_regexes((yaml_key_text(key),), whole_key_regexes)
                 and isinstance(base_value, dict)
                 and isinstance(overlay_value, dict)
             ):
@@ -436,7 +421,6 @@ def overlay_yaml_objects(
                     preserved_base_data.get(key, {}),
                     overlay_value,
                     child_selector,
-                    (),
                 )
                 continue
 
@@ -460,14 +444,12 @@ def overlay_yaml_data(
     preserved_base_data: YamlDict,
     overlay_data: YamlDict,
     selected_key_paths: tuple[YamlKeyPath, ...] = (),
-    selected_key_regexes: tuple[KeyRegex, ...] = (),
 ) -> YamlDict:
     return overlay_yaml_objects(
         original_base_data,
         preserved_base_data,
         overlay_data,
         build_yaml_path_selector(selected_key_paths),
-        selected_key_regexes,
     )
 
 
@@ -577,13 +559,11 @@ class YamlTransformEngine(BaseTransformEngine):
             prefix="exact",
             is_default=True,
             description="exact dotted or quoted nested YAML mapping key path",
-            examples=("buildDir", "settings.window.width", '"key.with.dots".value'),
         ),
         SelectorSpec(
             name="key_regex",
             prefix="re",
             description="regex matching full YAML mapping key paths",
-            examples=(r"^build", r"Dir$"),
         ),
     )
 
@@ -666,11 +646,3 @@ class YamlTransformEngine(BaseTransformEngine):
             indent_reference_paths=(request.base_path, request.overlay_path),
             stdin_bytes=request.engine_option("stdin_bytes"),
         )
-
-
-def main(argv: list[str] | None = None) -> int:
-    return run_engine_cli(YamlTransformEngine(), argv=argv)
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

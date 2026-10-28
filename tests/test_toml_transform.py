@@ -10,6 +10,7 @@ import tomllib
 import pytest
 from tomlkit.toml_document import TOMLDocument
 
+from dotman import cli
 from dotman.transforms import toml as MODULE
 from dotman.transforms.framework import SelectorAction, emit_transform_output
 
@@ -108,8 +109,10 @@ command = "npx"
         encoding="utf-8",
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "toml",
             str(live_path),
             str(output_path),
             "--mode",
@@ -147,8 +150,10 @@ def test_cleanup_does_not_reuse_compare_file_with_stale_comments(tmp_path: Path)
         encoding="utf-8",
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "toml",
             str(live_path),
             str(output_path),
             "--mode",
@@ -183,8 +188,10 @@ def test_cleanup_does_not_reuse_stale_array_of_table_header_comment(
         encoding="utf-8",
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "toml",
             str(live_path),
             str(output_path),
             "--mode",
@@ -212,8 +219,10 @@ def test_cleanup_does_not_reuse_comment_attached_to_different_key(
     live_path.write_text(live_text, encoding="utf-8")
     repo_path.write_text("a = 1 # note\nb = 2\n", encoding="utf-8")
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "toml",
             str(live_path),
             str(output_path),
             "--mode",
@@ -244,8 +253,10 @@ def test_cleanup_does_not_reuse_stale_multiline_array_comment(
         encoding="utf-8",
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "toml",
             str(live_path),
             str(output_path),
             "--mode",
@@ -272,8 +283,10 @@ def test_cleanup_compare_treats_hash_inside_string_as_value_content(
     live_path.write_text('fragment = "section#details"\n', encoding="utf-8")
     compare_path.write_text(compare_text, encoding="utf-8")
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "toml",
             str(live_path),
             str(output_path),
             "--mode",
@@ -300,8 +313,10 @@ def test_merge_does_not_reuse_stale_live_comment(tmp_path: Path) -> None:
     )
     repo_path.write_text("# current\nmanaged = true\n", encoding="utf-8")
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "toml",
             str(live_path),
             str(output_path),
             "--mode",
@@ -337,8 +352,10 @@ def test_merge_does_not_drop_leading_comment_from_overlay_table(
         encoding="utf-8",
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "toml",
             str(live_path),
             str(output_path),
             "--mode",
@@ -1282,7 +1299,7 @@ def run_toml_transform(
         compare_path.write_bytes(compare_text.encode("utf-8"))
         argv += ["--compare-file", str(compare_path)]
 
-    assert MODULE.main([*argv, *selector_args]) == 0
+    assert cli.main(["transform", "toml", *argv, *selector_args]) == 0
     return output_path.read_bytes().decode("utf-8")
 
 
@@ -1618,6 +1635,36 @@ def test_merge_moves_a_dotted_key_table_into_an_overlay_inline_table(tmp_path: P
     )
 
     assert tomllib.loads(output) == {"e": {"a": {"x": 1}, "y": 2}}
+
+
+def test_merge_spaces_tables_moved_into_an_overlay_inline_table_like_tomlkit(
+    tmp_path: Path,
+) -> None:
+    output = run_toml_transform(
+        tmp_path,
+        "[e]\na.x = 1\na.z = 3\n\n[[e.l]]\nn = 1\n",
+        "--selectors",
+        "e.a",
+        "e.l",
+        overlay_text="e = {y = 2}\n",
+    )
+
+    assert output == "e = {a = {x = 1, z = 3}, l = [{n = 1}], y = 2}\n"
+
+
+def test_merge_drops_line_comments_of_tables_moved_into_an_overlay_inline_table(
+    tmp_path: Path,
+) -> None:
+    output = run_toml_transform(
+        tmp_path,
+        "[e.t]\n# lead\nx = 1\n# mid\nz = 3\n\n[[e.l]]\n# lead\nn = 1\n  m = 2  # trailing\n",
+        "--selectors",
+        "e.t",
+        "e.l",
+        overlay_text="e = {y = 2}\n",
+    )
+
+    assert output == "e = {t = {x = 1, z = 3}, l = [{n = 1, m = 2}], y = 2}\n"
 
 
 def test_retained_split_table_keeps_the_comment_above_its_header(tmp_path: Path) -> None:

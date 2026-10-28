@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import plistlib
 
+from dotman import cli
 from dotman.transforms import plist as MODULE
 
 
@@ -31,8 +32,10 @@ def test_compare_file_preserves_existing_bytes(tmp_path: Path) -> None:
     write_plist(input_path, {"Alpha": 1}, fmt=plistlib.FMT_BINARY)
     compare_path.write_bytes(input_path.read_bytes())
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "plist",
             str(input_path),
             str(output_path),
             "--mode",
@@ -56,8 +59,10 @@ def test_strip_mode_without_compare_file_reserializes_requested_format(
 
     write_plist(input_path, {"Alpha": 1}, fmt=plistlib.FMT_BINARY)
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "plist",
             str(input_path),
             str(output_path),
             "--mode",
@@ -82,8 +87,10 @@ def test_merge_mode_without_compare_file_reserializes_requested_format(
     write_plist(live_path, {"Alpha": 1}, fmt=plistlib.FMT_BINARY)
     write_plist(repo_path, {"Alpha": 1})
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "plist",
             str(live_path),
             str(output_path),
             "--mode",
@@ -112,8 +119,10 @@ def test_strip_mode_retain_key_keeps_only_selected_keys(tmp_path: Path) -> None:
         },
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "plist",
             str(input_path),
             str(output_path),
             "--mode",
@@ -142,8 +151,10 @@ def test_strip_mode_remove_key_regex_strips_matching_keys(tmp_path: Path) -> Non
         },
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "plist",
             str(input_path),
             str(output_path),
             "--mode",
@@ -174,8 +185,10 @@ def test_merge_mode_retain_key_merges_selected_overlay_keys(tmp_path: Path) -> N
     )
     write_plist(repo_path, {"KeepRepo": "repo"})
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "plist",
             str(live_path),
             str(output_path),
             "--mode",
@@ -215,8 +228,10 @@ def test_merge_mode_retain_key_regex_preserves_matching_live_keys(tmp_path: Path
     )
     write_plist(repo_path, {"ManagedKey": "repo"})
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "plist",
             str(live_path),
             str(output_path),
             "--mode",
@@ -253,8 +268,10 @@ def test_merge_mode_remove_key_preserves_unselected_live_keys(tmp_path: Path) ->
     )
     write_plist(repo_path, {"WindowGeometry": "repo-geometry"})
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "plist",
             str(live_path),
             str(output_path),
             "--mode",
@@ -291,8 +308,10 @@ def test_merge_mode_remove_key_reapplies_repo_over_unmanaged_live_keys(tmp_path:
     )
     write_plist(repo_path, {"ManagedKey": "repo-value"})
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "plist",
             str(live_path),
             str(output_path),
             "--mode",
@@ -338,8 +357,10 @@ def test_merge_mode_remove_key_reflects_nested_deletions_from_repo(tmp_path: Pat
         },
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "plist",
             str(live_path),
             str(output_path),
             "--mode",
@@ -363,7 +384,6 @@ def test_merge_mode_remove_key_reflects_nested_deletions_from_repo(tmp_path: Pat
 
 
 def test_malformed_xml_plist_is_a_clean_cli_error(tmp_path: Path, capsys) -> None:
-    from dotman import cli
 
     input_path = tmp_path / "input.plist"
     input_path.write_text("<plist><dict><key>a</key>", encoding="utf-8")
@@ -373,7 +393,6 @@ def test_malformed_xml_plist_is_a_clean_cli_error(tmp_path: Path, capsys) -> Non
 
 
 def test_value_unsupported_by_output_format_is_a_clean_cli_error(tmp_path: Path, capsys) -> None:
-    from dotman import cli
 
     input_path = tmp_path / "input.plist"
     write_plist(input_path, {"archived": plistlib.UID(1)}, fmt=plistlib.FMT_BINARY)
