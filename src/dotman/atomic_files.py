@@ -143,6 +143,18 @@ def remove_empty_directory_tree(path: Path) -> None:
     path.rmdir()
 
 
+def prune_empty_parents(path: Path, *, root: Path) -> None:
+    """Remove the now-empty parents of a deleted path, stopping below root or its parent."""
+    prune_root = root if root.is_dir() else root.parent
+    current = path.parent
+    while current.exists() and current != prune_root and current != current.parent:
+        try:
+            current.rmdir()
+        except OSError:
+            break
+        current = current.parent
+
+
 def _fsync_directory(directory: Path) -> None:
     # The rename is durable only once its directory entry is on disk; Sync Base
     # records and snapshot manifests acknowledge content written here.

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from dotman.atomic_files import (
     create_directories_durably,
+    prune_empty_parents,
     remove_empty_directory_tree,
     write_bytes_atomic,
     write_symlink_atomic,
@@ -17,27 +18,10 @@ class PrivilegedOperationError(RuntimeError):
 
 
 
-def _write_bytes_atomic(path: Path, *, mode: int | None) -> None:
-    write_bytes_atomic(path, sys.stdin.buffer.read(), mode=mode)
-
-
-
-def _write_symlink_atomic(path: Path, target: str) -> None:
-    write_symlink_atomic(path, target)
-
-
-
 def _delete_path_and_prune_empty_parents(path: Path, *, root: Path) -> None:
     if path.exists() or path.is_symlink():
         path.unlink()
-    prune_root = root if root.is_dir() else root.parent
-    current = path.parent
-    while current.exists() and current != prune_root and current != current.parent:
-        try:
-            current.rmdir()
-        except OSError:
-            break
-        current = current.parent
+    prune_empty_parents(path, root=root)
 
 
 
@@ -61,12 +45,12 @@ def main(argv: list[str] | None = None) -> int:
             if not 1 <= len(args) <= 2:
                 raise PrivilegedOperationError("write-bytes-atomic requires: PATH [MODE]")
             mode = int(args[1]) if len(args) == 2 else None
-            _write_bytes_atomic(Path(args[0]), mode=mode)
+            write_bytes_atomic(Path(args[0]), sys.stdin.buffer.read(), mode=mode)
             return 0
         if command == "write-symlink-atomic":
             if len(args) != 2:
                 raise PrivilegedOperationError("write-symlink-atomic requires: PATH TARGET")
-            _write_symlink_atomic(Path(args[0]), args[1])
+            write_symlink_atomic(Path(args[0]), args[1])
             return 0
         if command == "delete-path-and-prune-empty-parents":
             if len(args) != 2:

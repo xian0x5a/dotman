@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-from dotman.atomic_files import create_directories_durably
+from dotman.atomic_files import create_directories_durably, prune_empty_parents
 from dotman.atomic_files import remove_empty_directory_tree as atomic_remove_empty_directory_tree
 from dotman.atomic_files import write_bytes_atomic as atomic_write_bytes_atomic
 from dotman.atomic_files import write_symlink_atomic as atomic_write_symlink_atomic
@@ -24,7 +24,7 @@ from dotman.command_runtime import (
 
 from dotman.interaction_policy import no_confirm_enabled
 from dotman.printable import terminal_safe_line
-from dotman.terminal import colors_enabled
+from dotman.terminal import colors_enabled, has_controlling_terminal
 
 _SUDO_KEEPALIVE_INTERVAL_SECONDS = 30
 _PRIVILEGED_HELPER_MODULE = "dotman.privileged_ops"
@@ -44,18 +44,9 @@ def _askpass_arguments() -> tuple[str, ...]:
     # Without a terminal, sudo only falls back to SUDO_ASKPASS when a display
     # is set (#114). `-A` makes it use the helper anyway, so a helper that needs
     # no display also works in headless runs such as cron.
-    if os.environ.get("SUDO_ASKPASS") and not _has_controlling_terminal():
+    if os.environ.get("SUDO_ASKPASS") and not has_controlling_terminal():
         return ("-A",)
     return ()
-
-
-def _has_controlling_terminal() -> bool:
-    # The same check sudo makes before it prompts on a terminal.
-    try:
-        os.close(os.open("/dev/tty", os.O_RDWR))
-    except OSError:
-        return False
-    return True
 
 
 class _SudoLease:
@@ -281,14 +272,7 @@ def delete_path_and_prune_empty_parents(path: Path, *, root: Path) -> None:
             raise PermissionError(stderr or f"permission denied for {path}")
         return
 
-    prune_root = root if root.is_dir() else root.parent
-    current = path.parent
-    while current.exists() and current != prune_root and current != current.parent:
-        try:
-            current.rmdir()
-        except OSError:
-            break
-        current = current.parent
+    prune_empty_parents(path, root=root)
 
 
 
