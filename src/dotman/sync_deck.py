@@ -311,6 +311,32 @@ def _review_difference(
 
 NOOP_NOTICE = "Nothing to do: Approval would neither write nor record a Sync Base"
 
+# The session's rejection codes are protocol terms; the Deck explains them.
+REJECTION_NOTICES = {
+    "terminal": "This Sync session has ended; run sync again to make changes.",
+    "preview": "Dry run: nothing is applied.",
+    "stale": "The session changed before this action arrived; try again.",
+}
+
+
+def rejection_notice(result: CommandRejected, row=None) -> str:
+    if result.reason in REJECTION_NOTICES:
+        return REJECTION_NOTICES[result.reason]
+    if result.reason != "disallowed":
+        # The Deck builds every command from the current view, so these mean a Deck bug.
+        return f"Unexpected session rejection ({result.reason}); please report it."
+    if result.diagnostics:
+        return "\n".join(item.display_message for item in result.diagnostics)
+    if row is None:
+        return "That action is not available here."
+    resolution = row_resolution(row)
+    if resolution == "Observation failed":
+        return ("Observation failed, so this row has no Proposal to select or review. "
+                "Fix the error shown in its detail, then run sync again.")
+    if not row.allowed_commands:
+        return f"{resolution}: this row has nothing to select or review."
+    return f"{resolution}: that action is not available for this row."
+
 
 def set_selected(session: SyncSession, row, selected: bool):
     view = session.view
@@ -422,13 +448,13 @@ class CommandDeck:
         if isinstance(focused, SessionRow) and focused.proposal is not None and focused.proposal.noop:
             self.notice = NOOP_NOTICE
         else:
-            self.notice = result.reason if isinstance(result, CommandRejected) else ""
+            self.notice = rejection_notice(result, row) if isinstance(result, CommandRejected) else ""
 
     def select_all(self, selected: bool) -> None:
         if self.reviewing or self.confirming:
             return
         result = set_all_selected(self.session, selected, tuple(row.row_id for row in self.visible_rows))
-        self.notice = result.reason if isinstance(result, CommandRejected) else ""
+        self.notice = rejection_notice(result) if isinstance(result, CommandRejected) else ""
 
     def open_review(self) -> None:
         row = self.focused_row
@@ -439,7 +465,7 @@ class CommandDeck:
             return
         result = review(self.session, row.row_id)
         if isinstance(result, CommandRejected):
-            self.notice = result.reason
+            self.notice = rejection_notice(result, row)
         else:
             self.reviewing = True
 
@@ -449,7 +475,7 @@ class CommandDeck:
             return
         result = edit_proposal(self.session, row.row_id)
         if isinstance(result, CommandRejected):
-            self.notice = result.reason
+            self.notice = rejection_notice(result, row)
         elif result.result.status == "cancelled":
             self.notice = "Editor cancelled."
         elif result.result.status == "unchanged":
@@ -467,7 +493,7 @@ class CommandDeck:
     def set_commit(self, repo: str, selected: bool) -> None:
         view = self.session.view
         result = self.session.dispatch(SetCommit(view.session_id, view.revision, repo, selected))
-        self.notice = result.reason if isinstance(result, CommandRejected) else ""
+        self.notice = rejection_notice(result) if isinstance(result, CommandRejected) else ""
 
     def toggle_all_commits(self) -> None:
         """Everything on unless everything already is."""
@@ -1831,7 +1857,7 @@ class SyncDeckApp(App[bool]):
     def set_resolution(self, row: SessionRow, intent: str) -> None:
         def change():
             result = set_resolution_intent(self.deck.session, row.row_id, intent)
-            self.deck.notice = result.reason if isinstance(result, CommandRejected) else ""
+            self.deck.notice = rejection_notice(result, row) if isinstance(result, CommandRejected) else ""
         self.materialize(change)
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
@@ -1874,7 +1900,7 @@ class SyncDeckApp(App[bool]):
             return
         def retry():
             result = retry_materialization(self.deck.session, row.row_id)
-            self.deck.notice = result.reason if isinstance(result, CommandRejected) else ""
+            self.deck.notice = rejection_notice(result, row) if isinstance(result, CommandRejected) else ""
         self.materialize(retry)
 
     def action_copy(self) -> None:
