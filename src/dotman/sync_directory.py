@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from bisect import bisect_left
 from dataclasses import dataclass, replace
+from functools import cached_property
 from pathlib import Path
 import stat
 
@@ -24,15 +26,30 @@ class CensusFailure:
 class DirectoryCensus:
     # None denotes a payload candidate; failures retain their lexical path.
     entries: tuple[tuple[str, tuple[CensusFailure, ...]], ...]
+    # Sorted, so each path's descendants form one contiguous run.
     repository_leaves: tuple[str, ...] = ()
     live_leaves: tuple[str, ...] = ()
     unrestricted: bool = False
 
+    @cached_property
+    def _leaf_sets(self) -> dict[bool, frozenset[str]]:
+        return {True: frozenset(self.repository_leaves), False: frozenset(self.live_leaves)}
+
     def blockers(self, relative: str, *, repository: bool) -> tuple[str, ...]:
+        """Leaves that are ancestors or descendants of `relative`, in sorted order.
+
+        Called for every child, so avoid a scan of every leaf: look up each
+        parent prefix, then bisect the sorted leaves for the descendant run.
+        """
         leaves = self.repository_leaves if repository else self.live_leaves
-        return tuple(path for path in leaves if path != relative and (
-            relative.startswith(path + "/") or path.startswith(relative + "/")
-        ))
+        parts = relative.split("/")
+        ancestors = tuple(
+            parent for parent in ("/".join(parts[:depth]) for depth in range(1, len(parts)))
+            if parent in self._leaf_sets[repository]
+        )
+        # "0" is the code point right after "/", so it bounds the `relative/` prefix run.
+        descendants = leaves[bisect_left(leaves, relative + "/"):bisect_left(leaves, relative + "0")]
+        return ancestors + descendants
 
 
 def census_directory(
