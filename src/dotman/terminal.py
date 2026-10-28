@@ -19,6 +19,10 @@ ESCAPE_INPUT = "\x1b"
 
 # Lives here rather than in cli_style so dotman.cli can use it without loading
 # dotman.models at startup. Callers pass the stream they actually write to.
+def colors_enabled(stream: TextIO) -> bool:
+    return stream.isatty() and os.environ.get("NO_COLOR") is None
+
+
 def has_controlling_terminal() -> bool:
     # The same check sudo makes before it prompts on a terminal.
     try:
@@ -26,10 +30,6 @@ def has_controlling_terminal() -> bool:
     except OSError:
         return False
     return True
-
-
-def colors_enabled(stream: TextIO) -> bool:
-    return stream.isatty() and os.environ.get("NO_COLOR") is None
 
 
 # Foreground terminal commands (a sudo password prompt, a tty Editor) and
