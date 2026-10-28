@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Mapping
 
@@ -303,14 +303,20 @@ def resolve_tracked_package_entry(
 
 
 
-def collect_static_target_candidates(
+def _collect_target_candidates(
     planning_context: PlanningContext,
     selections: list[ResolvedPackageSelection],
     *,
     operation: str,
-) -> tuple[list[PackagePlanningInput], dict[Path, list[TrackedTargetCandidate]]]:
+    include_target_summary: bool,
+) -> tuple[list[PackagePlanningInput], list[tuple[Path, TrackedTargetCandidate]]]:
+    """Plan each selection's targets and list the paths they claim, in order.
+
+    Each candidate's `plan_index` is its selection's index. A target summary
+    also inspects gitignore patterns and validates declaration conflicts.
+    """
     planning_inputs: list[PackagePlanningInput] = []
-    candidates_by_path: dict[Path, list[TrackedTargetCandidate]] = defaultdict(list)
+    candidates: list[tuple[Path, TrackedTargetCandidate]] = []
     for plan_index, selection in enumerate(selections):
         repo = get_repository(planning_context, selection.identity.repo)
         package_context = build_package_planning_context(repo, selection)
@@ -323,8 +329,8 @@ def collect_static_target_candidates(
             inferred_os=package_context.inferred_os,
             declaration_package_ids={selection.identity.package_id},
             inspect_live_symlinks=False,
-            inspect_gitignore_patterns=False,
-            validate_declaration_conflicts=False,
+            inspect_gitignore_patterns=include_target_summary,
+            validate_declaration_conflicts=include_target_summary,
         )
         planning_inputs.append(
             PackagePlanningInput(
@@ -337,32 +343,76 @@ def collect_static_target_candidates(
         for target_index, metadata in enumerate(target_metadata):
             if not target_claims_path(metadata.target):
                 continue
+            target_summary = _tracked_target_summary(planning_context, metadata) if include_target_summary else None
             candidate_path = operation_write_path(
                 repo_path=metadata.repo_path,
                 live_path=metadata.live_path,
                 operation=operation,
             )
-            candidates_by_path[candidate_path].append(
-                TrackedTargetCandidate(
-                    plan_index=plan_index,
-                    target_index=target_index,
-                    live_path=metadata.live_path,
-                    precedence=1 if selection.explicit else 0,
-                    precedence_name="explicit" if selection.explicit else "implicit",
-                    selection=selection,
-                    selection_label=selection.selection_label,
+            candidates.append((candidate_path, TrackedTargetCandidate(
+                plan_index=plan_index,
+                target_index=target_index,
+                live_path=metadata.live_path,
+                precedence=1 if selection.explicit else 0,
+                precedence_name="explicit" if selection.explicit else "implicit",
+                selection=selection,
+                selection_label=selection.selection_label,
+                package_id=metadata.package_id,
+                target_name=metadata.target_name,
+                target_label=repo_qualified_target_text(
+                    repo_name=repo.config.name,
                     package_id=metadata.package_id,
                     target_name=metadata.target_name,
-                    target_label=repo_qualified_target_text(
-                        repo_name=repo.config.name,
-                        package_id=metadata.package_id,
-                        target_name=metadata.target_name,
-                        bound_profile=selection.bound_profile,
-                    ),
-                )
-            )
-    return planning_inputs, candidates_by_path
+                    bound_profile=selection.bound_profile,
+                ),
+                target_summary=target_summary,
+            )))
+    return planning_inputs, candidates
 
+
+def _tracked_target_summary(planning_context: PlanningContext, metadata: TargetMetadata) -> TrackedTargetSummary:
+    return TrackedTargetSummary(
+        target_name=metadata.target_name,
+        repo_path=metadata.repo_path,
+        live_path=metadata.live_path,
+        target_kind=resolve_target_kind(
+            target_type=metadata.target.target_type,
+            repo_path=metadata.repo_path,
+            live_path=metadata.live_path,
+            target_label=metadata.canonical,
+            file_symlink_mode=planning_context.config.file_symlink_mode,
+            dir_symlink_mode=planning_context.config.dir_symlink_mode,
+        ),
+        render=metadata.target.render or "raw",
+        capture=metadata.target.capture or "raw",
+        editor=metadata.target.editor,
+        compare_repo=metadata.target.compare_repo or "raw",
+        compare_live=metadata.target.compare_live or metadata.compare_live,
+        additional_sources=metadata.target.additional_sources,
+        additional_source_entries=metadata.target.additional_source_entries,
+        chmod=metadata.chmod,
+    )
+
+
+def _group_candidates_by_path(
+    candidates: list[tuple[Path, TrackedTargetCandidate]],
+) -> dict[Path, list[TrackedTargetCandidate]]:
+    candidates_by_path: dict[Path, list[TrackedTargetCandidate]] = defaultdict(list)
+    for candidate_path, candidate in candidates:
+        candidates_by_path[candidate_path].append(candidate)
+    return candidates_by_path
+
+
+def collect_static_target_candidates(
+    planning_context: PlanningContext,
+    selections: list[ResolvedPackageSelection],
+    *,
+    operation: str,
+) -> tuple[list[PackagePlanningInput], dict[Path, list[TrackedTargetCandidate]]]:
+    planning_inputs, candidates = _collect_target_candidates(
+        planning_context, selections, operation=operation, include_target_summary=False,
+    )
+    return planning_inputs, _group_candidates_by_path(candidates)
 
 
 def collect_tracked_ownership_candidates(
@@ -373,82 +423,20 @@ def collect_tracked_ownership_candidates(
     selections: list[ResolvedPackageSelection] | None = None,
     operation: str = "push",
 ) -> dict[Path, list[TrackedTargetCandidate]]:
-    candidates_by_path: dict[Path, list[TrackedTargetCandidate]] = defaultdict(list)
-    candidate_index = 0
-
     resolved_selections = (
         selections
         if selections is not None
         else resolve_tracked_package_selections(planning_context, entries_by_repo=entries_by_repo)
     )
-    for selection in resolved_selections:
-        repo = get_repository(planning_context, selection.identity.repo)
-        package_context = build_package_planning_context(repo, selection)
-        metadata_targets = build_target_metadata(
-            repo=repo,
-            packages=package_context.resolved_packages,
-            context=package_context.context,
-            selection=selection,
-            operation=operation,
-            inferred_os=package_context.inferred_os,
-            declaration_package_ids={selection.identity.package_id},
-            inspect_live_symlinks=False,
-            inspect_gitignore_patterns=include_target_summary,
-            validate_declaration_conflicts=include_target_summary,
-        )
-        for target_index, metadata in enumerate(metadata_targets):
-            if not target_claims_path(metadata.target):
-                continue
-            target_summary = None
-            if include_target_summary:
-                target_summary = TrackedTargetSummary(
-                    target_name=metadata.target_name,
-                    repo_path=metadata.repo_path,
-                    live_path=metadata.live_path,
-                    target_kind=resolve_target_kind(
-                        target_type=metadata.target.target_type,
-                        repo_path=metadata.repo_path,
-                        live_path=metadata.live_path,
-                        target_label=metadata.canonical,
-                        file_symlink_mode=planning_context.config.file_symlink_mode,
-                        dir_symlink_mode=planning_context.config.dir_symlink_mode,
-                    ),
-                    render=metadata.target.render or "raw",
-                    capture=metadata.target.capture or "raw",
-                    editor=metadata.target.editor,
-                    compare_repo=metadata.target.compare_repo or "raw",
-                    compare_live=metadata.target.compare_live or metadata.compare_live,
-                    additional_sources=metadata.target.additional_sources,
-                    additional_source_entries=metadata.target.additional_source_entries,
-                    chmod=metadata.chmod,
-                )
-            candidate_path = operation_write_path(
-                repo_path=metadata.repo_path,
-                live_path=metadata.live_path,
-                operation=operation,
-            )
-            candidates_by_path[candidate_path].append(
-                TrackedTargetCandidate(
-                    plan_index=candidate_index,
-                    target_index=target_index,
-                    live_path=metadata.live_path,
-                    precedence=1 if selection.explicit else 0,
-                    precedence_name="explicit" if selection.explicit else "implicit",
-                    selection=selection,
-                    selection_label=selection.selection_label,
-                    package_id=metadata.package_id,
-                    target_name=metadata.target_name,
-                    target_label=repo_qualified_target_text(
-                        repo_name=repo.config.name,
-                        package_id=metadata.package_id,
-                        target_name=metadata.target_name,
-                        bound_profile=selection.bound_profile,
-                    ),
-                    target_summary=target_summary,
-                )
-            )
-            candidate_index += 1
-    return candidates_by_path
+    _, candidates = _collect_target_candidates(
+        planning_context, resolved_selections, operation=operation, include_target_summary=include_target_summary,
+    )
+    # Ownership numbers candidates one by one, not by selection.
+    return _group_candidates_by_path(
+        [(candidate_path, replace(candidate, plan_index=candidate_index))
+         for candidate_index, (candidate_path, candidate) in enumerate(candidates)]
+    )
+
 
 
 def validate_tracked_package_ownership(

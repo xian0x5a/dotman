@@ -48,7 +48,6 @@ class ReviewItem:
     editor_explicit: bool = False
     additional_sources: tuple[str, ...] = ()
     additional_source_entries: tuple[AdditionalSource, ...] = field(default=(), repr=False, compare=False)
-    additional_sources_root: Path | None = field(default=None, repr=False, compare=False)
     command_cwd: Path | None = None
     command_env: dict[str, str] | None = field(default=None, repr=False)
     diff_unavailable_reason: str | None = None

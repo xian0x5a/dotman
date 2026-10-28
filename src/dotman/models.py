@@ -123,7 +123,7 @@ class AdditionalSource:
     """An editor input path and the package root that declared it."""
 
     path: str
-    root: Path | None = None
+    root: Path
 
     def to_dict(self) -> str:
         # Configuration and plan output intentionally expose user paths, not
@@ -141,9 +141,6 @@ class EditorSpec:
     additional_sources: tuple[str, ...] = ()
     # Per-entry provenance survives inheritance and append operations.
     additional_source_entries: tuple[AdditionalSource, ...] = field(default=(), repr=False, compare=False)
-    # Kept only for callers constructing an EditorSpec directly. Parsed entries
-    # always carry their own root.
-    additional_sources_root: Path | None = field(default=None, repr=False, compare=False)
     additional_sources_explicit: bool = field(default=False, repr=False, compare=False)
 
     def with_sources_of(self, other: "EditorSpec") -> "EditorSpec":
@@ -152,13 +149,10 @@ class EditorSpec:
             self,
             additional_sources=other.additional_sources,
             additional_source_entries=other.source_entries(),
-            additional_sources_root=other.additional_sources_root,
         )
 
     def source_entries(self) -> tuple[AdditionalSource, ...]:
-        if self.additional_source_entries:
-            return self.additional_source_entries
-        return tuple(AdditionalSource(path, self.additional_sources_root) for path in self.additional_sources)
+        return self.additional_source_entries
 
     def to_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = ({"type": self.type} if self.type is not None else {"run": self.run})
@@ -223,8 +217,6 @@ class TargetSpec:
     compare_live: str = "capture"
     additional_sources: tuple[str, ...] = ()
     additional_source_entries: tuple[AdditionalSource, ...] = field(default=(), repr=False, compare=False)
-    # Compatibility fallback for manually constructed specs.
-    additional_sources_root: Path | None = field(default=None, repr=False, compare=False)
     render_explicit: bool = field(default=False, repr=False, compare=False)
     capture_explicit: bool = field(default=False, repr=False, compare=False)
     compare_repo_explicit: bool = field(default=False, repr=False, compare=False)
@@ -879,7 +871,6 @@ class TargetPlan:
     editor_explicit: bool = field(default=False, repr=False, compare=False)
     additional_sources: tuple[str, ...] = ()
     additional_source_entries: tuple[AdditionalSource, ...] = field(default=(), repr=False, compare=False)
-    additional_sources_root: Path | None = field(default=None, repr=False, compare=False)
     render_command: str | None = None
     capture_command: str | None = None
     live_path_is_symlink: bool = field(default=False, repr=False)
