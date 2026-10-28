@@ -109,6 +109,7 @@ class Repository:
         self.hooks = self._load_repo_hooks()
         self.packages = self._load_packages()
         self.groups = self._load_groups()
+        self._reject_shared_package_group_ids()
         self.profiles = self._load_profiles()
         self.local_vars = self._load_local_vars()
         self._resolved_packages: dict[str, PackageSpec] = {}
@@ -282,6 +283,17 @@ class Repository:
             )
         return packages
 
+    def _reject_shared_package_group_ids(self) -> None:
+        # Selectors name packages and groups in one namespace, so a shared ID
+        # could never be selected; rejecting it here spares every lookup the check.
+        shared_ids = sorted(self.packages.keys() & self.groups.keys())
+        if shared_ids:
+            raise UsageError(
+                f"repo '{self.config.name}' uses the same ID for a package and a group: "
+                + ", ".join(shared_ids)
+                + "; rename one of them"
+            )
+
     def _load_groups(self) -> dict[str, GroupSpec]:
         groups: dict[str, GroupSpec] = {}
         groups_root = self.root / "groups"
@@ -420,10 +432,6 @@ class Repository:
             for member in current_group.members:
                 package_exists = member in self.packages
                 group_exists = member in self.groups
-                if package_exists and group_exists:
-                    raise UsageError(
-                        f"selector '{member}' is ambiguous between package and group in repo '{self.config.name}'"
-                    )
                 if group_exists:
                     visit(member, (*stack, current_group_id))
                     continue

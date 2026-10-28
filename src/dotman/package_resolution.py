@@ -70,10 +70,6 @@ def resolve_package_ids(
     ) -> None:
         package_exists = current_selector in repo.packages
         group_exists = current_selector in repo.groups
-        if package_exists and group_exists:
-            raise UnresolvedSelectorError(
-                f"selector '{current_selector}' is ambiguous between package and group in repo '{repo.config.name}'"
-            )
         if not package_exists and not group_exists:
             raise UnresolvedSelectorError(
                 f"{source} '{current_selector}' does not resolve in repo '{repo.config.name}'"

@@ -129,3 +129,9 @@ def test_fzf_selection_ignores_output_shaping_user_defaults(
     options = _package_options()
 
     assert _choose_in_terminal(options) == options[SELECTED_LINE_NUMBER - 1][0]
+
+
+def test_choice_request_rejects_options_that_share_a_value() -> None:
+    # A pick returns its value, so a shared value would hide which row was chosen.
+    with pytest.raises(ValueError, match="distinct values"):
+        ChoiceRequest(header_text="pick", options=(ChoiceOption("x", "package x"), ChoiceOption("x", "group x")))

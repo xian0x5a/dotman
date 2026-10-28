@@ -491,10 +491,6 @@ def expand_tracked_package_entry_in_repo(repo: Repository, package_entry: FullSp
         raise UsageError(f"unknown profile '{package_entry.profile}' in repo '{repo.config.name}'")
     package_match = package_entry.selector in repo.packages
     group_match = package_entry.selector in repo.groups
-    if package_match and group_match:
-        raise UsageError(
-            f"selector '{package_entry.selector}' is ambiguous between package and group in repo '{repo.config.name}'"
-        )
     if not package_match and not group_match:
         raise UsageError(f"selector '{package_entry.selector}' did not match any package or group")
     if package_match:

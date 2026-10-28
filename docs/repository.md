@@ -39,6 +39,7 @@ under `examples/repo/`.
 - Meta packages are still normal packages; they may be tracked explicitly and may use `depends` for aggregation.
 - Terminology should follow ArchWiki's distinction between meta packages and package groups: <https://wiki.archlinux.org/title/Meta_package_and_package_group>
 - `/` is reserved for namespacing inside package and group IDs.
+- Packages and groups share one selector namespace, so a repo whose package and group use the same ID fails to load.
 - Repo qualification stays outside the selector with `repo:selector`, not `repo/selector`.
 - `\` is not a valid selector separator.
 - Groups should use a single `members` list for both package selectors and nested group selectors.
