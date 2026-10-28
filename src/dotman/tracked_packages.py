@@ -323,7 +323,6 @@ def describe_tracked_package_entry(
             selection=selection,
             operation="push",
             inferred_os=context.inferred_os,
-            variables=context.variables,
             target_plans=[],
         )
         if executable

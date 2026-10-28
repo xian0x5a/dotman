@@ -8,10 +8,8 @@ from dotman.collisions import TrackedTargetConflictError, TrackedTargetOverride
 from dotman.command_runtime import CommandRuntime, current_command_runtime
 from dotman.config import default_state_root, load_manager_config
 from dotman.errors import UsageError
-from dotman.interaction_policy import InteractionRequiredError
 from dotman.models import (
     FullSpecSelector,
-    ResolvedPackageSelection,
     ResolvedSyncScope,
     SearchMatch,
     SelectorKind,
@@ -20,11 +18,9 @@ from dotman.models import (
     TrackablePackageDetail,
     TrackedPackageEntrySummary,
     TrackedPackageDetail,
-    TrackedPackageEntryIssue,
     TrackedPackageSummary,
     ManagerConfig,
 )
-from dotman.package_resolution import parse_full_spec_selector_text
 from dotman.planning import PlanningContext
 from dotman.projection import ProjectionContext
 from dotman.profiles import rank_profiles
@@ -148,41 +144,6 @@ class DotmanEngine:
         repo = self.get_repo(repo_name)
         return rank_profiles({profile_id: profile.includes for profile_id, profile in repo.profiles.items()})
 
-    def resolve_selector(
-        self,
-        selector: str,
-        repo_name: str | None = None,
-    ) -> tuple[Repository, str, SelectorKind]:
-        exact_matches, partial_matches = self.find_selector_matches(selector, repo_name)
-
-        if len(exact_matches) == 1:
-            return exact_matches[0]
-        if len(exact_matches) > 1:
-            candidates = ", ".join(f"{repo.config.name}:{match}" for repo, match, _ in exact_matches)
-            raise UsageError(f"selector '{selector}' is defined in multiple repos: {candidates}")
-        if len(partial_matches) == 1:
-            repo, match, _selector_kind = partial_matches[0]
-            raise UsageError(
-                f"no exact match for '{selector}'; use exact name '{repo.config.name}:{match}'"
-            )
-        if len(partial_matches) > 1:
-            candidates = ", ".join(f"{repo.config.name}:{match}" for repo, match, _ in partial_matches)
-            raise UsageError(f"selector '{selector}' is ambiguous: {candidates}")
-        raise UsageError(f"selector '{selector}' did not match any package or group")
-
-    def resolve_full_spec_selector_text(self, query_text: str, *, profile: str | None = None) -> tuple[Repository, FullSpecSelector]:
-        explicit_repo, selector, selector_profile = parse_full_spec_selector_text(query_text)
-        repo, resolved_selector, selector_kind = self.resolve_selector(selector, explicit_repo)
-        resolved_profile = profile or selector_profile
-        if not resolved_profile:
-            raise InteractionRequiredError("profile is required in non-interactive mode")
-        return repo, FullSpecSelector(
-            repo=repo.config.name,
-            selector=resolved_selector,
-            selector_kind=selector_kind,
-            profile=resolved_profile,
-        )
-
     def search_selectors(self, query_text: str) -> list[SearchMatch]:
         query = query_text.strip()
         if not query:
@@ -277,22 +238,6 @@ class DotmanEngine:
         with tracking.silencing_skipped_entries():
             return tracking.list_tracked_state(self._tracked_state_context)
 
-    def list_invalid_explicit_package_entries(
-        self,
-        *,
-        bindings_by_repo: dict[str, list[FullSpecSelector]] | None = None,
-    ) -> list[TrackedPackageEntryIssue]:
-        return tracking.list_invalid_explicit_package_entries(
-            self._tracked_state_context,
-            bindings_by_repo=bindings_by_repo,
-        )
-
-    def list_orphan_explicit_package_entries(self) -> list[TrackedPackageEntryIssue]:
-        return tracking.list_orphan_explicit_package_entries(self._tracked_state_context)
-
-    def list_tracked_packages(self) -> list[TrackedPackageSummary]:
-        return tracking.list_tracked_packages(self._tracked_state_context)
-
     def describe_trackable(self, *, repo_name: str, selector: str, selector_kind: SelectorKind) -> TrackablePackageDetail | TrackableGroupDetail:
         return tracking.describe_trackable(
             self._tracked_state_context,
@@ -338,9 +283,6 @@ class DotmanEngine:
     def reset_unusable_sync_bases(self, repo_name: str | None):
         from dotman.sync_base_inspection import reset_unusable_sync_bases
         return reset_unusable_sync_bases(self._planning_context, repo_name)
-
-    def read_tracked_package_entries(self, repo: Repository) -> list[FullSpecSelector]:
-        return tracking.read_tracked_package_entries(repo)
 
     def read_effective_tracked_package_entries(self, repo: Repository) -> list[FullSpecSelector]:
         return tracking.read_effective_tracked_package_entries(repo)
@@ -432,12 +374,6 @@ class DotmanEngine:
             self._planning_context, target_text, include_probes=include_probes,
         )
 
-    def preview_package_selection_implicit_overrides(self, selection: ResolvedPackageSelection) -> list[TrackedTargetOverride]:
-        return planning.preview_package_selection_implicit_overrides(self._planning_context, selection)
-
-    def preview_package_selections_implicit_overrides(self, selections: list[ResolvedPackageSelection]) -> list[TrackedTargetOverride]:
-        return planning.preview_package_selections_implicit_overrides(self._planning_context, selections)
-
     def preview_tracked_package_entry_implicit_overrides(
         self,
         package_entries: list[FullSpecSelector],
@@ -446,11 +382,7 @@ class DotmanEngine:
         selections = [
             selection
             for package_entry in package_entries
-            for selection in planning.resolve_full_spec_selector(
-                self._planning_context,
-                package_entry,
-                operation="push",
-            )
+            for selection in planning.resolve_full_spec_selector(self._planning_context, package_entry)
             if selection.explicit
         ]
         overrides = planning.preview_package_selections_implicit_overrides(
@@ -471,5 +403,4 @@ class DotmanEngine:
 
 __all__ = [
     "DotmanEngine",
-    "rank_profiles",
 ]
