@@ -7,7 +7,7 @@ import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, TypeVar
+from typing import TypeVar
 
 from dotman import cli_emit, cli_style
 from dotman.add import (
@@ -30,7 +30,6 @@ from dotman.interaction import Interaction, choose_with_fzf
 from dotman.errors import UsageError
 from dotman.interaction_policy import InteractionRequiredError, no_confirm_enabled
 from dotman.models import (
-    FullSpecSelector,
     SelectorKind,
     package_ref_text,
 )
@@ -61,12 +60,9 @@ MENU_HEADER_MARKER_STYLE = cli_style.MENU_HEADER_MARKER_STYLE
 MENU_INDEX_STYLE = cli_style.MENU_INDEX_STYLE
 MENU_PROMPT_STYLE = cli_style.MENU_PROMPT_STYLE
 MENU_HINT_STYLE = cli_style.MENU_HINT_STYLE
-MENU_REPO_STYLE = cli_style.MENU_REPO_STYLE
 MENU_ACTION_STYLE_BY_NAME = cli_style.MENU_ACTION_STYLE_BY_NAME
-EXECUTION_STATUS_STYLE_BY_NAME = cli_style.EXECUTION_STATUS_STYLE_BY_NAME
 MENU_SELECTION_OVERHEAD_LINES = 6
 SelectableItem = TypeVar("SelectableItem")
-SinglePartialResolverMode = Literal["confirm", "menu"]
 
 
 def prompt(message: str, *, escape_result: str | None = None) -> str:
@@ -88,10 +84,6 @@ def style_text(text: str, *codes: str) -> str:
 
 def repo_name_from_selection_label(selection_label: str) -> str:
     return cli_style.repo_name_from_selection_label(selection_label)
-
-
-def repo_qualified_selector_text(*, repo_name: str, selector: str) -> str:
-    return cli_style.repo_qualified_selector_text(repo_name=repo_name, selector=selector)
 
 
 def render_package_label(
@@ -124,42 +116,6 @@ def render_package_target_label(*, repo_name: str, package_id: str, target_name:
     )
 
 
-def package_profile_label_text(*, repo_name: str, package_id: str, profile: str) -> str:
-    return cli_style.package_profile_label_text(repo_name=repo_name, package_id=package_id, profile=profile)
-
-
-def render_package_profile_label(*, repo_name: str, package_id: str, profile: str) -> str:
-    return cli_style.render_package_profile_label(
-        repo_name=repo_name,
-        package_id=package_id,
-        profile=profile,
-        use_color=colors_enabled(),
-    )
-
-
-def full_spec_selector_label_text(*, repo_name: str, selector: str, profile: str, selector_first: bool = False) -> str:
-    return cli_style.full_spec_selector_label_text(
-        repo_name=repo_name,
-        selector=selector,
-        profile=profile,
-        selector_first=selector_first,
-    )
-
-
-def render_full_spec_selector_label(*, repo_name: str, selector: str, profile: str, selector_first: bool = False) -> str:
-    return cli_style.render_full_spec_selector_label(
-        repo_name=repo_name,
-        selector=selector,
-        profile=profile,
-        selector_first=selector_first,
-        use_color=colors_enabled(),
-    )
-
-
-def render_full_spec_selector_reference(binding: FullSpecSelector) -> str:
-    return cli_style.render_full_spec_selector_reference(binding, use_color=colors_enabled())
-
-
 def open_editor_path(path: Path, *, missing_editor_label: str = "path") -> int:
     if not add_editor_available():
         print(f"No editor configured. {missing_editor_label}: {terminal_safe_line(str(path))}")
@@ -186,18 +142,6 @@ def _resolve_editor_command() -> list[str]:
     if not editor_command:
         raise ValueError("edit requires a non-empty $VISUAL or $EDITOR")
     return editor_command
-
-
-def render_tracked_reason(reason: str) -> str:
-    return cli_style.render_tracked_reason(reason, use_color=colors_enabled())
-
-
-def render_tracked_state(state: str) -> str:
-    return cli_style.render_tracked_state(state, use_color=colors_enabled())
-
-
-def render_info_section_header(label: str) -> str:
-    return cli_style.render_info_section_header(label, use_color=colors_enabled())
 
 
 def resolve_variable_text(
@@ -227,57 +171,11 @@ def resolve_variable_text(
     )
 
 
-def format_snapshot_timestamp(timestamp: str | None) -> str:
-    return cli_style.format_snapshot_timestamp(timestamp)
-
-
-def render_snapshot_status(status: str) -> str:
-    return cli_style.render_snapshot_status(status, use_color=colors_enabled())
-
-
-def render_snapshot_ref(snapshot_id: str) -> str:
-    return cli_style.render_snapshot_ref(snapshot_id, use_color=colors_enabled())
-
-
-def render_snapshot_metadata_label(label: str) -> str:
-    return cli_style.render_snapshot_metadata_label(label, use_color=colors_enabled())
-
-
-def render_snapshot_provenance(
-    *,
-    repo_name: str | None,
-    package_id: str | None,
-    target_name: str | None,
-    selection_label: str | None,
-    bound_profile: str | None,
-) -> str | None:
-    return cli_style.render_snapshot_provenance(
-        repo_name=repo_name,
-        package_id=package_id,
-        target_name=target_name,
-        selection_label=selection_label,
-        bound_profile=bound_profile,
-        use_color=colors_enabled(),
-    )
-
-
-def render_snapshot_reason(action: str) -> str:
-    return cli_style.render_snapshot_reason(action, use_color=colors_enabled())
-
-
-def render_menu_badge(text: str) -> str:
-    return cli_style.render_menu_badge(text, use_color=colors_enabled())
-
-
 def ui_full_paths_enabled() -> bool:
     ui_config = current_ui_config()
     if ui_config is not None:
         return ui_config.full_paths
     return False
-
-
-def join_menu_display_fields(*fields: str) -> str:
-    return cli_style.join_menu_display_fields(*fields)
 
 
 def build_selector_match_display_fields(*, repo_name: str, selector: str, selector_kind: str) -> tuple[str, ...]:
@@ -426,17 +324,6 @@ def review_menu_prompt() -> str:
     )
 
 
-def partial_match_confirmation_prompt(*, candidate_label: str) -> str:
-    prompt_text = f"Did you mean '{candidate_label}'?"
-    hint_text = "[y/n]"
-    if not colors_enabled():
-        return f"{prompt_text} {hint_text} "
-    return (
-        f"{style_text(prompt_text, *MENU_PROMPT_STYLE)} "
-        f"{style_text(hint_text, *MENU_HINT_STYLE)} "
-    )
-
-
 def review_continue_prompt() -> str:
     prompt_text = "Continue?"
     hint_text = "[Y/n]"
@@ -487,10 +374,6 @@ def interactive_mode_enabled(*, json_output: bool) -> bool:
     return not no_confirm_enabled() and not json_output and sys.stdin.isatty()
 
 
-def confirm_partial_candidate_match(*, candidate_label: str) -> bool:
-    return _prompt_yes_no(partial_match_confirmation_prompt(candidate_label=candidate_label))
-
-
 def parse_review_command(raw_answer: str, item_count: int) -> tuple[str, int | None]:
     answer = raw_answer.strip().lower()
     if not answer or answer == "n":
@@ -524,28 +407,21 @@ def resolve_candidate_match(
     exact_error_text: str,
     partial_error_text: str,
     not_found_text: str,
-    single_partial_mode: SinglePartialResolverMode = "menu",
-    single_partial_error_text: str | None = None,
-    rank_matches: bool = True,
 ) -> SelectableItem:
-    if rank_matches:
-        ranked_exact_matches = sorted(
-            exact_matches,
-            key=lambda match: rank_resolver_option(
-                query=query_text,
-                option=option_resolver(match),
-            ),
-        )
-        ranked_partial_matches = sorted(
-            partial_matches,
-            key=lambda match: rank_resolver_option(
-                query=query_text,
-                option=option_resolver(match),
-            ),
-        )
-    else:
-        ranked_exact_matches = list(exact_matches)
-        ranked_partial_matches = list(partial_matches)
+    ranked_exact_matches = sorted(
+        exact_matches,
+        key=lambda match: rank_resolver_option(
+            query=query_text,
+            option=option_resolver(match),
+        ),
+    )
+    ranked_partial_matches = sorted(
+        partial_matches,
+        key=lambda match: rank_resolver_option(
+            query=query_text,
+            option=option_resolver(match),
+        ),
+    )
     if len(exact_matches) == 1:
         return ranked_exact_matches[0]
     if len(exact_matches) > 1:
@@ -562,23 +438,15 @@ def resolve_candidate_match(
         partial_match = ranked_partial_matches[0]
         partial_option = option_resolver(partial_match)
         if not interactive:
-            if single_partial_error_text is not None:
-                raise InteractionRequiredError(single_partial_error_text)
             raise InteractionRequiredError(
                 f"no exact match for '{query_text}'; use exact name '{exact_name_resolver(partial_match)}'"
             )
-        if single_partial_mode == "menu":
-            selected_index = select_menu_option(
-                header_text=partial_header_text,
-                option_labels=[partial_option.display_label],
-                option_display_fields=[partial_option.display_fields or (partial_option.display_label,)],
-            )
-            return ranked_partial_matches[selected_index]
-        if single_partial_mode != "confirm":
-            raise ValueError(f"unsupported single partial resolver mode: {single_partial_mode}")
-        if not confirm_partial_candidate_match(candidate_label=partial_option.display_label):
-            raise ValueError(f"confirmation required for partial match '{query_text}'")
-        return partial_match
+        selected_index = select_menu_option(
+            header_text=partial_header_text,
+            option_labels=[partial_option.display_label],
+            option_display_fields=[partial_option.display_fields or (partial_option.display_label,)],
+        )
+        return ranked_partial_matches[selected_index]
     if len(partial_matches) > 1:
         if not interactive:
             raise InteractionRequiredError(partial_error_text)
@@ -716,18 +584,6 @@ def print_review_item(index: int, item: ReviewItem, *, full_paths: bool | None =
     full_paths = _effective_full_paths(full_paths)
     use_color = colors_enabled()
     item_label = render_review_item_label(item, full_paths=full_paths, use_color=use_color)
-    if item.is_probe:
-        if not use_color:
-            print(f"  {index:>2}) [{item.action}] {item_label} [probe]")
-            return
-        action_text = style_text(f"[{item.action}]", *MENU_ACTION_STYLE_BY_NAME.get(item.action, ("1",)))
-        probe_badge = cli_style.render_menu_badge("[probe]", use_color=True)
-        print(
-            f"  {style_text(f'{index:>2})', *MENU_INDEX_STYLE)} "
-            f"{action_text} {item_label} {probe_badge}"
-        )
-        return
-
     diff_badge = "[diff unavailable]" if item.diff_unavailable_reason is not None else None
     source_path = display_cli_path(item.source_path, full_paths=full_paths)
     destination_path = display_cli_path(item.destination_path, full_paths=full_paths)
@@ -785,8 +641,6 @@ def print_review_diff_header(
 
 def review_diff_path_line(review_item: ReviewItem, *, full_paths: bool | None = None) -> str:
     full_paths = _effective_full_paths(full_paths)
-    if review_item.is_probe:
-        return "probe target: no files"
     destination_path = display_cli_path(review_item.destination_path, full_paths=full_paths)
     return f"file: {destination_path}"
 
@@ -913,7 +767,6 @@ def resolve_snapshot_record(snapshot_root: Path, snapshot_ref: str | None, *, js
     return matches[selected_index]
 
 
-visible_restore_actions = cli_emit.visible_restore_actions
 build_restore_review_items = cli_emit.build_restore_review_items
 
 

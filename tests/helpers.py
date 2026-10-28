@@ -615,3 +615,14 @@ def untrack_entry(engine, binding_text: str):
     request = UntrackResolver(engine).resolve(binding_text)
     assert isinstance(request, UntrackEntryRequest)
     return engine.remove_persisted_tracked_package_entry(request.record)
+
+
+def full_spec_selector(engine, selector_text: str):
+    """The exact `repo:selector@profile` entry a test records, without track's prompts and conflict checks."""
+    from dotman.models import FullSpecSelector
+    from dotman.package_resolution import parse_full_spec_selector_text
+
+    repo_name, selector, profile = parse_full_spec_selector_text(selector_text)
+    exact_matches, _partial_matches = engine.find_selector_matches(selector, repo_name)
+    [(repo, matched_selector, selector_kind)] = exact_matches
+    return FullSpecSelector(repo=repo.config.name, selector=matched_selector, selector_kind=selector_kind, profile=profile)

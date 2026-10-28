@@ -22,29 +22,6 @@ from dotman.models import UiConfig
 from dotman.ui_context import ui_config_scope
 
 
-def test_run_review_item_diff_prints_probe_summary(capsys) -> None:
-    review_item = ReviewItem(
-        selection_label="example:app@basic",
-        package_id="app",
-        target_name="version",
-        action="install",
-        operation="push",
-        repo_path=Path("/repo/app"),
-        live_path=Path("/repo/app"),
-        source_path="",
-        destination_path="",
-        is_probe=True,
-        hook_command_summaries=("pre_push: echo pre", "post_push: echo post"),
-    )
-
-    run_review_item_diff(review_item)
-
-    assert capsys.readouterr().out == (
-        "[pre_push] echo pre\n"
-        "[post_push] echo post\n"
-    )
-
-
 def test_run_review_item_diff_invokes_git_diff(monkeypatch) -> None:
     repo_path = Path.home() / ".config" / "repo-file"
     live_path = Path.home() / ".local" / "share" / "live-file"

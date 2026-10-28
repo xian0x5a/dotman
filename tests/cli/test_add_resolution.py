@@ -155,8 +155,3 @@ def test_add_resolver_owns_manifest_write_confirmation_policy(tmp_path: Path) ->
         repo_name="alpha",
         package_id="git",
     ) is False
-    assert AddResolver(engine).confirm_manifest_write(
-        repo_name="alpha",
-        package_id="git",
-        no_confirm=True,
-    ) is True

@@ -51,7 +51,7 @@ def prepare_repository_apply(
         hooks = plan_hooks(
             item.repo, context.resolved_packages, context.context,
             selection=item.selection, operation="pull", inferred_os=context.inferred_os,
-            variables=context.variables, target_plans=targets,
+            target_plans=targets,
             declaration_package_ids={item.selection.identity.package_id},
         )
         # Guards already narrowed capability during Observation and never rerun.

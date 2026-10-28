@@ -22,7 +22,7 @@ def test_directory_root_is_auxiliary_selection_not_proposal_approval():
         assert session.view.rows[0].included
         deck.open_review()
         assert not deck.reviewing
-        document = sync_document(SimpleNamespace(dry_run=True, scopes=[]), session, None)
+        document = sync_document(SimpleNamespace(dry_run=True, no_confirm=False, scopes=[]), session, None)
         assert document["directory_root_work"] == [{
             "identity": "r:p.tree", "selected": True, "directions": ["push"], "diagnostics": [],
         }]
@@ -215,5 +215,5 @@ def test_live_stat_counts_each_changed_target_once_including_modes_and_reapplies
             command(session, SetApproval, row.row_id, True)
         text = CommandDeck(session, use_color=False).confirmation_text()
         assert "live: 3 (1 reapplied)" in text and "modes" not in text
-        summary = sync_document(SimpleNamespace(dry_run=True, scopes=[]), session, None)["summary"]
+        summary = sync_document(SimpleNamespace(dry_run=True, no_confirm=False, scopes=[]), session, None)["summary"]
         assert (summary["live_changes"], summary["live_reapplies"]) == (3, 1)

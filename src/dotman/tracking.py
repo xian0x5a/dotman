@@ -92,7 +92,6 @@ class PersistedTrackedPackageEntryRecord:
     state_dir: Path
     package_entry: FullSpecSelector
     repo: Repository | None = None
-    selector_kind: SelectorKind | None = None
     package_ids: tuple[str, ...] = ()
     issue: TrackedPackageEntryIssue | None = None
 
@@ -794,10 +793,7 @@ def find_persisted_tracked_package_entry_matches(
     binding_text: str,
 ) -> tuple[str, str | None, list[PersistedTrackedPackageEntryRecord], list[PersistedTrackedPackageEntryRecord]]:
     explicit_repo, selector, profile = parse_full_spec_selector_text(binding_text)
-    tracked_records = [
-        record for record in all_persisted_tracked_package_entry_records(context)
-        if record.issue is None or record.issue.state in {"invalid", "orphan"}
-    ]
+    tracked_records = all_persisted_tracked_package_entry_records(context)
     if explicit_repo is not None:
         tracked_records = [record for record in tracked_records if record.package_entry.repo == explicit_repo]
     if profile is not None:
@@ -952,9 +948,9 @@ def iter_tracked_package_entries(
         if record.issue is not None and record.issue.reason != "package_invalid":
             _record_skipped_tracked_row(record.package_entry, record.issue.message, record.state_dir)
     return [
-        (record.repo, record.package_entry, record.selector_kind or "package", list(record.package_ids))
+        # Persisted rows are always package entries; groups are flattened when recorded.
+        (record.repo, record.package_entry, "package", list(record.package_ids))
         for record in valid_records
-        if record.repo is not None
     ]
 def configured_persisted_tracked_package_entry_records(
     context: TrackedStateContext,
@@ -983,7 +979,6 @@ def configured_persisted_tracked_package_entry_records(
                     state_dir=repo.config.state_path,
                     package_entry=binding,
                     repo=repo,
-                    selector_kind="package",
                     package_ids=package_ids,
                 )
             )

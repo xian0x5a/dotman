@@ -274,10 +274,7 @@ def build_package_planning_context(
 def resolve_full_spec_selector(
     planning_context: PlanningContext,
     query: FullSpecSelector,
-    *,
-    operation: str,
 ) -> list[ResolvedPackageSelection]:
-    del operation
     repo = get_repository(planning_context, query.repo)
     root_package_ids = selected_package_ids(repo, query.selector, query.selector_kind)
     return _resolved_package_selections_from_roots(
@@ -484,13 +481,6 @@ def tracked_package_ownership_conflicts(
     ]
 
 
-def preview_package_selection_implicit_overrides(
-    planning_context: PlanningContext,
-    selection: ResolvedPackageSelection,
-) -> list[TrackedTargetOverride]:
-    return preview_package_selections_implicit_overrides(planning_context, [selection])
-
-
 def preview_package_selections_implicit_overrides(
     planning_context: PlanningContext,
     selections: list[ResolvedPackageSelection],
@@ -611,14 +601,12 @@ def plan_hooks(
     context: dict[str, Any],
     *,
     selection: ResolvedPackageSelection,
-    operation: str | None = None,
+    operation: str,
     inferred_os: str,
-    variables: dict[str, Any],
     target_plans: list[Any],
     declaration_package_ids: set[str] | None = None,
 ) -> dict[str, list[HookPlan]]:
-    del variables
-    hook_names = VALID_HOOK_NAMES if operation is None else HOOK_NAMES_BY_OPERATION.get(operation, VALID_HOOK_NAMES)
+    hook_names = HOOK_NAMES_BY_OPERATION.get(operation, VALID_HOOK_NAMES)
     hooks: dict[str, list[HookPlan]] = defaultdict(list)
     targets_by_owner = {
         (target.package_id, target.target_name): target
@@ -631,7 +619,7 @@ def plan_hooks(
             repo=repo,
             package=package,
             selection=selection,
-            operation=operation or "push",
+            operation=operation,
             inferred_os=inferred_os,
             context=context,
         )

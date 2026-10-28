@@ -129,10 +129,7 @@ class AddResolver:
         *,
         repo_name: str,
         package_id: str,
-        no_confirm: bool = False,
     ) -> bool:
-        if no_confirm:
-            return True
         if self._interaction is None:
             return False
         return self._interaction.confirm(

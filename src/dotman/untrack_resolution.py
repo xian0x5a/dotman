@@ -448,7 +448,6 @@ class UntrackResolver:
             repo_name=record.package_entry.repo,
             selector=record.package_entry.selector,
             profile=record.package_entry.profile,
-            selector_first=True,
             use_color=self._use_color,
         )
         state_badge = ""

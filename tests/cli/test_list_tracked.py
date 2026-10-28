@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import dotman.cli_interaction as cli
+from dotman import cli_style
 from dotman.cli import main
 
 from tests.helpers import (
@@ -16,14 +16,11 @@ from tests.helpers import (
 )
 
 
-def test_render_tracked_state_uses_warning_colors_for_orphan_and_invalid(monkeypatch) -> None:
-    monkeypatch.delenv("NO_COLOR")
-    monkeypatch.setattr("sys.stdout.isatty", lambda: True)
-
-    assert cli.render_tracked_state("explicit") == "\x1b[2mexplicit\x1b[0m"
-    assert cli.render_tracked_state("implicit") == "\x1b[2mimplicit\x1b[0m"
-    assert cli.render_tracked_state("orphan") == "\x1b[2;33morphan\x1b[0m"
-    assert cli.render_tracked_state("invalid") == "\x1b[2;31minvalid\x1b[0m"
+def test_render_tracked_state_uses_warning_colors_for_orphan_and_invalid() -> None:
+    assert cli_style.render_tracked_state("explicit", use_color=True) == "\x1b[2mexplicit\x1b[0m"
+    assert cli_style.render_tracked_state("implicit", use_color=True) == "\x1b[2mimplicit\x1b[0m"
+    assert cli_style.render_tracked_state("orphan", use_color=True) == "\x1b[2;33morphan\x1b[0m"
+    assert cli_style.render_tracked_state("invalid", use_color=True) == "\x1b[2;31minvalid\x1b[0m"
 
 
 def test_list_tracked_cli_lists_unique_tracked_packages(

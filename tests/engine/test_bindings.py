@@ -7,7 +7,9 @@ import pytest
 
 from dotman.models import FullSpecSelector
 from dotman.engine import DotmanEngine
+from dotman.tracking import read_tracked_package_entries
 from tests.helpers import (
+    full_spec_selector,
     EXAMPLE_REPO,
     write_manager_config,
     write_multi_instance_repo,
@@ -163,7 +165,7 @@ def test_record_binding_flattens_group_into_package_bindings(
 
     config_path = write_manager_config(tmp_path)
     engine = DotmanEngine.from_config_path(config_path)
-    _repo, binding = engine.resolve_full_spec_selector_text("example:os/arch@basic")
+    binding = full_spec_selector(engine, "example:os/arch@basic")
     state_path = tmp_path / "state" / "dotman" / "repos" / "example" / "tracked-packages.toml"
 
     assert binding.selector_kind == "group"
@@ -218,7 +220,7 @@ def test_record_binding_replaces_existing_selector_binding_with_new_profile(
 
     engine.record_tracked_package_entry(FullSpecSelector(repo="example", selector="git", selector_kind="package", profile="work"))
 
-    bindings = engine.read_tracked_package_entries(engine.get_repo("example"))
+    bindings = read_tracked_package_entries(engine.get_repo("example"))
     assert [(binding.selector, binding.profile) for binding in bindings] == [
         ("git", "work"),
         ("nvim", "basic"),
@@ -242,13 +244,13 @@ def test_record_binding_keeps_distinct_profiles_for_multi_instance_package(
     engine.record_tracked_package_entry(FullSpecSelector(repo="fixture", selector="profiled", selector_kind="package", profile="basic"))
     engine.record_tracked_package_entry(FullSpecSelector(repo="fixture", selector="profiled", selector_kind="package", profile="work"))
 
-    bindings = engine.read_tracked_package_entries(engine.get_repo("fixture"))
+    bindings = read_tracked_package_entries(engine.get_repo("fixture"))
     assert [(binding.selector, binding.profile) for binding in bindings] == [
         ("profiled", "basic"),
         ("profiled", "work"),
     ]
 
-    packages = engine.list_tracked_packages()
+    packages = engine.list_tracked_state().packages
     assert [(package.package_ref, package.bound_profile) for package in packages] == [
         ("profiled<basic>", "basic"),
         ("profiled<work>", "work"),
@@ -384,7 +386,7 @@ def test_remove_binding_deletes_only_the_selected_tracked_binding(
     assert removed.repo == "example"
     assert removed.selector == "git"
     assert removed.profile == "basic"
-    assert engine.read_tracked_package_entries(engine.get_repo("example")) == [
+    assert read_tracked_package_entries(engine.get_repo("example")) == [
         removed.__class__(repo="example", selector="core-cli-meta", selector_kind="package", profile="basic")
     ]
 
@@ -419,7 +421,7 @@ def test_remove_binding_allows_selector_only_when_tracked_binding_is_unique(
     removed = untrack_entry(engine, "example:git")
 
     assert removed == removed.__class__(repo="example", selector="git", selector_kind="package", profile="basic")
-    assert engine.read_tracked_package_entries(engine.get_repo("example")) == []
+    assert read_tracked_package_entries(engine.get_repo("example")) == []
 
 def test_remove_binding_can_remove_invalid_configured_binding(
     tmp_path: Path,
@@ -457,7 +459,7 @@ def test_remove_binding_can_remove_invalid_configured_binding(
     removed = untrack_entry(engine, "example:old-meta@basic")
 
     assert removed == removed.__class__(repo="example", selector="old-meta", selector_kind="package", profile="basic")
-    assert engine.read_tracked_package_entries(engine.get_repo("example")) == [
+    assert read_tracked_package_entries(engine.get_repo("example")) == [
         removed.__class__(repo="example", selector="git", selector_kind="package", profile="basic")
     ]
 
@@ -577,4 +579,4 @@ def test_tracked_state_requires_schema_version_1(
     engine = DotmanEngine.from_config_path(config_path)
 
     with pytest.raises(ValueError, match=r"tracked packages file '.*/tracked-packages\.toml' must declare schema_version = 1"):
-        engine.list_tracked_packages()
+        engine.list_tracked_state().packages

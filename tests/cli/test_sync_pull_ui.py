@@ -46,7 +46,7 @@ def test_pull_review_and_document_show_repository_effect(tmp_path, monkeypatch, 
         assert "Approval still required" not in review
         deck.confirming = True
         assert f"repos: {int(kind is not None)} · live: 0" in deck.confirmation_text()
-        document = sync_document(SimpleNamespace(dry_run=True, scopes=[]), session, None)
+        document = sync_document(SimpleNamespace(dry_run=True, no_confirm=False, scopes=[]), session, None)
         unit = document["sync_units"][0]
         assert unit["resolution_intent"] == "use-live"
         assert unit["effects"] == []
@@ -181,7 +181,7 @@ def test_merge_review_reports_capture_reconciliation_and_both_outcomes(tmp_path,
         assert '+merged' in review
         assert '+rendered' in review
         assert 'Live remains unchanged' not in review
-        unit = sync_document(SimpleNamespace(dry_run=True, scopes=[]), session, None)['sync_units'][0]
+        unit = sync_document(SimpleNamespace(dry_run=True, no_confirm=False, scopes=[]), session, None)['sync_units'][0]
         assert unit['resolution_intent'] == 'merge'
         assert unit['capture'] == 'present'
         assert unit['reconciliation'] == 'three-way merge'

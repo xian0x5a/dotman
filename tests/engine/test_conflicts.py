@@ -5,8 +5,10 @@ from pathlib import Path
 import pytest
 
 from dotman.engine import DotmanEngine
+from dotman.tracking import read_tracked_package_entries
 from tests.helpers import open_tracked_pull_session
 from tests.helpers import (
+    full_spec_selector,
     write_manager_config,
     write_named_manager_config,
     write_profile_ambiguous_dependency_repo,
@@ -301,10 +303,10 @@ def test_record_binding_allows_pull_only_same_live_path_when_repo_paths_do_not_c
     engine = DotmanEngine.from_config_path(write_single_repo_config(tmp_path, repo_name="fixture", repo_path=repo_root))
 
     for selector_text in ("fixture:alpha@default", "fixture:beta@default"):
-        _repo, selector = engine.resolve_full_spec_selector_text(selector_text)
+        selector = full_spec_selector(engine, selector_text)
         engine.record_tracked_package_entry(selector)
 
-    assert [(entry.selector, entry.profile) for entry in engine.read_tracked_package_entries(engine.get_repo("fixture"))] == [
+    assert [(entry.selector, entry.profile) for entry in read_tracked_package_entries(engine.get_repo("fixture"))] == [
         ("alpha", "default"),
         ("beta", "default"),
     ]
@@ -322,14 +324,14 @@ def test_record_binding_rejects_pull_only_same_repo_path_when_live_paths_do_not_
     write_pull_only_same_repo_path_repo(repo_root)
     engine = DotmanEngine.from_config_path(write_single_repo_config(tmp_path, repo_name="fixture", repo_path=repo_root))
 
-    _repo, selector = engine.resolve_full_spec_selector_text("fixture:alpha@default")
+    selector = full_spec_selector(engine, "fixture:alpha@default")
     engine.record_tracked_package_entry(selector)
 
     with pytest.raises(
         ValueError,
         match=r"conflicting explicit tracked targets for .+shared\.conf: fixture:alpha@default -> fixture:alpha\.shared, fixture:beta@default -> fixture:beta\.shared",
     ):
-        _repo, selector = engine.resolve_full_spec_selector_text("fixture:beta@default")
+        selector = full_spec_selector(engine, "fixture:beta@default")
         engine.record_tracked_package_entry(selector)
 
 
@@ -596,14 +598,14 @@ def test_record_binding_rejects_conflicting_explicit_targets(
 
     engine = DotmanEngine.from_config_path(write_manager_config(tmp_path))
 
-    _repo, selector = engine.resolve_full_spec_selector_text("example:git@basic")
+    selector = full_spec_selector(engine, "example:git@basic")
     engine.record_tracked_package_entry(selector)
 
     with pytest.raises(
         ValueError,
         match=r"conflicting explicit tracked targets for .+\.gitconfig: example:git@basic -> example:git\.gitconfig, example:work/git@work -> example:work/git\.gitconfig",
     ):
-        _repo, selector = engine.resolve_full_spec_selector_text("example:work/git@work")
+        selector = full_spec_selector(engine, "example:work/git@work")
         engine.record_tracked_package_entry(selector)
 
 
@@ -619,14 +621,14 @@ def test_record_binding_rejects_same_signature_explicit_targets(
     write_same_live_path_repo(repo_root, same_source_bytes=True)
     engine = DotmanEngine.from_config_path(write_single_repo_config(tmp_path, repo_name="fixture", repo_path=repo_root))
 
-    _repo, selector = engine.resolve_full_spec_selector_text("fixture:alpha@basic")
+    selector = full_spec_selector(engine, "fixture:alpha@basic")
     engine.record_tracked_package_entry(selector)
 
     with pytest.raises(
         ValueError,
         match=r"conflicting explicit tracked targets for .+shared\.conf: fixture:alpha@basic -> fixture:alpha\.shared, fixture:beta@basic -> fixture:beta\.shared",
     ):
-        _repo, selector = engine.resolve_full_spec_selector_text("fixture:beta@basic")
+        selector = full_spec_selector(engine, "fixture:beta@basic")
         engine.record_tracked_package_entry(selector)
 
 
@@ -642,14 +644,14 @@ def test_record_binding_rejects_same_signature_implicit_targets(
     write_same_live_path_repo(repo_root, same_source_bytes=True)
     engine = DotmanEngine.from_config_path(write_single_repo_config(tmp_path, repo_name="fixture", repo_path=repo_root))
 
-    _repo, selector = engine.resolve_full_spec_selector_text("fixture:alpha-meta@basic")
+    selector = full_spec_selector(engine, "fixture:alpha-meta@basic")
     engine.record_tracked_package_entry(selector)
 
     with pytest.raises(
         ValueError,
         match=r"conflicting implicit tracked targets for .+shared\.conf: fixture:alpha@basic -> fixture:alpha\.shared, fixture:beta@basic -> fixture:beta\.shared",
     ):
-        _repo, selector = engine.resolve_full_spec_selector_text("fixture:beta-meta@basic")
+        selector = full_spec_selector(engine, "fixture:beta-meta@basic")
         engine.record_tracked_package_entry(selector)
 
 
@@ -665,14 +667,14 @@ def test_record_binding_rejects_multi_instance_same_live_path_profiles(
     write_static_multi_instance_repo(repo_root)
     engine = DotmanEngine.from_config_path(write_single_repo_config(tmp_path, repo_name="fixture", repo_path=repo_root))
 
-    _repo, selector = engine.resolve_full_spec_selector_text("fixture:profiled@basic")
+    selector = full_spec_selector(engine, "fixture:profiled@basic")
     engine.record_tracked_package_entry(selector)
 
     with pytest.raises(
         ValueError,
         match=r"conflicting explicit tracked targets for .+profiled\.conf: fixture:profiled@basic -> fixture:profiled<basic>\.managed, fixture:profiled@work -> fixture:profiled<work>\.managed",
     ):
-        _repo, selector = engine.resolve_full_spec_selector_text("fixture:profiled@work")
+        selector = full_spec_selector(engine, "fixture:profiled@work")
         engine.record_tracked_package_entry(selector)
 
 
@@ -688,7 +690,7 @@ def test_track_rejects_singleton_implicit_dependency_profile_ambiguity(
     write_profile_ambiguous_dependency_repo(repo_root)
     engine = DotmanEngine.from_config_path(write_single_repo_config(tmp_path, repo_name="fixture", repo_path=repo_root))
 
-    _repo, selector = engine.resolve_full_spec_selector_text("fixture:meta-a@basic")
+    selector = full_spec_selector(engine, "fixture:meta-a@basic")
     engine.record_tracked_package_entry(selector)
 
     with pytest.raises(
@@ -699,7 +701,7 @@ def test_track_rejects_singleton_implicit_dependency_profile_ambiguity(
             r"  fixture:shared@work required by fixture:meta-b@work"
         ),
     ):
-        _repo, selector = engine.resolve_full_spec_selector_text("fixture:meta-b@work")
+        selector = full_spec_selector(engine, "fixture:meta-b@work")
         engine.record_tracked_package_entry(selector)
 
 
@@ -738,7 +740,7 @@ def test_same_profile_singleton_implicit_dependency_dedupes(
     engine = DotmanEngine.from_config_path(write_single_repo_config(tmp_path, repo_name="fixture", repo_path=repo_root))
 
     for selector_text in ("fixture:meta-a@basic", "fixture:meta-b@basic"):
-        _repo, selector = engine.resolve_full_spec_selector_text(selector_text)
+        selector = full_spec_selector(engine, selector_text)
         engine.record_tracked_package_entry(selector)
 
     scope = engine.resolve_sync_scope()
@@ -772,7 +774,7 @@ def test_multi_instance_implicit_dependency_allows_different_profiles(
     engine = DotmanEngine.from_config_path(write_single_repo_config(tmp_path, repo_name="fixture", repo_path=repo_root))
 
     for selector_text in ("fixture:meta-a@basic", "fixture:meta-b@work"):
-        _repo, selector = engine.resolve_full_spec_selector_text(selector_text)
+        selector = full_spec_selector(engine, selector_text)
         engine.record_tracked_package_entry(selector)
 
     scope = engine.resolve_sync_scope()

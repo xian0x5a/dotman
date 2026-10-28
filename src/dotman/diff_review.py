@@ -9,7 +9,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from dotman import cli_style
 from dotman.command_runtime import (
     ArgvCommand,
     CommandRequest,
@@ -18,7 +17,6 @@ from dotman.command_runtime import (
 )
 from dotman.models import AdditionalSource, EditorSpec
 from dotman.printable import terminal_safe_line
-from dotman.terminal import colors_enabled
 from dotman.ui_context import current_ui_config
 
 
@@ -55,24 +53,9 @@ class ReviewItem:
     command_env: dict[str, str] | None = field(default=None, repr=False)
     diff_unavailable_reason: str | None = None
     bound_profile: str | None = None
-    is_probe: bool = False
-    probe_command: str | None = field(default=None, repr=False)
-    hook_command_summaries: tuple[str, ...] = ()
-
-
-def _render_hook_command_summary(summary: str) -> str:
-    if ": " not in summary:
-        return summary
-    hook_name, command = summary.split(": ", 1)
-    hook_badge = cli_style.render_menu_badge(f"[{hook_name}]", use_color=colors_enabled(sys.stdout))
-    return f"{hook_badge} {command}"
 
 
 def run_review_item_diff(review_item: ReviewItem) -> None:
-    if review_item.is_probe:
-        for summary in review_item.hook_command_summaries:
-            print(_render_hook_command_summary(summary))
-        return
     if review_item.diff_unavailable_reason is not None:
         raise ValueError(review_item.diff_unavailable_reason)
     before_bytes = _review_item_bytes(review_item, before=True)

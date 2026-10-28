@@ -26,7 +26,6 @@ from dotman.templates import render_template_string
 
 if TYPE_CHECKING:
     from dotman.planning import PackagePlanningInput
-    from dotman.progress import ProgressSink
 
 
 PLANNING_GUARD_EXCLUDED_ENV_KEYS = frozenset({"DOTMAN_NO_CONFIRM"})
@@ -181,7 +180,6 @@ def _evaluate_repo_guards(
     command_runtime: CommandRuntime,
     operation: str,
     run_noop: bool,
-    sink: "ProgressSink | None" = None,
 ) -> tuple[list["PackagePlanningInput"], tuple[GuardSkip, ...]]:
     inputs_by_repo: dict[str, list["PackagePlanningInput"]] = defaultdict(list)
     for planning_input in planning_inputs:
@@ -213,8 +211,6 @@ def _evaluate_repo_guards(
             admitted_inputs.extend(repo_inputs)
             continue
         guard_skips.append(skip)
-        if sink is not None:
-            sink.update(len(repo_inputs))
     return admitted_inputs, tuple(guard_skips)
 
 
@@ -224,7 +220,6 @@ def _evaluate_package_guards(
     command_runtime: CommandRuntime,
     operation: str,
     run_noop: bool,
-    sink: "ProgressSink | None" = None,
 ) -> tuple[list["PackagePlanningInput"], tuple[GuardSkip, ...]]:
     admitted_inputs: list["PackagePlanningInput"] = []
     guard_skips: list[GuardSkip] = []
@@ -240,8 +235,6 @@ def _evaluate_package_guards(
         if identity_key in outcomes_by_identity:
             if outcomes_by_identity[identity_key] is None:
                 admitted_inputs.append(planning_input)
-            elif sink is not None:
-                sink.update(1)
             continue
 
         package = _selected_package(planning_input)
@@ -275,8 +268,6 @@ def _evaluate_package_guards(
             admitted_inputs.append(planning_input)
         else:
             guard_skips.append(skip)
-            if sink is not None:
-                sink.update(1)
 
     return admitted_inputs, tuple(guard_skips)
 

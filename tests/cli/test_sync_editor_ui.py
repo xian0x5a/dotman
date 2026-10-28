@@ -43,7 +43,7 @@ def test_edited_push_review_shows_deliberate_repository_change_and_live_effect(t
         assert "-repository-before" in text and "+edited-source" in text
         assert "Live effect preview" in text
         assert "-live-before" in text and "+rendered-edit" in text
-        unit = sync_document(SimpleNamespace(dry_run=True, scopes=[]), session, None)["sync_units"][0]
+        unit = sync_document(SimpleNamespace(dry_run=True, no_confirm=False, scopes=[]), session, None)["sync_units"][0]
         assert unit["resolution_intent"] == "use-repository"
         assert unit["resolution"] == "editor"
         assert "edited-source" not in str(unit)
@@ -350,7 +350,7 @@ def test_additional_edits_have_independent_canonical_review_and_json(tmp_path, m
         assert session.view.rows[deck.focus].approved
         assert not session.view.rows[0].approved
         assert shared.read_bytes() == b"additional-preimage"
-        document = sync_document(SimpleNamespace(dry_run=True, scopes=[]), session, None)
+        document = sync_document(SimpleNamespace(dry_run=True, no_confirm=False, scopes=[]), session, None)
         assert "staged_additional_sources" not in document["sync_units"][0]
         assert document["sync_units"][0]["additional_source_changes"] == [additional.row_id]
         change = document["additional_source_changes"][0]

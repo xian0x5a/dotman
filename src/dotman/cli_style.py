@@ -178,7 +178,7 @@ def render_package_profile_label(*, repo_name: str, package_id: str, profile: st
     )
 
 
-def full_spec_selector_label_text(*, repo_name: str, selector: str, profile: str, selector_first: bool = False) -> str:
+def full_spec_selector_label_text(*, repo_name: str, selector: str, profile: str) -> str:
     return f"{repo_qualified_selector_text(repo_name=repo_name, selector=selector)}@{profile}"
 
 
@@ -203,15 +203,10 @@ def stale_tracked_row_rejection_text(subject: str, binding: FullSpecSelector, re
     return f"{subject} matches stale tracked row {row}: {reason}; remove it with: {stale_row_untrack_command(binding)}"
 
 
-def render_full_spec_selector_label(*, repo_name: str, selector: str, profile: str, selector_first: bool = False, use_color: bool) -> str:
+def render_full_spec_selector_label(*, repo_name: str, selector: str, profile: str, use_color: bool) -> str:
     repo_name, selector, profile = map(terminal_safe_line, (repo_name, selector, profile))
     if not use_color:
-        return full_spec_selector_label_text(
-            repo_name=repo_name,
-            selector=selector,
-            profile=profile,
-            selector_first=selector_first,
-        )
+        return full_spec_selector_label_text(repo_name=repo_name, selector=selector, profile=profile)
     return (
         f"{style_text(repo_name, *MENU_REPO_STYLE)}"
         f"{style_text(':', *MENU_HINT_STYLE)}"
