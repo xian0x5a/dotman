@@ -956,3 +956,203 @@ def test_plain_number_key_and_quoted_key_of_the_same_spelling_stay_distinct(tmp_
     assert run_yaml_cleanup(tmp_path, source, "--selector-type", "remove", "--selectors", "absent") == source
     # Selectors match keys by spelling, so both are selected.
     assert run_yaml_cleanup(tmp_path, source, "--selector-type", "remove", "--selectors", "0777") == "{}\n"
+
+
+# --- Round-trip fidelity (comments, anchors, layout) --------------------------------------------
+
+
+def run_yaml_merge(tmp_path: Path, base: str | None, overlay: str, *arguments: str) -> str:
+    base_path = tmp_path / "base.yaml"
+    overlay_path = tmp_path / "overlay.yaml"
+    output_path = tmp_path / "merged.yaml"
+    if base is not None:
+        base_path.write_text(base, encoding="utf-8")
+    overlay_path.write_text(overlay, encoding="utf-8")
+
+    assert cli.main([
+        "transform", "yaml", str(base_path), str(output_path),
+        "--mode", "merge", "--overlay-file", str(overlay_path), *arguments,
+    ]) == 0
+    return output_path.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        pytest.param("# c\ndefaults: &d\n  color: red  # pick\nprofile:\n  <<: *d\n", id="issue-167-repro"),
+        pytest.param(
+            "# header\n\na: 1  # eol\n\n# between\nb:\n  # nested above\n  c: 2  # nested eol\n  d: [1, 2]  # flow\n# trailing\n",
+            id="comments-everywhere",
+        ),
+        pytest.param("base: &b\n  x: 1\nother: *b\nlist:\n  - &i one\n  - *i\n", id="anchors-and-aliases"),
+        pytest.param("q1: 'single'\nq2: \"double\"\nplain: text\nflow: {a: 1, b: [x, y]}\n", id="quoting-and-flow"),
+        pytest.param("ref: !Ref foo  # tag\nsub: !Sub '${A}-b'\nseq: !Join [',', [a, b]]\n", id="custom-tags"),
+    ],
+)
+def test_identity_cleanup_reproduces_the_input_byte_for_byte(tmp_path: Path, source: str) -> None:
+    assert run_yaml_cleanup(tmp_path, source) == source
+
+
+@pytest.mark.parametrize(
+    ("source", "key", "expected"),
+    [
+        pytest.param(
+            "# header\n\n# about a\na: 1  # eol a\n# about b\nb: 2  # eol b\n# about c\nc: 3  # eol c\n",
+            "a",
+            # Lines above the first key may describe the whole file, so they stay.
+            "# header\n\n# about a\n# about b\nb: 2  # eol b\n# about c\nc: 3  # eol c\n",
+            id="first-key",
+        ),
+        pytest.param(
+            "# about a\na: 1  # eol a\n# about b\nb: 2  # eol b\n# about c\nc: 3  # eol c\n",
+            "b",
+            "# about a\na: 1  # eol a\n# about c\nc: 3  # eol c\n",
+            id="middle-key",
+        ),
+        pytest.param(
+            "# about a\na: 1  # eol a\n# about b\nb: 2  # eol b\n# about c\nc: 3  # eol c\n",
+            "c",
+            "# about a\na: 1  # eol a\n# about b\nb: 2  # eol b\n",
+            id="last-key",
+        ),
+        pytest.param(
+            "# about a\na: 1  # eol a\n# about block\nblock:  # eol block\n  x: 1  # eol x\n  y: 2\n# about c\nc: 3  # eol c\n",
+            "block",
+            "# about a\na: 1  # eol a\n# about c\nc: 3  # eol c\n",
+            id="nested-block-mapping-value",
+        ),
+        pytest.param(
+            "outer:\n  # about a\n  a: 1  # eol a\n  # about b\n  b: 2  # eol b\n  # about c\n  c: 3  # eol c\n",
+            "outer.b",
+            "outer:\n  # about a\n  a: 1  # eol a\n  # about c\n  c: 3  # eol c\n",
+            id="nested-key",
+        ),
+        pytest.param(
+            "# about a\na: 1  # eol a\n# about seq\nseq:  # eol seq\n  - x  # eol x\n  - y\n# about c\nc: 3  # eol c\n",
+            "seq",
+            "# about a\na: 1  # eol a\n# about c\nc: 3  # eol c\n",
+            id="block-sequence-value",
+        ),
+    ],
+)
+def test_removing_a_key_takes_its_comments_and_spares_its_neighbours(
+    tmp_path: Path, source: str, key: str, expected: str
+) -> None:
+    assert run_yaml_cleanup(tmp_path, source, "--selector-type", "remove", "--selectors", key) == expected
+
+
+def test_removing_a_key_only_a_merge_supplies_flattens_the_mapping(tmp_path: Path) -> None:
+    source = "defaults: &d\n  color: red\n  size: 1\nprofile:\n  <<: *d\n  name: p\n"
+
+    output = run_yaml_cleanup(tmp_path, source, "--selector-type", "remove", "--selectors", "profile.size")
+
+    assert read_yaml(output) == {
+        "defaults": {"color": "red", "size": 1},
+        "profile": {"color": "red", "name": "p"},
+    }
+    assert "<<" not in output.split("profile:")[1]
+
+
+def test_changing_an_aliased_mapping_leaves_the_anchor_and_other_uses_alone(tmp_path: Path) -> None:
+    source = "base: &b\n  x: 1\n  y: 2\nfirst: *b\nsecond: *b\n"
+
+    output = run_yaml_cleanup(tmp_path, source, "--selector-type", "remove", "--selectors", "first.x")
+
+    assert read_yaml(output) == {
+        "base": {"x": 1, "y": 2},
+        "first": {"y": 2},
+        "second": {"x": 1, "y": 2},
+    }
+    assert "&b" in output
+    assert "second: *b" in output
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        pytest.param("settings:\n    a: 1\n    b: 2\nother: 3\n", id="four-space-indent"),
+        pytest.param("key:\n- a\n- b\nother: 3\n", id="indentless-sequence"),
+        pytest.param("key:\n  - a\n  - b\nother: 3\n", id="indented-sequence"),
+    ],
+)
+def test_layout_survives_an_edit_elsewhere(tmp_path: Path, source: str) -> None:
+    output = run_yaml_cleanup(tmp_path, source + "extra: 1\n", "--selector-type", "remove", "--selectors", "extra")
+
+    assert output == source
+
+
+@pytest.mark.parametrize(
+    ("compare", "base", "overlay", "expected_prefix"),
+    [
+        pytest.param("a:\n    b: 1\n", "a:\n  b: 1\n", "a:\n  b: 1\n", "a:\n    b: 2", id="compare-over-base"),
+        pytest.param(None, "a:\n    b: 1\n", "a:\n  b: 1\n", "a:\n    b: 2", id="base-over-overlay"),
+    ],
+)
+def test_indent_source_precedence(
+    tmp_path: Path, compare: str | None, base: str, overlay: str, expected_prefix: str
+) -> None:
+    arguments: list[str] = []
+    if compare is not None:
+        compare_path = tmp_path / "compare.yaml"
+        compare_path.write_text(compare.replace("b: 1", "b: 0"), encoding="utf-8")
+        arguments = ["--compare-file", str(compare_path)]
+    overlay = overlay.replace("b: 1", "b: 2")
+
+    output = run_yaml_merge(tmp_path, base, overlay, *arguments)
+
+    assert output.startswith(expected_prefix)
+
+
+def test_indent_falls_back_to_overlay_when_base_is_missing(tmp_path: Path) -> None:
+    overlay = "a:\n    b: 1\n"
+
+    assert run_yaml_merge(tmp_path, None, overlay) == overlay
+
+
+def test_merge_into_missing_base_reproduces_overlay_comments(tmp_path: Path) -> None:
+    overlay = "# header\na: 1  # eol\n\n# above b\nb:\n  c: [1, 2]  # nested\n# trailing\n"
+
+    assert run_yaml_merge(tmp_path, None, overlay) == overlay
+
+
+def test_merge_keeps_output_comments_and_added_keys_bring_inner_comments(tmp_path: Path) -> None:
+    base = "a: 1  # base a eol\nsettings:\n  x: 1  # base x\n"
+    overlay = "a: 10  # overlay a eol\nsettings:\n  x: 2  # overlay x\nadded:\n  z: 1  # overlay z\n"
+
+    output = run_yaml_merge(tmp_path, base, overlay)
+
+    assert read_yaml(output) == {"a": 10, "settings": {"x": 2}, "added": {"z": 1}}
+    assert "# base a eol" in output and "# overlay a eol" not in output
+    assert "# base x" in output and "# overlay x" not in output
+    assert "# overlay z" in output
+
+
+def test_compare_file_with_equal_values_is_reused_even_with_different_comments(tmp_path: Path) -> None:
+    compare_path = tmp_path / "compare.yaml"
+    compare_text = "# other comment\r\nb: 2   # x\r\na: 1\r\n"
+    compare_path.write_bytes(compare_text.encode())
+
+    output_path = tmp_path / "out.yaml"
+    input_path = tmp_path / "in.yaml"
+    input_path.write_text("a: 1  # mine\nb: 2\n", encoding="utf-8")
+
+    assert cli.main([
+        "transform", "yaml", str(input_path), str(output_path), "--mode", "cleanup",
+        "--compare-file", str(compare_path),
+    ]) == 0
+    assert output_path.read_bytes() == compare_text.encode()
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        pytest.param("- a\n- b\n", id="top-level-sequence"),
+        pytest.param("just a scalar\n", id="top-level-scalar"),
+    ],
+)
+def test_top_level_non_mapping_is_a_clean_cli_error(tmp_path: Path, capsys, source: str) -> None:
+    input_path = tmp_path / "input.yaml"
+    input_path.write_text(source, encoding="utf-8")
+
+    assert cli.main(["transform", "yaml", str(input_path), "-", "--mode", "cleanup"]) == 1
+    assert str(input_path) in capsys.readouterr().err

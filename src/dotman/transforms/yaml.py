@@ -154,7 +154,9 @@ def load_yaml_document(path: Path, *, stdin_bytes: bytes | None = None) -> Comme
         return None
     try:
         loaded = parse_yaml_text(source_text)
-    except YAMLError as error:
+    # ruamel raises bare KeyError or ValueError for a malformed value under an
+    # explicit standard tag, such as `!!bool maybe` or `!!int abc`.
+    except (YAMLError, KeyError, ValueError) as error:
         raise ValueError(f"invalid YAML in {path}: {error}") from error
     if loaded is None:
         return None
@@ -176,13 +178,14 @@ def detect_yaml_layout(text: str | None) -> YamlLayout | None:
     except YAMLError:
         return None
     mapping_indent = nested_mapping_indent(root_node)
-    if mapping_indent is None or mapping_indent < 1:
-        return None
+    if mapping_indent is not None and mapping_indent < 1:
+        mapping_indent = None
     sequence_layout = nested_sequence_layout(root_node)
-    if sequence_layout is None:
-        return YamlLayout(mapping=mapping_indent)
-    sequence, offset = sequence_layout
-    return YamlLayout(mapping=mapping_indent, sequence=sequence, offset=offset)
+    if mapping_indent is None and sequence_layout is None:
+        return None
+    default = YamlLayout()
+    sequence, offset = sequence_layout or (default.sequence, default.offset)
+    return YamlLayout(mapping=mapping_indent or default.mapping, sequence=sequence, offset=offset)
 
 
 def block_children(node: Node | None) -> list[tuple[Node | None, Node]]:
