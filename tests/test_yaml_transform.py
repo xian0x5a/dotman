@@ -1156,3 +1156,114 @@ def test_top_level_non_mapping_is_a_clean_cli_error(tmp_path: Path, capsys, sour
 
     assert cli.main(["transform", "yaml", str(input_path), "-", "--mode", "cleanup"]) == 1
     assert str(input_path) in capsys.readouterr().err
+
+
+# --- Round-trip regressions: anchors, merge keys, tags, comment placement ------------------------
+
+COMPOSE_BASE = "x-common: &common\n  restart: always\n  image: app:1\nservices:\n  web:\n    <<: *common\n    ports: [80]\n"
+
+
+def test_overlay_edit_of_a_merge_source_does_not_leak_into_unselected_users(tmp_path: Path) -> None:
+    output = run_yaml_merge(
+        tmp_path, COMPOSE_BASE, "x-common: {restart: always, image: app:2}\n",
+        "--selector-type", "retain", "--selectors", "services",
+    )
+
+    data = read_yaml(output)
+    assert data["services"]["web"]["image"] == "app:1"
+    assert data["x-common"]["image"] == "app:2"
+
+
+def test_consistent_anchor_edit_stays_in_place(tmp_path: Path) -> None:
+    overlay = COMPOSE_BASE.replace("app:1", "app:2")
+
+    assert run_yaml_merge(tmp_path, COMPOSE_BASE, overlay) == overlay
+
+
+def test_deleting_a_key_from_a_merge_source_keeps_it_for_unselected_users(tmp_path: Path) -> None:
+    output = run_yaml_cleanup(tmp_path, COMPOSE_BASE, "--selector-type", "remove", "--selectors", "x-common.restart")
+
+    data = read_yaml(output)
+    assert data["x-common"] == {"image": "app:1"}
+    # Only the selected path loses the key; web still reads it through its merge.
+    assert data["services"]["web"] == {"restart": "always", "image": "app:1", "ports": [80]}
+
+
+def test_removing_an_own_key_that_overrides_a_merged_key_uncovers_nothing(tmp_path: Path) -> None:
+    source = "x: &x {p: 1, q: 2}\nz:\n  <<: *x\n  p: 7\n"
+
+    output = run_yaml_cleanup(tmp_path, source, "--selector-type", "remove", "--selectors", "z.p")
+
+    assert read_yaml(output)["z"] == {"q": 2}
+
+
+def test_overlay_anchor_names_cannot_redirect_base_aliases(tmp_path: Path) -> None:
+    output = run_yaml_merge(tmp_path, "a: &x {p: 1}\nb: 0\nc: *x\n", "b: &x {q: 9}\nd: *x\n")
+
+    data = read_yaml(output)
+    assert data["c"] == {"p": 1}
+    assert data["b"] == data["d"] == {"q": 9}
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        pytest.param("m: !Foo {a: 1, b: 2}\nn: 1\n", id="tagged-mapping"),
+        pytest.param("k: !!set {a, b}\n", id="set"),
+        pytest.param("n: &a\n  - a\n  - b\nm: *a\n", id="anchored-block-sequence"),
+    ],
+)
+def test_unusual_nodes_survive_identity_byte_for_byte(tmp_path: Path, source: str) -> None:
+    assert run_yaml_cleanup(tmp_path, source) == source
+
+
+def test_complex_key_survives_identity(tmp_path: Path) -> None:
+    # ruamel writes the explicit `?` key form as an equivalent implicit flow key.
+    source = "? {a: 1}\n: v\n"
+
+    assert run_yaml_cleanup(tmp_path, source) == "{a: 1}: v\n"
+
+
+def test_custom_tag_on_a_mapping_survives_an_edit_elsewhere(tmp_path: Path) -> None:
+    output = run_yaml_cleanup(tmp_path, "m: !Foo {a: 1, b: 2}\nn: 1\n", "--selector-type", "remove", "--selectors", "n")
+
+    assert output == "m: !Foo {a: 1, b: 2}\n"
+
+
+@pytest.mark.parametrize(
+    ("removed", "expected"),
+    [
+        pytest.param("e", "d: 1\n# before f\nf: 6\n", id="remove-block-scalar-keeps-next-comment"),
+        pytest.param("f", "d: 1\n# before e\ne: |\n  literal\n", id="remove-key-after-block-scalar-takes-its-comment"),
+    ],
+)
+def test_comments_around_a_block_scalar_follow_their_key(tmp_path: Path, removed: str, expected: str) -> None:
+    source = "d: 1\n# before e\ne: |\n  literal\n# before f\nf: 6\n"
+
+    assert run_yaml_cleanup(tmp_path, source, "--selector-type", "remove", "--selectors", removed) == expected
+
+
+@pytest.mark.parametrize(
+    ("base", "overlay", "expected_text"),
+    [
+        pytest.param(
+            "e:\n  - 1\n  - 2\n# before f\nf: 6\n", "e: [1, 3]\n", "\n# before f\nf: 6\n", id="block-list-replaced"
+        ),
+        pytest.param(
+            "e: 1  # eol e\n# before f\nf: 6\n", "e:\n  m: 1\n", "\n# before f\nf: 6\n", id="scalar-replaced-by-block-map"
+        ),
+    ],
+)
+def test_replacing_a_value_keeps_the_next_keys_comment_above_that_key(
+    tmp_path: Path, base: str, overlay: str, expected_text: str
+) -> None:
+    output = run_yaml_merge(tmp_path, base, overlay)
+
+    assert read_yaml(output)["f"] == 6
+    assert output.endswith(expected_text)
+
+
+def test_merge_of_float_and_int_spelled_keys_writes_parseable_output(tmp_path: Path) -> None:
+    output = run_yaml_merge(tmp_path, "m: {1.0: a}\n", "m: {1: b}\n")
+
+    assert isinstance(read_yaml(output), dict)

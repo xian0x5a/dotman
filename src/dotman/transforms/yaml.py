@@ -224,12 +224,15 @@ def nested_sequence_layout(node: Node | None) -> tuple[int, int] | None:
             and isinstance(value_node, SequenceNode)
             and not value_node.flow_style
             and value_node.value
-            # An anchor or tag moves the sequence start off its first dash.
-            and value_node.start_mark.line == value_node.value[0].start_mark.line
         ):
             key_column = key_node.start_mark.column
-            dash_offset = value_node.start_mark.column - key_column
-            content_indent = value_node.value[0].start_mark.column - key_column
+            item_column = value_node.value[0].start_mark.column
+            # An anchor or tag moves the sequence start off its first dash,
+            # which then sits before the item, followed by one space.
+            on_dash_line = value_node.start_mark.line == value_node.value[0].start_mark.line
+            dash_column = value_node.start_mark.column if on_dash_line else item_column - 2
+            dash_offset = dash_column - key_column
+            content_indent = item_column - key_column
             if dash_offset >= 0 and content_indent >= dash_offset + 2:
                 return content_indent, dash_offset
         layout = nested_sequence_layout(value_node)
