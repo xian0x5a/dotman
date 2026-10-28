@@ -21,6 +21,8 @@ EDITOR_ENVIRONMENT_VARIABLES = ("VISUAL", "EDITOR", "GIT_EDITOR")
 GIT_CORE_EDITOR_QUERY = ("git", "config", "--get", "core.editor")
 FALLBACK_EDITORS = ("sensible-editor", "editor", "nvim", "vim", "vi", "nano")
 # Diff flags such as `nvim -d` would turn dotman's file arguments into a diff.
+# Only an editor found through the lookup chain loses them: an explicit command,
+# such as a custom Sync Editor's `run`, may diff on purpose.
 STRIPPED_EDITOR_ARGUMENTS = frozenset({"-d"})
 # Git's run-command hands a command to the shell when it contains one of these.
 # Spaces, quotes and backslashes are left out: shlex splits those as sh would.
@@ -43,9 +45,10 @@ def editor_command(paths: Sequence[str], *, explicit: str | None = None) -> Argv
     value = _resolve_editor_value(explicit)
     if value is None:
         return None
+    strip_diff_flags = not explicit
     if SHELL_METACHARACTERS.isdisjoint(value):
-        return ArgvCommand((*_parse_editor_command(value), *paths))
-    script = _drop_stripped_arguments_from_first_command(value)
+        return ArgvCommand((*_parse_editor_command(value, strip_diff_flags=strip_diff_flags), *paths))
+    script = _drop_stripped_arguments_from_first_command(value) if strip_diff_flags else value
     if "$" not in value:
         # Git's form: the shell syntax cannot name the files, so they follow it.
         script = f'{script} "$@"'
@@ -74,15 +77,18 @@ def resolve_editor_command(explicit: str | None = None) -> list[str] | None:
     Raises ValueError when the configured command cannot be used.
     """
     value = _resolve_editor_value(explicit)
-    return None if value is None else _parse_editor_command(value)
+    return None if value is None else _parse_editor_command(value, strip_diff_flags=not explicit)
 
 
-def _parse_editor_command(value: str) -> list[str]:
+def _parse_editor_command(value: str, *, strip_diff_flags: bool) -> list[str]:
     try:
         arguments = shlex.split(value)
     except ValueError as exc:
         raise ValueError("editor command could not be parsed") from exc
-    editor_command = [argument for argument in arguments if argument not in STRIPPED_EDITOR_ARGUMENTS]
+    editor_command = [
+        argument for argument in arguments
+        if not (strip_diff_flags and argument in STRIPPED_EDITOR_ARGUMENTS)
+    ]
     if not editor_command:
         raise ValueError("editor command is empty after parsing")
     return editor_command

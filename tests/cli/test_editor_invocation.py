@@ -44,7 +44,14 @@ def test_edit_config_hands_the_real_path_to_the_configured_editor(
     assert record_path.read_text().splitlines() == [*expected_leading_arguments, str(config_path.resolve())]
 
 
-def test_reconcile_drops_diff_flag_from_a_shell_editor(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "run_template",
+    ['{editor} -d -t "$@"', "{editor} -d -t"],
+    ids=["shell", "direct"],
+)
+def test_reconcile_keeps_diff_flag_of_an_explicit_editor(tmp_path: Path, run_template: str) -> None:
+    # A custom Sync Editor's `run` is the user's own command; only an editor
+    # found through the lookup chain loses `-d`.
     editor_path, record_path = _write_recording_editor(tmp_path)
     repo_path = tmp_path / "repo-file"
     live_path = tmp_path / "live-file"
@@ -55,11 +62,11 @@ def test_reconcile_drops_diff_flag_from_a_shell_editor(tmp_path: Path) -> None:
         repo_path=str(repo_path),
         live_path=str(live_path),
         additional_sources=[],
-        editor=f'{shlex.quote(str(editor_path))} -d -t "$@"',
+        editor=run_template.format(editor=shlex.quote(str(editor_path))),
         editor_io="pipe",
         approve_write=True,
     ) == 0
 
-    flag, staged_source = record_path.read_text().splitlines()
-    assert flag == "-t"
+    diff_flag, flag, staged_source = record_path.read_text().splitlines()
+    assert (diff_flag, flag) == ("-d", "-t")
     assert Path(staged_source) != repo_path
