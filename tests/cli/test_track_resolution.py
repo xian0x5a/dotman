@@ -89,7 +89,7 @@ def test_track_resolver_no_confirm_emits_replacement_summary_without_interaction
     assert result.disposition == "ready"
     assert result.binding.profile == "work"
     assert messages == [
-        "\nConfirm tracked package entry replacement for example:git:\n"
+        "\nApplying tracked package entry replacement for example:git:\n"
         "  existing: example:git@basic\n"
         "  new:      example:git@work\n"
     ]

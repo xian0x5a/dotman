@@ -516,7 +516,7 @@ def test_track_cli_no_confirm_replaces_profile_without_interactive_stdin(
 
     assert exit_code == 0
     output = capsys.readouterr().out
-    assert "Confirm tracked package entry replacement for example:git:" in output
+    assert "Applying tracked package entry replacement for example:git:" in output
     assert "Confirm replacement?" not in output
     assert "tracked example:git@work" in output
 
