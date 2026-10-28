@@ -45,7 +45,6 @@ def test_configuration_independent_render_ignores_missing_manager_config(
 
 def test_config_only_edit_uses_manager_ui_scope(
     tmp_path: Path,
-    monkeypatch,
     capsys,
 ) -> None:
     alpha_root = tmp_path / "alpha"
@@ -58,8 +57,6 @@ def test_config_only_edit_uses_manager_ui_scope(
     )
     with config_path.open("a", encoding="utf-8") as config_file:
         config_file.write("[ui.menus]\nbottom_up = false\n")
-    monkeypatch.delenv("EDITOR", raising=False)
-    monkeypatch.delenv("VISUAL", raising=False)
     interaction_output = StringIO()
     interaction = TerminalInteraction(
         input_stream=StringIO("2\n"),

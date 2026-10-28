@@ -102,6 +102,7 @@ Current responsibility split:
 - `push_session.py` — fixed repository-to-live Observation, opt-out Use repository Approval and inherited Live Publication over the shared workset
 - `execution.py` — the shared command-hook execution boundary, plus directory file-mode sync
 - `sync_editor.py` — isolated configured/default Editor invocation and permitted source staging
+- `editor.py` — the one editor lookup chain shared by the default Editor, `edit`, `add`, and `doctor`
 - `sync_observation.py` — file endpoint evidence, policy comparisons, frozen Guards/Base facts and opening-time Base lifecycle
 - `sync_auxiliary.py` — immutable Probe/hook rows, one-shot Probe activity and Guard-admitted directional hook retention
 - `operation_lock.py` — manager-wide non-blocking real-operation ownership shared by sessions and Push/Pull command workflows

@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import difflib
 import os
-import shlex
-import shutil
 import sys
 import stat
 import tempfile
@@ -12,6 +10,7 @@ from pathlib import Path
 from typing import Mapping
 
 from dotman.atomic_files import write_text_atomic
+from dotman.editor import parse_editor_command, resolve_editor_value
 from dotman.errors import UsageError
 from dotman.models import AdditionalSource
 from dotman.command_runtime import ArgvCommand, CommandRequest, CommandResult, current_command_runtime
@@ -44,46 +43,6 @@ def style_text(text: str, *codes: str) -> str:
     if not codes:
         return text
     return f"\033[{';'.join(codes)}m{text}{ANSI_RESET}"
-
-
-def _resolve_editor_value(editor: str | None) -> str:
-    if editor:
-        return editor
-    for variable in ("VISUAL", "EDITOR", "GIT_EDITOR"):
-        value = os.environ.get(variable)
-        if value:
-            return value
-
-    # Ask Git for its effective editor so core.editor and Git's environment
-    # precedence are handled in one place. Process execution stays behind the
-    # command runtime seam, which is also used by engine and CLI callers.
-    try:
-        result = current_command_runtime().run(
-            CommandRequest(
-                command=ArgvCommand(("git", "config", "--get", "core.editor")),
-                io="pipe",
-                elevation="none",
-            )
-        )
-    except (OSError, ValueError):
-        result = None
-    if result is not None and result.exit_code == 0:
-        value = result.stdout_text.strip()
-        if value:
-            return value
-
-    for candidate in ("sensible-editor", "editor", "nvim", "vim", "vi", "nano"):
-        if shutil.which(candidate) is not None:
-            return candidate
-    raise ValueError("could not resolve an editor")
-
-
-def _resolve_editor_command(editor: str | None) -> list[str]:
-    return shlex.split(_resolve_editor_value(editor))
-
-
-def _normalize_editor_command(editor_command: list[str]) -> list[str]:
-    return [argument for argument in editor_command if argument != "-d"]
 
 
 def _resolve_existing_path(path_value: str, *, label: str) -> Path:
@@ -320,8 +279,10 @@ def run_basic_reconcile(
         for path_value in additional_sources
     ]
 
-    editor_value = _resolve_editor_value(editor)
-    editor_command = _normalize_editor_command(shlex.split(editor_value))
+    editor_value = resolve_editor_value(editor)
+    if editor_value is None:
+        raise ValueError("could not resolve an editor")
+    editor_command = parse_editor_command(editor_value)
     source_paths = _dedupe_paths([resolved_repo_path, *resolved_additional_sources])
     with tempfile.TemporaryDirectory(prefix="dotman-reconcile-") as temp_dir:
         temp_root = Path(temp_dir)

@@ -8,6 +8,7 @@ from typing import Iterator
 
 import pytest
 
+from dotman import editor
 from dotman.command_runtime import (
     ArgvCommand,
     CommandRequest,
@@ -79,6 +80,19 @@ def git_identity(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def isolate_editor_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Editor lookup ends with a PATH search for common editors, so without this
+    # every test would find the developer's vi. Tests opt in by setting VISUAL,
+    # EDITOR, GIT_EDITOR, git's core.editor, or patching find_executable.
+    # The GIT_CONFIG_* and GIT_DIR variables would let the developer's shell
+    # point git's core.editor query at their own config.
+    for variable in (*editor.EDITOR_ENVIRONMENT_VARIABLES, "GIT_CONFIG_GLOBAL",
+                     "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT", "GIT_DIR"):
+        monkeypatch.delenv(variable, raising=False)
+    monkeypatch.setattr(editor, "find_executable", lambda command: None)
+
+
+@pytest.fixture(autouse=True)
 def disable_colors(monkeypatch: pytest.MonkeyPatch) -> None:
     # Output stays plain even under `pytest -s` in a real terminal. Tests that
     # check styling unset NO_COLOR and patch sys.stdout.isatty in the test body:
@@ -100,6 +114,12 @@ def mock_sudo_for_tests() -> Iterator[None]:
         def run(self, request: CommandRequest) -> CommandResult:
             self.check_cancelled()
             command = request.command
+            if isinstance(command, ArgvCommand) and command.arguments == editor.GIT_CORE_EDITOR_QUERY:
+                # The suite runs inside a checkout whose config, like the system
+                # config, may set core.editor. Ask git from the isolated HOME
+                # with only global and GIT_CONFIG_* settings in play.
+                isolated = replace(request, cwd=Path.home(), env={**request.env, "GIT_CONFIG_NOSYSTEM": "1"})
+                return production.run(isolated)
             if not isinstance(command, ArgvCommand) or not command.arguments or command.arguments[0] != "sudo":
                 return production.run(request)
             arguments = command.arguments

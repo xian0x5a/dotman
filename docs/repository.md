@@ -291,7 +291,8 @@ are editable; review evidence is read-only.
 The default Editor chooses the first available entry in this order:
 `VISUAL`, `EDITOR`, `GIT_EDITOR`, Git's configured editor, `sensible-editor`,
 `editor`, `nvim`, `vim`, `vi`, then `nano`. If none exists, the action
-fails locally and preserves the prior Proposal. The Jinja Editor discovers static
+fails locally and preserves the prior Proposal. `edit`, `add` and `doctor` use the
+same lookup. The Jinja Editor discovers static
 dependencies before the same external-editor handoff; there is no embedded Editor.
 Editor invocation is deliberate, never an automatic Capture-failure fallback.
 

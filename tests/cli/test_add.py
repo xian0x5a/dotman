@@ -387,8 +387,6 @@ def test_add_cli_interactively_allows_create_when_package_query_is_omitted(
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
-    monkeypatch.delenv("VISUAL", raising=False)
-    monkeypatch.delenv("EDITOR", raising=False)
 
     live_path = home / ".config" / "foo.conf"
     live_path.parent.mkdir(parents=True)
@@ -502,7 +500,7 @@ def test_add_cli_reports_no_effective_package_config_changes_after_editor_review
     manifest_path.write_text('', encoding="utf-8")
     config_path = write_named_manager_config(tmp_path, {"fixture": repo_root})
 
-    monkeypatch.setattr(cli, "add_editor_available", lambda: True)
+    monkeypatch.setenv("EDITOR", "nvim")
 
     def fake_review(result: AddOperationResult) -> AddReviewResult:
         return AddReviewResult(exit_code=0, manifest_text=result.before_text)
@@ -541,7 +539,7 @@ def test_add_cli_keeps_manifest_unchanged_when_editor_review_is_declined(
     repo_root.mkdir()
     config_path = write_named_manager_config(tmp_path, {"fixture": repo_root})
 
-    monkeypatch.setattr(cli, "add_editor_available", lambda: True)
+    monkeypatch.setenv("EDITOR", "nvim")
     monkeypatch.setattr(
         cli,
         "review_add_manifest",
@@ -595,7 +593,7 @@ def test_add_no_confirm_skips_editor_even_with_terminal(tmp_path, monkeypatch) -
     def unexpected_editor(*args, **kwargs):
         raise AssertionError("--no-confirm must not open an editor")
     monkeypatch.setattr(cli, "review_add_manifest", unexpected_editor)
-    monkeypatch.setattr(cli, "add_editor_available", lambda: True)
+    monkeypatch.setenv("EDITOR", "nvim")
 
     assert main(["--config", str(config), "--no-confirm", "add", str(live_path), "fixture:app"]) == 0
     assert "[targets." in (repo_root / "packages/app/package.toml").read_text()
@@ -722,7 +720,7 @@ def test_add_cli_writes_reviewed_new_manifest_without_requiring_id(
     repo_root.mkdir()
     config_path = write_named_manager_config(tmp_path, {"fixture": repo_root})
 
-    monkeypatch.setattr(cli, "add_editor_available", lambda: True)
+    monkeypatch.setenv("EDITOR", "nvim")
     # The user rewrites the manifest by hand and, as the folder now names the package, writes no id line.
     reviewed_manifest_text = "\n".join([
         'description = "reviewed"',

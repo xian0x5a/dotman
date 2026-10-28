@@ -131,11 +131,8 @@ def test_slash_selector_resolves_to_namespaced_package_not_repo_prefix(
 def test_edit_slash_selector_opens_namespaced_package_not_repo_prefix(
     collision_config: Path,
     tmp_path: Path,
-    monkeypatch,
     capsys,
 ) -> None:
-    monkeypatch.delenv("VISUAL", raising=False)
-    monkeypatch.delenv("EDITOR", raising=False)
     _track_both_repos_state(tmp_path)
 
     exit_code = main(["--config", str(collision_config), "edit", "package", "work/git"])

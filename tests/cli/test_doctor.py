@@ -138,8 +138,6 @@ def test_doctor_cli_groups_human_output_by_category(
 ) -> None:
     missing_repo_path = tmp_path / "missing-repo"
     config_path = write_single_repo_config(tmp_path, repo_name="fixture", repo_path=missing_repo_path)
-    monkeypatch.delenv("VISUAL", raising=False)
-    monkeypatch.delenv("EDITOR", raising=False)
 
     def fake_which(name: str) -> str | None:
         if name in {"git", "fzf", "less", "sudo"}:
