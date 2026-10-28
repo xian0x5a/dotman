@@ -64,33 +64,6 @@ class BaseInspection:
     failure: SyncBaseStoreError | None = None
 
 
-EffectStatus = Literal["not-required", "succeeded"]
-
-
-@dataclass(frozen=True)
-class ProposalCompletion:
-    """Final unit-owned effects only; Additional Sources and hooks are not operands."""
-
-    approved: bool
-    primary_effect: EffectStatus = "not-required"
-    publication_effects: EffectStatus = "not-required"
-
-    def __post_init__(self) -> None:
-        if any(
-            value not in ("not-required", "succeeded")
-            for value in (self.primary_effect, self.publication_effects)
-        ):
-            raise ValueError("invalid required-effect result")
-
-    @property
-    def ready(self) -> bool:
-        return (
-            self.approved
-            and self.primary_effect in ("not-required", "succeeded")
-            and self.publication_effects in ("not-required", "succeeded")
-        )
-
-
 @dataclass(frozen=True)
 class BaseLifecycleResult:
     acknowledged: bool = False
@@ -148,21 +121,11 @@ class SyncBaseLifecycle:
             )
         return BaseInspection("usable", record=record)
 
-    def direct_agreement(self, frozen: FrozenBaseUnit) -> BaseLifecycleResult:
-        """Immediately after actual direct Observation, before review or hooks."""
+    def acknowledge(self, frozen: FrozenBaseUnit) -> BaseLifecycleResult:
+        """Save the frozen outcome as the Base: at direct Observation (before review or hooks)
+        or at the unit's earliest ordered completion point (before its target post-hook)."""
         if self.preview or not frozen.unit.eligible:
             return BaseLifecycleResult()
-        return self._acknowledge(frozen)
-
-    def complete(
-        self, frozen: FrozenBaseUnit, proposal: ProposalCompletion
-    ) -> BaseLifecycleResult:
-        """At the unit's earliest ordered completion point, before its target post-hook."""
-        if self.preview or not proposal.ready or not frozen.unit.eligible:
-            return BaseLifecycleResult()
-        return self._acknowledge(frozen)
-
-    def _acknowledge(self, frozen: FrozenBaseUnit) -> BaseLifecycleResult:
         try:
             self.store.replace(frozen.record())
         except SyncBaseStoreDurabilityError as exc:

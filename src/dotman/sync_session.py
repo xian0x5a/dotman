@@ -28,7 +28,7 @@ from dotman.planning_guards import GuardPlanningError
 from dotman.progress import ProgressSink
 from dotman.sync_base_store import SyncBaseStore, SyncBaseStoreError, FilePresent, Missing, DirectoryChildPresent, SyncBasePayload
 from dotman.sync_base_lifecycle import (
-    BaseUnit, FrozenBaseUnit, ProposalCompletion, SyncBaseLifecycle,
+    BaseUnit, FrozenBaseUnit, SyncBaseLifecycle,
 )
 from dotman.operation_lock import OperationBusy, OperationLock, OperationLockError
 from dotman.sync_observation import Diagnostic, Observation, observe_scope, _resolve_inputs
@@ -1609,14 +1609,8 @@ class ProposalSession:
         item, _metadata = self._resolved_inputs[observation.identity]
         try:
             lifecycle = SyncBaseLifecycle(stores(item.repo.config.state_key), preview=False)
-            completion = lifecycle.complete(
-                replace(self._frozen_bases[observation.identity], payload=row.proposal.repository),
-                ProposalCompletion(
-                    approved=True,
-                    publication_effects="succeeded" if row.proposal.publication_effects else "not-required",
-                    primary_effect="succeeded" if row.proposal.primary_source_change is not None else "not-required",
-                ),
-            )
+            completion = lifecycle.acknowledge(
+                replace(self._frozen_bases[observation.identity], payload=row.proposal.repository))
             if completion.acknowledged:
                 self._acknowledged.add(row.row_id)
             if completion.failure is not None:

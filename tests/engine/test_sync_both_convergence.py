@@ -137,13 +137,13 @@ def test_use_live_checkpoints_final_repository_after_publication(tmp_path, monke
     extra = 'capture = "sed s/live/repository/ $DOTMAN_LIVE_PATH"\nrender = "sed s/repository/published/ $DOTMAN_SOURCE"\ncompare = { repo = "raw", live = "raw" }'
     engine = make_engine(tmp_path, monkeypatch, [("unit", "both", b"old", b"live", extra)])
     payloads = []
-    complete = SyncBaseLifecycle.complete
-    def record_fact(self, frozen, proposal):
+    complete = SyncBaseLifecycle.acknowledge
+    def record_fact(self, frozen):
         payloads.append(frozen.payload)
         assert (tmp_path / "repo/packages/app/unit").read_bytes() == b"repository"
         assert (tmp_path / "live/unit").read_bytes() == b"published"
-        return complete(self, frozen, proposal)
-    monkeypatch.setattr(SyncBaseLifecycle, "complete", record_fact)
+        return complete(self, frozen)
+    monkeypatch.setattr(SyncBaseLifecycle, "acknowledge", record_fact)
     with open_session(engine, preview=False) as session:
         command(session, SetResolutionIntent, "main:app.unit", "use-live")
         command(session, SetApproval, "main:app.unit", True)
@@ -161,14 +161,14 @@ def test_acknowledgment_occurs_after_own_effects_with_final_repository(tmp_path,
     from dotman.sync_base_lifecycle import SyncBaseLifecycle
     engine = established(tmp_path, monkeypatch)
     payloads = []
-    complete = SyncBaseLifecycle.complete
-    def record_fact(self, frozen, proposal):
+    complete = SyncBaseLifecycle.acknowledge
+    def record_fact(self, frozen):
         payloads.append(frozen.payload)
         expected = MERGED if intent == "merge" else REPO
         assert (tmp_path / "live/unit").read_bytes() == expected
         assert (tmp_path / "repo/packages/app/unit").read_bytes() == expected
-        return complete(self, frozen, proposal)
-    monkeypatch.setattr(SyncBaseLifecycle, "complete", record_fact)
+        return complete(self, frozen)
+    monkeypatch.setattr(SyncBaseLifecycle, "acknowledge", record_fact)
     with open_session(engine, preview=False) as session:
         command(session, SetResolutionIntent, "main:app.unit", intent)
         command(session, SetApproval, "main:app.unit", True)
@@ -188,7 +188,7 @@ def test_publication_failure_keeps_previous_base_after_repository_apply(tmp_path
     monkeypatch.setattr(file_access, "write_bytes_atomic", fail_live)
     def forbidden(*args, **kwargs):
         pytest.fail("Failed unit must not acknowledge")
-    monkeypatch.setattr(SyncBaseLifecycle, "complete", forbidden)
+    monkeypatch.setattr(SyncBaseLifecycle, "acknowledge", forbidden)
     with open_session(engine, preview=False) as session:
         before = session.view.observations[0].base.record
         command(session, SetApproval, "main:app.unit", True)
