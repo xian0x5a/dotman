@@ -84,7 +84,10 @@ def isolate_editor_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
     # Editor lookup ends with a PATH search for common editors, so without this
     # every test would find the developer's vi. Tests opt in by setting VISUAL,
     # EDITOR, GIT_EDITOR, git's core.editor, or patching find_executable.
-    for variable in editor.EDITOR_ENVIRONMENT_VARIABLES:
+    # The GIT_CONFIG_* and GIT_DIR variables would let the developer's shell
+    # point git's core.editor query at their own config.
+    for variable in (*editor.EDITOR_ENVIRONMENT_VARIABLES, "GIT_CONFIG_GLOBAL",
+                     "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT", "GIT_DIR"):
         monkeypatch.delenv(variable, raising=False)
     monkeypatch.setattr(editor, "find_executable", lambda command: None)
 
