@@ -5,6 +5,10 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import TypeVar
 
+from dotman import cli_style
+from dotman.errors import UsageError
+from dotman.interaction import ChoiceOption, ChoiceRequest, Interaction
+from dotman.interaction_policy import InteractionRequiredError
 
 Match = TypeVar("Match")
 
@@ -152,6 +156,35 @@ def build_profile_field_kinds() -> tuple[str, ...]:
     return normalize_field_kinds("profile")
 
 
+def build_profile_option(profile: str) -> ResolverOption:
+    return ResolverOption(
+        display_label=profile,
+        match_fields=build_profile_match_fields(profile=profile),
+        field_kinds=build_profile_field_kinds(),
+    )
+
+
+def build_selector_option(
+    *,
+    repo_name: str,
+    selector: str,
+    selector_kind: str,
+    use_color: bool,
+) -> ResolverOption:
+    display_fields = cli_style.build_selector_match_display_fields(
+        repo_name=repo_name,
+        selector=selector,
+        selector_kind=selector_kind,
+        use_color=use_color,
+    )
+    return ResolverOption(
+        display_label=cli_style.join_menu_display_fields(*display_fields),
+        display_fields=display_fields,
+        match_fields=build_selector_match_fields(repo_name=repo_name, selector=selector),
+        field_kinds=build_selector_field_kinds(),
+    )
+
+
 def _segment_match_rank(query: str, text: str) -> tuple[int, int, int, int] | None:
     normalized_query = query.strip().lower()
     normalized_text = text.lower()
@@ -227,3 +260,82 @@ def rank_resolver_matches(
             option=option_resolver(match),
         ),
     )
+
+
+
+def resolve_match(
+    interaction: Interaction | None,
+    *,
+    exact_matches: Sequence[Match],
+    partial_matches: Sequence[Match],
+    query_text: str,
+    option_resolver: Callable[[Match], ResolverOption],
+    value_resolver: Callable[[Match], str],
+    exact_header_text: str,
+    partial_header_text: str,
+    not_found_text: str,
+    exact_error_text: str | None = None,
+    partial_error_text: str | None = None,
+) -> Match:
+    """Pick one match: a sole exact match wins, otherwise ask, or fail without an interaction.
+
+    `value_resolver` gives each match's exact name, which keys the menu and is the
+    name a non-interactive run is told to pass back.
+    """
+    ranked_exact = rank_resolver_matches(exact_matches, query=query_text, option_resolver=option_resolver)
+    ranked_partial = rank_resolver_matches(partial_matches, query=query_text, option_resolver=option_resolver)
+    if len(ranked_exact) == 1:
+        return ranked_exact[0]
+    if ranked_exact:
+        return _choose_match(
+            interaction,
+            ranked_exact,
+            header_text=exact_header_text,
+            option_resolver=option_resolver,
+            value_resolver=value_resolver,
+            noninteractive_error=exact_error_text or _ambiguous_text(query_text, ranked_exact, value_resolver),
+        )
+    if ranked_partial:
+        if interaction is None and len(ranked_partial) == 1:
+            raise InteractionRequiredError(
+                f"no exact match for '{query_text}'; use exact name '{value_resolver(ranked_partial[0])}'"
+            )
+        return _choose_match(
+            interaction,
+            ranked_partial,
+            header_text=partial_header_text,
+            option_resolver=option_resolver,
+            value_resolver=value_resolver,
+            noninteractive_error=partial_error_text or _ambiguous_text(query_text, ranked_partial, value_resolver),
+        )
+    raise UsageError(not_found_text)
+
+
+def _ambiguous_text(query_text: str, matches: Sequence[Match], value_resolver: Callable[[Match], str]) -> str:
+    return f"'{query_text}' is ambiguous: " + ", ".join(value_resolver(match) for match in matches)
+
+
+def _choose_match(
+    interaction: Interaction | None,
+    matches: Sequence[Match],
+    *,
+    header_text: str,
+    option_resolver: Callable[[Match], ResolverOption],
+    value_resolver: Callable[[Match], str],
+    noninteractive_error: str,
+) -> Match:
+    if interaction is None:
+        raise InteractionRequiredError(noninteractive_error)
+    matches_by_value = {value_resolver(match): match for match in matches}
+    options = []
+    for match in matches:
+        option = option_resolver(match)
+        options.append(
+            ChoiceOption(
+                value=value_resolver(match),
+                label=option.display_label,
+                display_fields=option.display_fields or (option.display_label,),
+            )
+        )
+    selected_value = interaction.choose(ChoiceRequest(header_text=header_text, options=tuple(options)))
+    return matches_by_value[selected_value]
