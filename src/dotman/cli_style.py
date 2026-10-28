@@ -298,6 +298,12 @@ def render_tracked_state(state: str, *, use_color: bool) -> str:
     return style_text(state, *TRACKED_STATE_STYLE_BY_NAME.get(state, MENU_HINT_STYLE))
 
 
+def render_menu_header(header_text: str, *, use_color: bool) -> str:
+    if not use_color:
+        return header_text
+    return f"{style_text(MENU_HEADER_MARKER, *MENU_HEADER_MARKER_STYLE)} {style_text(header_text, '1')}"
+
+
 def render_info_section_header(label: str, *, use_color: bool) -> str:
     if not use_color:
         return f"  :: {label}"

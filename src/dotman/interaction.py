@@ -45,6 +45,8 @@ class ConfirmationRequest:
 @dataclass(frozen=True)
 class TextInputRequest:
     prompt: str
+    # Returned when the user presses Esc; None leaves Esc to the line editor.
+    escape_result: str | None = None
 
 
 InteractionRequest = ChoiceRequest[object] | ConfirmationRequest | TextInputRequest
@@ -125,6 +127,19 @@ def choose_with_fzf(
     return selected
 
 
+def parse_selection_index(raw_answer: str, item_count: int) -> int:
+    """Read a 1-based menu index; an empty answer picks the first item."""
+    answer = raw_answer.strip()
+    if not answer:
+        return 1
+    if not answer.isdigit():
+        raise ValueError(f"unsupported selection: {answer}")
+    selected_index = int(answer)
+    if not 1 <= selected_index <= item_count:
+        raise ValueError(f"selection index out of range: {selected_index}")
+    return selected_index
+
+
 def _terminal_lines() -> int:
     return shutil.get_terminal_size((80, 24)).lines
 
@@ -163,7 +178,7 @@ class TerminalInteraction:
             self.error_stream.write("invalid confirmation: enter 'y' or 'n'\n")
 
     def read_text(self, request: TextInputRequest) -> str:
-        return self._prompt(request.prompt)
+        return self._prompt(request.prompt, escape_result=request.escape_result)
 
     def _should_use_fzf(self, request: ChoiceRequest[ChoiceValue]) -> bool:
         available_menu_lines = max(1, self.terminal_lines() - MENU_SELECTION_OVERHEAD_LINES)
@@ -183,7 +198,7 @@ class TerminalInteraction:
                 self.output_stream.write("Selection help:\n  <number>  choose that item\n")
                 continue
             try:
-                return self._parse_selection_index(answer, len(request.options)) - 1
+                return parse_selection_index(answer, len(request.options)) - 1
             except ValueError as error:
                 self.error_stream.write(f"invalid selection: {error}\n")
 
@@ -196,15 +211,11 @@ class TerminalInteraction:
                 for option in request.options
             ],
         )
-        return self._parse_selection_index(selected, len(request.options)) - 1
+        return parse_selection_index(selected, len(request.options)) - 1
 
     def _print_selection_header(self, header_text: str) -> None:
         self.output_stream.write("\n")
-        if not self._colors_enabled():
-            self.output_stream.write(f"{header_text}\n")
-            return
-        marker = cli_style.style_text(cli_style.MENU_HEADER_MARKER, *cli_style.MENU_HEADER_MARKER_STYLE)
-        self.output_stream.write(f"{marker} {cli_style.style_text(header_text, '1')}\n")
+        self.output_stream.write(f"{cli_style.render_menu_header(header_text, use_color=self._colors_enabled())}\n")
 
     def _print_selection_item(self, index: int, label: str) -> None:
         if not self._colors_enabled():
@@ -223,11 +234,12 @@ class TerminalInteraction:
         hint = cli_style.style_text(hint_text, *cli_style.MENU_HINT_STYLE)
         return f"{marker} {prompt} {hint}: "
 
-    def _prompt(self, message: str) -> str:
+    def _prompt(self, message: str, *, escape_result: str | None = None) -> str:
         return read_prompt_line(
             message,
             input_stream=self.input_stream,
             output_stream=self.output_stream,
+            escape_result=escape_result,
         )
 
     def _colors_enabled(self) -> bool:
@@ -245,18 +257,6 @@ class TerminalInteraction:
         if ui_config is not None:
             return ui_config.menus.bottom_up
         return True
-
-    @staticmethod
-    def _parse_selection_index(raw_answer: str, item_count: int) -> int:
-        answer = raw_answer.strip()
-        if not answer:
-            return 1
-        if not answer.isdigit():
-            raise ValueError(f"unsupported selection: {answer}")
-        selected_index = int(answer)
-        if not 1 <= selected_index <= item_count:
-            raise ValueError(f"selection index out of range: {selected_index}")
-        return selected_index
 
 
 @dataclass(init=False)

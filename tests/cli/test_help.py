@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import dotman.cli_interaction as cli
+from dotman.interaction import ScriptedInteraction
 import pytest
 from dotman.cli import build_parser, main
 
@@ -264,26 +265,7 @@ def test_rewrite_home_action_help_is_stdout_only(capsys, action: str) -> None:
     assert "--stdout" not in output
     assert "output" not in output.lower()
 
-def test_selection_prompt_mentions_help() -> None:
-    assert cli.selection_prompt() == 'Select a number ("?"; default: 1): '
-
-def test_select_menu_option_shows_help_then_accepts_selection(monkeypatch, capsys) -> None:
-    prompts = iter(["?", "2"])
-
-    monkeypatch.setattr(cli, "prompt", lambda _message: next(prompts))
-
-    selected_index = cli.select_menu_option(
-        header_text="Select a profile:",
-        option_labels=["basic", "work"],
-    )
-
-    output = capsys.readouterr().out
-    assert selected_index == 1
-    assert "Selection help:" in output
-    assert "  <number>  choose that item" in output
-    assert "Enter" not in output
-
-def test_run_diff_review_menu_shows_help_then_skips_review(monkeypatch, capsys) -> None:
+def test_run_diff_review_menu_shows_help_then_skips_review(capsys) -> None:
     review_item = cli.ReviewItem(
         selection_label="example:git@basic",
         package_id="git",
@@ -297,11 +279,9 @@ def test_run_diff_review_menu_shows_help_then_skips_review(monkeypatch, capsys) 
         before_bytes=b"before\n",
         after_bytes=b"after\n",
     )
-    prompts = iter(["?", "s"])
+    interaction = ScriptedInteraction(text_inputs=["?", "s"])
 
-    monkeypatch.setattr(cli, "prompt", lambda _message, **_options: next(prompts))
-
-    assert cli.run_diff_review_menu([review_item], operation="push") is True
+    assert cli.run_diff_review_menu([review_item], interaction=interaction, operation="push") is True
 
     output = capsys.readouterr().out
     assert "Review commands:" in output
@@ -313,7 +293,7 @@ def test_run_diff_review_menu_shows_help_then_skips_review(monkeypatch, capsys) 
     assert "  ?          show this help" in output
 
 
-def test_run_diff_review_menu_uses_full_paths_when_requested(monkeypatch, capsys) -> None:
+def test_run_diff_review_menu_uses_full_paths_when_requested(capsys) -> None:
     review_item = cli.ReviewItem(
         selection_label="example:git@basic",
         package_id="git",
@@ -327,11 +307,9 @@ def test_run_diff_review_menu_uses_full_paths_when_requested(monkeypatch, capsys
         before_bytes=b"before\n",
         after_bytes=b"after\n",
     )
-    prompts = iter(["s"])
+    interaction = ScriptedInteraction(text_inputs=["s"])
 
-    monkeypatch.setattr(cli, "prompt", lambda _message, **_options: next(prompts))
-
-    assert cli.run_diff_review_menu([review_item], operation="push", full_paths=True) is True
+    assert cli.run_diff_review_menu([review_item], interaction=interaction, operation="push", full_paths=True) is True
 
     output = capsys.readouterr().out
     assert "/repo/very/long/path/gitconfig -> /live/very/long/path/gitconfig" in output

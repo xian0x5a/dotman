@@ -1,6 +1,6 @@
 """Contract of the fzf-backed menus, driven through a fake `fzf` on PATH (#152).
 
-Both selection entry points hand long menus to fzf. They must tell a user
+Terminal menus hand long lists to fzf. They must tell a user
 cancel apart from an fzf failure, and must not rely on `--accept-nth`
 (fzf >= 0.60): the minimum supported fzf is 0.54.
 """
@@ -15,7 +15,6 @@ from pathlib import Path
 
 import pytest
 
-from dotman.cli_interaction import select_menu_option
 from dotman.interaction import ChoiceOption, ChoiceRequest, TerminalInteraction
 
 # MENU_SELECTION_OVERHEAD_LINES is 6, so a 7-line terminal fits one menu row
@@ -26,7 +25,6 @@ OPTION_COUNT = 12
 SELECTED_LINE_NUMBER = 11
 
 PackageOption = tuple[str, tuple[str, ...]]
-SelectionEntryPoint = Callable[[Sequence[PackageOption]], str]
 
 
 def _package_options() -> list[PackageOption]:
@@ -36,7 +34,7 @@ def _package_options() -> list[PackageOption]:
     ]
 
 
-def _choose_with_terminal_interaction(options: Sequence[PackageOption]) -> str:
+def _choose_in_terminal(options: Sequence[PackageOption]) -> str:
     request = ChoiceRequest(
         header_text="Select a package:",
         options=tuple(
@@ -45,21 +43,6 @@ def _choose_with_terminal_interaction(options: Sequence[PackageOption]) -> str:
         ),
     )
     return TerminalInteraction().choose(request)
-
-
-def _choose_with_select_menu_option(options: Sequence[PackageOption]) -> str:
-    selected_index = select_menu_option(
-        header_text="Select a package:",
-        option_labels=[label for label, _display_fields in options],
-        option_display_fields=[display_fields for _label, display_fields in options],
-    )
-    return options[selected_index][0]
-
-
-ENTRY_POINTS = [
-    pytest.param(_choose_with_terminal_interaction, id="TerminalInteraction.choose"),
-    pytest.param(_choose_with_select_menu_option, id="select_menu_option"),
-]
 
 
 @pytest.fixture
@@ -79,20 +62,17 @@ def install_fake_fzf(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Callabl
     return install
 
 
-@pytest.mark.parametrize("choose", ENTRY_POINTS)
 def test_fzf_selection_takes_index_from_first_field_of_printed_line(
     install_fake_fzf: Callable[[str], None],
-    choose: SelectionEntryPoint,
 ) -> None:
     # Without `--accept-nth`, fzf prints the whole selected input line:
     # "<index> <display fields...>".
     install_fake_fzf(f"exec sed -n '{SELECTED_LINE_NUMBER}p'")
     options = _package_options()
 
-    assert choose(options) == options[SELECTED_LINE_NUMBER - 1][0]
+    assert _choose_in_terminal(options) == options[SELECTED_LINE_NUMBER - 1][0]
 
 
-@pytest.mark.parametrize("choose", ENTRY_POINTS)
 @pytest.mark.parametrize(
     ("exit_code", "stderr_text", "expected_error", "expected_message_patterns"),
     [
@@ -109,7 +89,6 @@ def test_fzf_selection_takes_index_from_first_field_of_printed_line(
 )
 def test_fzf_exit_status_distinguishes_cancel_from_fzf_failure(
     install_fake_fzf: Callable[[str], None],
-    choose: SelectionEntryPoint,
     exit_code: int,
     stderr_text: str,
     expected_error: type[BaseException],
@@ -120,7 +99,7 @@ def test_fzf_exit_status_distinguishes_cancel_from_fzf_failure(
     # Catch BaseException: an unexpected KeyboardInterrupt escaping a test
     # aborts the whole pytest session instead of failing this case.
     with pytest.raises(BaseException) as raised:
-        choose(_package_options())
+        _choose_in_terminal(_package_options())
 
     assert raised.type is expected_error, f"expected {expected_error.__name__}, got {raised.type.__name__}"
     message = str(raised.value)
@@ -129,7 +108,6 @@ def test_fzf_exit_status_distinguishes_cancel_from_fzf_failure(
 
 
 @pytest.mark.skipif(shutil.which("fzf") is None, reason="needs a real fzf")
-@pytest.mark.parametrize("choose", ENTRY_POINTS)
 @pytest.mark.parametrize(
     "output_shaping_option",
     [
@@ -141,7 +119,6 @@ def test_fzf_exit_status_distinguishes_cancel_from_fzf_failure(
 )
 def test_fzf_selection_ignores_output_shaping_user_defaults(
     monkeypatch: pytest.MonkeyPatch,
-    choose: SelectionEntryPoint,
     output_shaping_option: str,
 ) -> None:
     # fzf merges FZF_DEFAULT_OPTS into dotman's command line (#241). `--filter`
@@ -151,4 +128,4 @@ def test_fzf_selection_ignores_output_shaping_user_defaults(
     monkeypatch.setenv("LINES", SHORT_TERMINAL_LINES)
     options = _package_options()
 
-    assert choose(options) == options[SELECTED_LINE_NUMBER - 1][0]
+    assert _choose_in_terminal(options) == options[SELECTED_LINE_NUMBER - 1][0]

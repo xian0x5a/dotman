@@ -147,7 +147,7 @@ def _repo_command_runner(args: Any, interaction: Interaction | None) -> Any:
     command_runners = (
         InspectionCommandRunner(
             engine_factory=engine_factory,
-            runtime=cli_interaction.InspectionRuntime(),
+            runtime=cli_interaction.InspectionRuntime(interaction),
             use_color=use_color,
         ),
         StateCommandRunner(
@@ -173,6 +173,7 @@ def _repo_command_runner(args: Any, interaction: Interaction | None) -> Any:
         RestoreCommandRunner(
             config_loader=load_manager_config,
             use_color=use_color,
+            interaction=interaction,
         ),
     )
     runner_by_command = {

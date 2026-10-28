@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-import os
-import shutil
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TypeVar
 
 from dotman import cli_emit, cli_style
 from dotman.add import (
@@ -24,9 +21,16 @@ from dotman.diff_review import (
 )
 from dotman.editor import editor_command, resolve_editor_command
 from dotman.engine import DotmanEngine
-from dotman.interaction import Interaction, choose_with_fzf
+from dotman.interaction import (
+    ChoiceOption,
+    ChoiceRequest,
+    ConfirmationRequest,
+    Interaction,
+    TextInputRequest,
+    parse_selection_index,
+)
 from dotman.errors import UsageError
-from dotman.interaction_policy import InteractionRequiredError, no_confirm_enabled
+from dotman.interaction_policy import InteractionRequiredError
 from dotman.models import (
     SelectorKind,
     package_ref_text,
@@ -42,7 +46,7 @@ from dotman.resolver import (
     build_package_match_fields,
     build_selector_field_kinds,
     build_selector_match_fields,
-    rank_resolver_option,
+    resolve_match,
 )
 from dotman.repository import Repository
 from dotman.snapshot import (
@@ -50,7 +54,7 @@ from dotman.snapshot import (
     SnapshotRecord,
     find_snapshot_matches,
 )
-from dotman.terminal import ESCAPE_INPUT, colors_enabled as terminal_colors_enabled, read_prompt_line
+from dotman.terminal import ESCAPE_INPUT, colors_enabled as terminal_colors_enabled
 from dotman.ui_context import current_ui_config
 
 MENU_HEADER_MARKER = cli_style.MENU_HEADER_MARKER
@@ -59,17 +63,6 @@ MENU_INDEX_STYLE = cli_style.MENU_INDEX_STYLE
 MENU_PROMPT_STYLE = cli_style.MENU_PROMPT_STYLE
 MENU_HINT_STYLE = cli_style.MENU_HINT_STYLE
 MENU_ACTION_STYLE_BY_NAME = cli_style.MENU_ACTION_STYLE_BY_NAME
-MENU_SELECTION_OVERHEAD_LINES = 6
-SelectableItem = TypeVar("SelectableItem")
-
-
-def prompt(message: str, *, escape_result: str | None = None) -> str:
-    return read_prompt_line(
-        message,
-        input_stream=sys.stdin,
-        output_stream=sys.stdout,
-        escape_result=escape_result,
-    )
 
 
 def colors_enabled() -> bool:
@@ -136,15 +129,15 @@ def resolve_variable_text(
     engine: DotmanEngine,
     variable_text: str,
     *,
-    json_output: bool,
+    interaction: Interaction | None,
 ) -> str:
     query_text = variable_text.strip().removeprefix("vars.")
     exact_matches, partial_matches = engine.find_variable_matches(variable_text)
-    return resolve_candidate_match(
+    return resolve_match(
+        interaction,
         exact_matches=exact_matches,
         partial_matches=partial_matches,
         query_text=query_text,
-        interactive=interactive_mode_enabled(json_output=json_output),
         exact_header_text=f"Select a variable for '{variable_text}':",
         partial_header_text=f"Select a variable for '{variable_text}':",
         option_resolver=lambda match: ResolverOption(
@@ -152,7 +145,7 @@ def resolve_variable_text(
             match_fields=(match,),
             field_kinds=("variable",),
         ),
-        exact_name_resolver=lambda match: match,
+        value_resolver=lambda match: match,
         exact_error_text=f"variable '{variable_text}' is ambiguous: " + ", ".join(exact_matches),
         partial_error_text=f"variable '{variable_text}' is ambiguous: " + ", ".join(partial_matches),
         not_found_text=f"variable '{variable_text}' did not match any resolved variable",
@@ -184,120 +177,10 @@ def render_selector_match_label(*, repo_name: str, selector: str, selector_kind:
     )
 
 
-def print_selection_header(header_text: str) -> None:
-    print()
-    if not colors_enabled():
-        print(header_text)
-        return
-    print(
-        f"{style_text(MENU_HEADER_MARKER, *MENU_HEADER_MARKER_STYLE)} "
-        f"{style_text(header_text, '1')}"
-    )
-
-
-def print_selection_item(index: int, label: str) -> None:
-    if not colors_enabled():
-        print(f"  {index:>2}) {label}")
-        return
-    print(f"  {style_text(f'{index:>2})', *MENU_INDEX_STYLE)} {label}")
-
-
-def parse_selection_index(raw_answer: str, item_count: int) -> int:
-    answer = raw_answer.strip()
-    if not answer:
-        return 1
-    if not answer.isdigit():
-        raise ValueError(f"unsupported selection: {answer}")
-    selected_index = int(answer)
-    if not 1 <= selected_index <= item_count:
-        raise ValueError(f"selection index out of range: {selected_index}")
-    return selected_index
-
-
-def _select_menu_option_with_prompt(*, header_text: str, option_labels: Sequence[str]) -> int:
-    print_selection_header(header_text)
-    indexed_labels = list(enumerate(option_labels, start=1))
-    if ui_menus_bottom_up_enabled():
-        indexed_labels.reverse()
-    for index, option_label in indexed_labels:
-        print_selection_item(index, option_label)
-    while True:
-        try:
-            answer = prompt(selection_prompt())
-            if answer.strip() == "?":
-                print_selection_help()
-                continue
-            return parse_selection_index(answer, len(option_labels)) - 1
-        except ValueError as exc:
-            print(f"invalid selection: {exc}", file=sys.stderr)
-
-
-def _fzf_available() -> bool:
-    return shutil.which("fzf") is not None
-
-
-def ui_menus_bottom_up_enabled() -> bool:
-    raw_value = os.environ.get("DOTMAN_MENU_BOTTOM_UP")
-    if raw_value is not None:
-        return raw_value.strip().lower() not in {"0", "false", "no", "off"}
-    ui_config = current_ui_config()
-    if ui_config is not None:
-        return ui_config.menus.bottom_up
-    return True
-
-
 def _effective_full_paths(full_paths: bool | None) -> bool:
     if full_paths is not None:
         return full_paths
     return ui_full_paths_enabled()
-
-
-def _should_use_fzf_for_selection(option_labels: Sequence[str]) -> bool:
-    terminal_lines = shutil.get_terminal_size((80, 24)).lines
-    return len(option_labels) > max(1, terminal_lines - MENU_SELECTION_OVERHEAD_LINES)
-
-
-def _select_menu_option_with_fzf(
-    *,
-    header_text: str,
-    option_labels: Sequence[str],
-    option_display_fields: Sequence[Sequence[str]] | None = None,
-) -> int:
-    if option_display_fields is not None and len(option_display_fields) != len(option_labels):
-        raise ValueError("fzf display fields must align with option labels")
-    selected = choose_with_fzf(
-        current_command_runtime(),
-        header_text=header_text,
-        option_display_fields=option_display_fields or [(label,) for label in option_labels],
-    )
-    return parse_selection_index(selected, len(option_labels)) - 1
-
-
-def select_menu_option(
-    *,
-    header_text: str,
-    option_labels: Sequence[str],
-    option_display_fields: Sequence[Sequence[str]] | None = None,
-) -> int:
-    if _fzf_available() and _should_use_fzf_for_selection(option_labels):
-        return _select_menu_option_with_fzf(
-            header_text=header_text,
-            option_labels=option_labels,
-            option_display_fields=option_display_fields,
-        )
-    return _select_menu_option_with_prompt(header_text=header_text, option_labels=option_labels)
-
-
-def selection_prompt() -> str:
-    prompt_text = "Select a number"
-    hint_text = '("?"; default: 1)'
-    if not colors_enabled():
-        return f"{prompt_text} {hint_text}: "
-    return (
-        f"{style_text(MENU_HEADER_MARKER, *MENU_HEADER_MARKER_STYLE)} "
-        f"{style_text(prompt_text, *MENU_PROMPT_STYLE)} "
-        f"{style_text(hint_text, *MENU_HINT_STYLE)}: "
-    )
 
 
 def review_menu_prompt() -> str:
@@ -324,29 +207,6 @@ def review_continue_prompt() -> str:
     )
 
 
-def _prompt_yes_no(message: str, *, default: bool | None = None) -> bool:
-    while True:
-        answer = prompt(message).strip().lower()
-        if answer == "" and default is not None:
-            return default
-        if answer in {"y", "yes"}:
-            return True
-        if answer in {"n", "no"}:
-            return False
-        print("invalid confirmation: enter 'y' or 'n'", file=sys.stderr)
-
-
-def confirm_review_continue(*, no_confirm: bool = False) -> bool:
-    if no_confirm:
-        return True
-    return _prompt_yes_no(review_continue_prompt(), default=True)
-
-
-def print_selection_help() -> None:
-    print("Selection help:")
-    print("  <number>  choose that item")
-
-
 def print_review_command_help() -> None:
     print("Review commands:")
     print("  <number>   inspect one diff")
@@ -356,10 +216,6 @@ def print_review_command_help() -> None:
     print("  s, skip    skip remaining review")
     print("  Esc        abort")
     print("  ?          show this help")
-
-
-def interactive_mode_enabled(*, json_output: bool) -> bool:
-    return not no_confirm_enabled() and not json_output and sys.stdin.isatty()
 
 
 def parse_review_command(raw_answer: str, item_count: int) -> tuple[str, int | None]:
@@ -382,77 +238,11 @@ def parse_review_command(raw_answer: str, item_count: int) -> tuple[str, int | N
     raise ValueError(f"unsupported review command: {raw_answer.strip()}")
 
 
-def resolve_candidate_match(
-    *,
-    exact_matches: Sequence[SelectableItem],
-    partial_matches: Sequence[SelectableItem],
-    query_text: str,
-    interactive: bool,
-    exact_header_text: str,
-    partial_header_text: str,
-    option_resolver: Callable[[SelectableItem], ResolverOption],
-    exact_name_resolver: Callable[[SelectableItem], str],
-    exact_error_text: str,
-    partial_error_text: str,
-    not_found_text: str,
-) -> SelectableItem:
-    ranked_exact_matches = sorted(
-        exact_matches,
-        key=lambda match: rank_resolver_option(
-            query=query_text,
-            option=option_resolver(match),
-        ),
-    )
-    ranked_partial_matches = sorted(
-        partial_matches,
-        key=lambda match: rank_resolver_option(
-            query=query_text,
-            option=option_resolver(match),
-        ),
-    )
-    if len(exact_matches) == 1:
-        return ranked_exact_matches[0]
-    if len(exact_matches) > 1:
-        if not interactive:
-            raise InteractionRequiredError(exact_error_text)
-        resolved_options = [option_resolver(match) for match in ranked_exact_matches]
-        selected_index = select_menu_option(
-            header_text=exact_header_text,
-            option_labels=[option.display_label for option in resolved_options],
-            option_display_fields=[option.display_fields or (option.display_label,) for option in resolved_options],
-        )
-        return ranked_exact_matches[selected_index]
-    if len(partial_matches) == 1:
-        partial_match = ranked_partial_matches[0]
-        partial_option = option_resolver(partial_match)
-        if not interactive:
-            raise InteractionRequiredError(
-                f"no exact match for '{query_text}'; use exact name '{exact_name_resolver(partial_match)}'"
-            )
-        selected_index = select_menu_option(
-            header_text=partial_header_text,
-            option_labels=[partial_option.display_label],
-            option_display_fields=[partial_option.display_fields or (partial_option.display_label,)],
-        )
-        return ranked_partial_matches[selected_index]
-    if len(partial_matches) > 1:
-        if not interactive:
-            raise InteractionRequiredError(partial_error_text)
-        resolved_options = [option_resolver(match) for match in ranked_partial_matches]
-        selected_index = select_menu_option(
-            header_text=partial_header_text,
-            option_labels=[option.display_label for option in resolved_options],
-            option_display_fields=[option.display_fields or (option.display_label,) for option in resolved_options],
-        )
-        return ranked_partial_matches[selected_index]
-    raise UsageError(not_found_text)
-
-
 def resolve_tracked_package_text(
     engine: DotmanEngine,
     package_text: str,
     *,
-    json_output: bool,
+    interaction: Interaction | None,
 ) -> tuple[Repository, str, str | None]:
     explicit_repo, selector, bound_profile = parse_package_ref_text(package_text)
     package_query = package_ref_text(package_id=selector, bound_profile=bound_profile)
@@ -467,11 +257,11 @@ def resolve_tracked_package_text(
         )
         if rejection is not None:
             raise UsageError(rejection)
-    return resolve_candidate_match(
+    return resolve_match(
+        interaction,
         exact_matches=exact_matches,
         partial_matches=partial_matches,
         query_text=package_query,
-        interactive=interactive_mode_enabled(json_output=json_output),
         exact_header_text=f"Select a tracked package for '{package_query}':",
         partial_header_text=f"Select a tracked package for '{package_query}':",
         option_resolver=lambda match: ResolverOption(
@@ -489,7 +279,7 @@ def resolve_tracked_package_text(
             ),
             field_kinds=build_package_field_kinds(has_bound_profile=match[2] is not None),
         ),
-        exact_name_resolver=lambda match: (
+        value_resolver=lambda match: (
             f"{match[0].config.name}:{package_ref_text(package_id=match[1], bound_profile=match[2])}"
         ),
         exact_error_text=(
@@ -516,17 +306,17 @@ def resolve_trackable_selector_text(
     engine: DotmanEngine,
     query_text: str,
     *,
-    json_output: bool,
+    interaction: Interaction | None,
 ) -> tuple[Repository, str, SelectorKind]:
     explicit_repo, selector, selector_profile = parse_full_spec_selector_text(query_text)
     if selector_profile is not None:
         raise UsageError("trackable lookup does not accept selector@profile syntax")
     exact_matches, partial_matches = engine.find_selector_matches(selector, explicit_repo)
-    return resolve_candidate_match(
+    return resolve_match(
+        interaction,
         exact_matches=exact_matches,
         partial_matches=partial_matches,
         query_text=selector,
-        interactive=interactive_mode_enabled(json_output=json_output),
         exact_header_text=f"Select a package or group for '{selector}':",
         partial_header_text=f"Select a package or group for '{selector}':",
         option_resolver=lambda match: ResolverOption(
@@ -546,7 +336,7 @@ def resolve_trackable_selector_text(
             ),
             field_kinds=build_selector_field_kinds(),
         ),
-        exact_name_resolver=lambda match: f"{match[0].config.name}:{match[1]}",
+        value_resolver=lambda match: f"{match[0].config.name}:{match[1]}",
         exact_error_text=f"selector '{selector}' is defined in multiple repos: "
         + ", ".join(f"{repo.config.name}:{match}" for repo, match, _ in exact_matches),
         partial_error_text=f"selector '{selector}' is ambiguous: "
@@ -657,7 +447,8 @@ def print_review_menu_items(
     full_paths: bool | None = None,
 ) -> None:
     full_paths = _effective_full_paths(full_paths)
-    print_selection_header(f"Review pending diffs for {operation}:")
+    print()
+    print(cli_style.render_menu_header(f"Review pending diffs for {operation}:", use_color=colors_enabled()))
     for index, item in enumerate(review_items, start=1):
         print_review_item(index, item, full_paths=full_paths)
 
@@ -665,9 +456,9 @@ def print_review_menu_items(
 def run_diff_review_menu(
     review_items: Sequence[ReviewItem],
     *,
+    interaction: Interaction,
     operation: str,
     full_paths: bool | None = None,
-    no_confirm: bool = False,
 ) -> bool:
     full_paths = _effective_full_paths(full_paths)
     print_review_menu_items(review_items, operation=operation, full_paths=full_paths)
@@ -676,7 +467,7 @@ def run_diff_review_menu(
     while True:
         try:
             command_name, selected_index = parse_review_command(
-                prompt(review_menu_prompt(), escape_result=ESCAPE_INPUT),
+                interaction.read_text(TextInputRequest(prompt=review_menu_prompt(), escape_result=ESCAPE_INPUT)),
                 len(review_items),
             )
         except ValueError as exc:
@@ -707,7 +498,7 @@ def run_diff_review_menu(
         if command_name == "next":
             selected_index = 0 if last_viewed_index is None else last_viewed_index + 1
             if selected_index >= len(review_items):
-                if confirm_review_continue(no_confirm=no_confirm):
+                if interaction.confirm(ConfirmationRequest(prompt=review_continue_prompt(), default=True)):
                     return True
                 continue
         if selected_index is None:
@@ -733,7 +524,12 @@ def display_cli_path(reference_path: Path | str, *, full_paths: bool) -> str:
     return cli_emit.display_cli_path(reference_path, full_paths=full_paths)
 
 
-def resolve_snapshot_record(snapshot_root: Path, snapshot_ref: str | None, *, json_output: bool) -> SnapshotRecord:
+def resolve_snapshot_record(
+    snapshot_root: Path,
+    snapshot_ref: str | None,
+    *,
+    interaction: Interaction | None,
+) -> SnapshotRecord:
     matches = find_snapshot_matches(snapshot_root, snapshot_ref)
     if not matches:
         if snapshot_ref is None or snapshot_ref == "latest":
@@ -741,18 +537,27 @@ def resolve_snapshot_record(snapshot_root: Path, snapshot_ref: str | None, *, js
         raise UsageError(f"snapshot '{snapshot_ref}' did not match any available snapshot")
     if len(matches) == 1:
         return matches[0]
-    if not interactive_mode_enabled(json_output=json_output):
+    if interaction is None:
         raise InteractionRequiredError(
             f"snapshot '{snapshot_ref}' is ambiguous: " + ", ".join(snapshot.snapshot_id for snapshot in matches)
         )
-    selected_index = select_menu_option(
-        header_text=f"Select a snapshot for '{snapshot_ref}':",
-        option_labels=[
-            f"{snapshot.snapshot_id} [{snapshot.status}] ({snapshot.entry_count} path{'s' if snapshot.entry_count != 1 else ''})"
-            for snapshot in matches
-        ],
+    matches_by_id = {snapshot.snapshot_id: snapshot for snapshot in matches}
+    selected_snapshot_id = interaction.choose(
+        ChoiceRequest(
+            header_text=f"Select a snapshot for '{snapshot_ref}':",
+            options=tuple(
+                ChoiceOption(
+                    value=snapshot.snapshot_id,
+                    label=(
+                        f"{snapshot.snapshot_id} [{snapshot.status}] "
+                        f"({snapshot.entry_count} path{'s' if snapshot.entry_count != 1 else ''})"
+                    ),
+                )
+                for snapshot in matches
+            ),
+        )
     )
-    return matches[selected_index]
+    return matches_by_id[selected_snapshot_id]
 
 
 build_restore_review_items = cli_emit.build_restore_review_items
@@ -762,56 +567,57 @@ def review_restore_actions_for_interactive_diffs(
     *,
     snapshot: SnapshotRecord,
     actions: Sequence[RestoreAction],
-    json_output: bool,
+    interaction: Interaction | None,
     full_paths: bool | None = None,
-    no_confirm: bool = False,
 ) -> bool:
     full_paths = _effective_full_paths(full_paths)
-    if not interactive_mode_enabled(json_output=json_output):
+    if interaction is None:
         return True
     review_items = build_restore_review_items(snapshot, actions)
     if not review_items:
         return True
-    return run_diff_review_menu(review_items, operation="restore", full_paths=full_paths, no_confirm=no_confirm)
+    return run_diff_review_menu(review_items, interaction=interaction, operation="restore", full_paths=full_paths)
 
 
 @dataclass(frozen=True)
 class InspectionRuntime:
+    interaction: Interaction | None
+
     def resolve_tracked_package_text(
         self,
         engine: DotmanEngine,
         package_text: str,
         *,
-        json_output: bool,
+        interaction: Interaction | None,
     ) -> tuple[Repository, str, str | None]:
-        return resolve_tracked_package_text(engine, package_text, json_output=json_output)
+        return resolve_tracked_package_text(engine, package_text, interaction=interaction)
 
     def resolve_trackable_selector_text(
         self,
         engine: DotmanEngine,
         query_text: str,
         *,
-        json_output: bool,
+        interaction: Interaction | None,
     ) -> tuple[Repository, str, SelectorKind]:
-        return resolve_trackable_selector_text(engine, query_text, json_output=json_output)
+        return resolve_trackable_selector_text(engine, query_text, interaction=interaction)
 
     def resolve_variable_text(
         self,
         engine: DotmanEngine,
         variable_text: str,
         *,
-        json_output: bool,
+        interaction: Interaction | None,
     ) -> str:
-        return resolve_variable_text(engine, variable_text, json_output=json_output)
+        return resolve_variable_text(engine, variable_text, interaction=interaction)
 
     def resolve_snapshot_record(
         self,
         snapshot_root: Path,
         snapshot_ref: str | None,
         *,
-        json_output: bool,
+        interaction: Interaction | None,
     ) -> SnapshotRecord:
-        return resolve_snapshot_record(snapshot_root, snapshot_ref, json_output=json_output)
+        return resolve_snapshot_record(snapshot_root, snapshot_ref, interaction=interaction)
 
 
 @dataclass(frozen=True)

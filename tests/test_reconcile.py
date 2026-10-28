@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -22,6 +23,15 @@ def _patch_editor_runtime(monkeypatch, fake_run) -> MemoryCommandRuntime:
     runtime = MemoryCommandRuntime([run_editor])
     monkeypatch.setattr(reconcile_module, "current_command_runtime", lambda: runtime)
     return runtime
+
+
+def _answer_prompts(monkeypatch, *answers: str) -> None:
+    monkeypatch.setattr("sys.stdin", StringIO("".join(f"{answer}\n" for answer in answers)))
+
+
+class _UnreadableStdin(StringIO):
+    def readline(self, *_args) -> str:
+        raise AssertionError("reconcile should not prompt")
 
 
 def test_reconcile_write_confirmation_prompt_uses_bracket_style() -> None:
@@ -125,7 +135,7 @@ def test_run_basic_reconcile_opens_review_file_then_transactional_source_copies(
         return SimpleNamespace(returncode=0)
 
     _patch_editor_runtime(monkeypatch, fake_run)
-    monkeypatch.setattr(reconcile_module, "prompt", lambda _message: "y")
+    _answer_prompts(monkeypatch, "y")
 
     exit_code = run_basic_reconcile(
         repo_path=str(repo_path),
@@ -266,11 +276,7 @@ def test_run_basic_reconcile_reports_no_changes_when_editor_makes_no_edits(
         monkeypatch,
         lambda command, check: SimpleNamespace(returncode=0),
     )
-    monkeypatch.setattr(
-        reconcile_module,
-        "prompt",
-        lambda _message: (_ for _ in ()).throw(AssertionError("prompt should not run when nothing changed")),
-    )
+    monkeypatch.setattr("sys.stdin", _UnreadableStdin())
 
     exit_code = run_basic_reconcile(
         repo_path=str(repo_path),
@@ -299,11 +305,7 @@ def test_run_basic_reconcile_accepts_approve_write_without_prompting(
         return SimpleNamespace(returncode=0)
 
     _patch_editor_runtime(monkeypatch, fake_run)
-    monkeypatch.setattr(
-        reconcile_module,
-        "prompt",
-        lambda _message: (_ for _ in ()).throw(AssertionError("prompt should not run when approve_write is set")),
-    )
+    monkeypatch.setattr("sys.stdin", _UnreadableStdin())
 
     exit_code = run_basic_reconcile(
         repo_path=str(repo_path),
@@ -334,7 +336,7 @@ def test_run_basic_reconcile_lists_only_changed_repo_sources_before_prompt(
         return SimpleNamespace(returncode=0)
 
     _patch_editor_runtime(monkeypatch, fake_run)
-    monkeypatch.setattr(reconcile_module, "prompt", lambda _message: "n")
+    _answer_prompts(monkeypatch, "n")
 
     exit_code = run_basic_reconcile(
         repo_path=str(repo_path),
@@ -345,7 +347,7 @@ def test_run_basic_reconcile_lists_only_changed_repo_sources_before_prompt(
 
     assert exit_code == 0
     output = capsys.readouterr().out
-    assert "Reconciled repo source changes:" in output
+    assert output.index("Reconciled repo source changes:") < output.index("Write these changes? [y/n] ")
     assert f"  - {repo_path.resolve()}" in output
     assert str(include_path.resolve()) not in output
 
@@ -366,7 +368,7 @@ def test_run_basic_reconcile_lists_a_destination_path_with_unprintable_character
         return SimpleNamespace(returncode=0)
 
     _patch_editor_runtime(monkeypatch, fake_run)
-    monkeypatch.setattr(reconcile_module, "prompt", lambda _message: "n")
+    _answer_prompts(monkeypatch, "n")
 
     run_basic_reconcile(repo_path=str(repo_path), live_path=str(live_path), additional_sources=[], editor="nvim")
 
@@ -389,7 +391,7 @@ def test_run_basic_reconcile_discards_temp_edits_when_write_is_not_confirmed(
         return SimpleNamespace(returncode=0)
 
     _patch_editor_runtime(monkeypatch, fake_run)
-    monkeypatch.setattr(reconcile_module, "prompt", lambda _message: "n")
+    _answer_prompts(monkeypatch, "n")
 
     exit_code = run_basic_reconcile(
         repo_path=str(repo_path),
@@ -416,9 +418,8 @@ def test_run_basic_reconcile_requires_explicit_confirmation_answer(
         Path(command[1]).write_text("edited repo\n", encoding="utf-8")
         return SimpleNamespace(returncode=0)
 
-    answers = iter(["", "maybe", "y"])
     _patch_editor_runtime(monkeypatch, fake_run)
-    monkeypatch.setattr(reconcile_module, "prompt", lambda _message: next(answers))
+    _answer_prompts(monkeypatch, "", "maybe", "y")
 
     exit_code = run_basic_reconcile(
         repo_path=str(repo_path),
