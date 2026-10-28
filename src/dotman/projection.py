@@ -107,36 +107,6 @@ def target_claims_path(target: TargetSpec) -> bool:
     return target.probe is None
 
 
-def validate_probe_target_config(*, repo_name: str, package: PackageSpec, target: TargetSpec) -> None:
-    if target.probe is None:
-        return
-    target_label = repo_qualified_target_text(repo_name=repo_name, package_id=package.id, target_name=target.name)
-    if resolve_sync_policy(package=package, target=target) == "push-only-delete":
-        raise UsageError(f"target '{target_label}' uses probe and cannot use push-only-delete; use push-only")
-    forbidden_probe_fields = {
-        "source": target.source,
-        "path": target.path,
-        "type": target.target_type,
-        "chmod": target.chmod,
-        "render": target.render if target.render_explicit else None,
-        "capture": target.capture if target.capture_explicit else None,
-        "editor": target.editor if target.editor_explicit else None,
-        "compare": (
-            {"repo": target.compare_repo, "live": target.compare_live}
-            if target.compare_repo_explicit or target.compare_live_explicit
-            else None
-        ),
-        "ignore": target.ignore_patterns if target.ignore_patterns is not None else target.ignore_command,
-        "path_rules": target.path_rules or None,
-    }
-    forbidden = sorted(name for name, value in forbidden_probe_fields.items() if value is not None)
-    if forbidden:
-        raise UsageError(
-            f"target '{target_label}' uses probe and must not define: "
-            + ", ".join(forbidden)
-        )
-
-
 def _projection_command(value: str) -> str:
     return value[len(FORCED_COMMAND_PREFIX):] if value.startswith(FORCED_COMMAND_PREFIX) else value
 
@@ -169,7 +139,6 @@ def build_target_metadata(
             if not sync_policy_allows_operation(sync_policy, operation=operation):
                 continue
             if target.probe is not None:
-                validate_probe_target_config(repo_name=repo.config.name, package=package, target=target)
                 probe_command = render_template_string(
                     target.probe,
                     context,

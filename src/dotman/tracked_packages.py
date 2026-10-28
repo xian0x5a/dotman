@@ -8,7 +8,7 @@ from dotman.collisions import resolve_tracked_target_winners
 from dotman.config import expand_path
 from dotman.errors import UsageError
 from dotman.manifest import deep_merge, infer_profile_os
-from dotman.projection import default_compare_live, resolve_target_kind, validate_probe_target_config
+from dotman.projection import default_compare_live, resolve_target_kind
 from dotman.models import (
     FullSpecSelector,
     SelectorKind,
@@ -393,7 +393,6 @@ def summarize_targets(
         if target.disabled:
             continue
         if target.probe is not None:
-            validate_probe_target_config(repo_name=repo.config.name, package=package, target=target)
             target_summaries.append(
                 TrackedTargetSummary(
                     target_name=target.name,

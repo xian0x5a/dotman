@@ -401,19 +401,22 @@ def test_probe_target_rejects_file_payload_fields(tmp_path: Path) -> None:
         target_manifest=[
             'source = "files/config.txt"',
             'path = "~/.config/app/config.txt"',
+            'render = "raw"',
+            "disabled = true",
         ],
     )
+    engine = DotmanEngine.from_config_path(write_single_repo_config(tmp_path, repo_name="fixture", repo_path=repo_root))
 
-    with pytest.raises(ValueError, match="target 'version' uses probe and must not define: path, source"):
-        DotmanEngine.from_config_path(write_single_repo_config(tmp_path, repo_name="fixture", repo_path=repo_root))
+    # The package is untracked and the target disabled, yet listing still resolves it.
+    with pytest.raises(ValueError, match="target 'fixture:app.version' uses probe and must not define: path, render, source"):
+        engine.list_trackables()
 
 
 @pytest.mark.parametrize(
     ("package_policy", "target_policy", "message"),
     [
-        # Manifest parsing knows only the file, so it names the target by its location.
-        ("", 'sync_policy = "push-only-delete"', r"package manifest .+package\.toml target 'version' uses probe and cannot use push-only-delete"),
-        # A package-level policy only reaches the probe once resolved, where the repo and package are known.
+        ("", 'sync_policy = "push-only-delete"', r"target 'fixture:app\.version' uses probe and cannot use push-only-delete"),
+        # A package-level policy reaches the probe only through resolution.
         ('sync_policy = "push-only-delete"', "", r"target 'fixture:app\.version' uses probe and cannot use push-only-delete"),
     ],
 )
