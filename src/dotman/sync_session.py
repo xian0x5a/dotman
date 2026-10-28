@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, replace
-from typing import Callable, Literal, Mapping
+from typing import Callable, Iterator, Literal, Mapping
 from pathlib import Path
 from uuid import uuid4
 import stat
@@ -811,27 +811,38 @@ class ProposalSession:
     @staticmethod
     def _freeze_obsolete_bases(context, observed) -> tuple[tuple, dict]:
         """Obsolete child Bases of complete censuses, and per-directory read failures."""
-        candidates, failures = [], {}
+        def failure(exc: Exception) -> Diagnostic:
+            return Diagnostic("base-maintenance-failed", str(exc), severity="warning")
+
+        state_root = context.tracked_state.state_root
+        censuses_by_store = {}
         for identity, item, census, complete in observed.directory_censuses:
-            if not complete:
-                continue
-            state_root, state_key = context.tracked_state.state_root, item.repo.config.state_key
+            if complete:
+                censuses_by_store.setdefault(item.repo.config.state_key, []).append((identity, census))
+        candidates, failures = [], {}
+        for state_key, censuses in censuses_by_store.items():
             try:
                 # Absent storage holds no obsolete Base; do not create it.
                 if not SyncBaseStore.exists(state_root, state_key):
                     continue
-                with SyncBaseStore.open(state_root, state_key, create=False) as store:
-                    stored = store.target_records(identity.canonical.encode())
+                store = SyncBaseStore.open(state_root, state_key, create=False)
             except (SyncBaseStoreError, OSError) as exc:
-                failures[identity] = Diagnostic("base-maintenance-failed", str(exc), severity="warning")
+                failures.update((identity, failure(exc)) for identity, _ in censuses)
                 continue
-            prefix = (identity.canonical + "/").encode()
-            # Undecodable names keep their raw bytes; no stored identity can match them.
-            present = {prefix + path.encode(errors="surrogateescape") for path, _ in census.entries}
-            candidates.extend(
-                (identity, state_key, record.identity) for record in stored
-                if record.identity.startswith(prefix) and record.identity not in present
-            )
+            with store:
+                for identity, census in censuses:
+                    try:
+                        stored = store.target_records(identity.canonical.encode())
+                    except (SyncBaseStoreError, OSError) as exc:
+                        failures[identity] = failure(exc)
+                        continue
+                    prefix = (identity.canonical + "/").encode()
+                    # Undecodable names keep their raw bytes; no stored identity can match them.
+                    present = {prefix + path.encode(errors="surrogateescape") for path, _ in census.entries}
+                    candidates.extend(
+                        (identity, state_key, record.identity) for record in stored
+                        if record.identity.startswith(prefix) and record.identity not in present
+                    )
         return tuple(candidates), failures
 
     def request_editor_cancel(self) -> None:
@@ -1357,9 +1368,9 @@ class ProposalSession:
         # One sudo scope for the whole execution: protected writes and root
         # hooks share one authentication notice, and the keepalive stops a
         # long run from prompting again once sudo's ticket would expire.
-        with sudo_session():
+        with sudo_session(), self._writable_stores() as stores:
             published, operation_diagnostics, steps = (
-                ({}, (), ()) if preview or aborted else self._publish()
+                ({}, (), ()) if preview or aborted else self._publish(stores)
             )
         units = []
         for observation in self.view.observations:
@@ -1571,36 +1582,53 @@ class ProposalSession:
         base_current = records_base and observation.base.record == replace(frozen, payload=proposal.repository).record()
         return replace(proposal, noop=not records_base or base_current)
 
-    def _acknowledge(self, row: SessionRow) -> None:
+    @contextmanager
+    def _writable_stores(self) -> Iterator[Callable[[str], SyncBaseStore]]:
+        """Lazily open each repo's writable store once for the whole execution.
+
+        Opening validates the whole store, so opening per unit made a Sync cost
+        units x stored Bases (#146). Holding a store open is safe: its flock is
+        taken per operation, and its descriptors are close-on-exec, so hooks
+        neither wait on it nor inherit it. A failed open is not cached; the next
+        unit retries, as a per-unit open did.
+        """
+        stores = {}
+        with ExitStack() as resources:
+            def store(state_key: str) -> SyncBaseStore:
+                if state_key not in stores:
+                    stores[state_key] = resources.enter_context(SyncBaseStore.open(
+                        self._context.tracked_state.state_root, state_key,
+                    ))
+                return stores[state_key]
+            yield store
+
+    def _acknowledge(self, row: SessionRow, stores: Callable[[str], SyncBaseStore]) -> None:
         observation = row.observation
         if not row.proposal.checkpoint_qualified:
             return
         item, _metadata = self._resolved_inputs[observation.identity]
         try:
-            with SyncBaseStore.open(
-                self._context.tracked_state.state_root, item.repo.config.state_key,
-            ) as store:
-                lifecycle = SyncBaseLifecycle(store, preview=False)
-                completion = lifecycle.complete(
-                    replace(self._frozen_bases[observation.identity], payload=row.proposal.repository),
-                    ProposalCompletion(
-                        approved=True,
-                        publication_effects="succeeded" if row.proposal.publication_effects else "not-required",
-                        primary_effect="succeeded" if row.proposal.primary_source_change is not None else "not-required",
-                    ),
-                )
-                if completion.acknowledged:
-                    self._acknowledged.add(row.row_id)
-                if completion.failure is not None:
-                    self._checkpoint_warnings[row.row_id] = (Diagnostic(
-                        completion.warning_code, str(completion.failure), severity="warning"),)
+            lifecycle = SyncBaseLifecycle(stores(item.repo.config.state_key), preview=False)
+            completion = lifecycle.complete(
+                replace(self._frozen_bases[observation.identity], payload=row.proposal.repository),
+                ProposalCompletion(
+                    approved=True,
+                    publication_effects="succeeded" if row.proposal.publication_effects else "not-required",
+                    primary_effect="succeeded" if row.proposal.primary_source_change is not None else "not-required",
+                ),
+            )
+            if completion.acknowledged:
+                self._acknowledged.add(row.row_id)
+            if completion.failure is not None:
+                self._checkpoint_warnings[row.row_id] = (Diagnostic(
+                    completion.warning_code, str(completion.failure), severity="warning"),)
         except (KeyboardInterrupt, InterruptedError):
             raise
         except (SyncBaseStoreError, OSError) as exc:
             self._checkpoint_warnings[row.row_id] = (Diagnostic(
                 "base-acknowledgment-failed", str(exc), severity="warning"),)
 
-    def _publish(self) -> tuple[
+    def _publish(self, stores: Callable[[str], SyncBaseStore]) -> tuple[
         dict[str, tuple[str, tuple[Diagnostic, ...]]],
         tuple[Diagnostic, ...],
         tuple[SyncStepOutcome, ...],
@@ -1621,11 +1649,11 @@ class ProposalSession:
         self._additional_results, additional_diagnostics, additional_steps = self._apply_additional(additional_rows)
         if not selected and not any(auxiliary.values()):
             if not additional_diagnostics:
-                additional_diagnostics = self._reclaim_obsolete_bases()
+                additional_diagnostics = self._reclaim_obsolete_bases(stores)
             return {}, additional_diagnostics, additional_steps
         by_id = {row.row_id: row for row in selected}
         def complete(unit: RepositoryApplyUnit) -> None:
-            self._acknowledge(by_id[unit.row_id])
+            self._acknowledge(by_id[unit.row_id], stores)
 
         # Even an ineligible no-write Proposal has an ordered completion boundary.
         result = execute_repository_apply(
@@ -1650,7 +1678,7 @@ class ProposalSession:
         if publication or auxiliary["push"]:
             blocked = bool(diagnostics)
             published, publication_diagnostics, publication_steps = self._publish_effects(
-                publication, auxiliary["push"], blocked=blocked,
+                publication, stores, auxiliary["push"], blocked=blocked,
             )
             for identity, outcome in published.items():
                 # A later stage cannot erase repository failure or successful
@@ -1660,10 +1688,10 @@ class ProposalSession:
             diagnostics += publication_diagnostics
             steps += publication_steps
         if not diagnostics:
-            diagnostics = self._reclaim_obsolete_bases()
+            diagnostics = self._reclaim_obsolete_bases(stores)
         return units, diagnostics, steps
 
-    def _reclaim_obsolete_bases(self) -> tuple[Diagnostic, ...]:
+    def _reclaim_obsolete_bases(self, stores: Callable[[str], SyncBaseStore]) -> tuple[Diagnostic, ...]:
         # Any unincluded or diagnosed row withholds its whole directory's proof.
         withheld = {
             replace(row.observation.identity, child_path=None) for row in self.view.rows
@@ -1676,10 +1704,10 @@ class ProposalSession:
         try:
             for state_key, keys in keys_by_store.items():
                 self.check_cancelled()
-                with SyncBaseStore.open(self._context.tracked_state.state_root, state_key) as store:
-                    for key in keys:
-                        self.check_cancelled()
-                        store.delete(key)
+                store = stores(state_key)
+                for key in keys:
+                    self.check_cancelled()
+                    store.delete(key)
         except (KeyboardInterrupt, InterruptedError):
             return (Diagnostic("interrupted", "Directory Base maintenance interrupted"),)
         except (SyncBaseStoreError, OSError) as exc:
@@ -1737,14 +1765,14 @@ class ProposalSession:
             ))
         return tuple(work)
 
-    def _publish_effects(self, selected: tuple[SessionRow, ...], auxiliary: tuple[HookActivation, ...] = (), *, blocked: bool = False) -> tuple[
+    def _publish_effects(self, selected: tuple[SessionRow, ...], stores: Callable[[str], SyncBaseStore], auxiliary: tuple[HookActivation, ...] = (), *, blocked: bool = False) -> tuple[
         dict[str, tuple[str, tuple[Diagnostic, ...]]],
         tuple[Diagnostic, ...],
         tuple[SyncStepOutcome, ...],
     ]:
         by_id = {row.row_id: row for row in selected}
         def complete(unit: PublicationUnit) -> None:
-            self._acknowledge(by_id[unit.row_id])
+            self._acknowledge(by_id[unit.row_id], stores)
 
         result = execute_publication(
             self._publication_metadata,
