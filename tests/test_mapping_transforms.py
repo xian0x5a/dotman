@@ -331,3 +331,45 @@ def test_merge_remove_drops_a_mapping_the_removal_empties_and_the_repo_deleted(
         "--mode", "merge", "--overlay-file", str(overlay_path),
         "--selector-type", "remove", "--selectors", "a.x", "b",
     ) == {"b": 3, "empty": {}}
+
+
+# YAML mapping keys need not be strings. Selectors match them by their YAML
+# spelling, so `true` selects a boolean key and `1` an integer key.
+YAML_NON_STRING_KEYS = pytest.mark.parametrize(("key", "key_text"), [(True, "true"), (1, "1")])
+
+
+@YAML_NON_STRING_KEYS
+@pytest.mark.parametrize(
+    ("selector_action", "expected"),
+    [
+        ("retain", lambda key: {"outer": {key: 1}, key: {"a": 1}}),
+        ("remove", lambda key: {"outer": {"x": 2}, "other": 3}),
+    ],
+)
+def test_yaml_selectors_match_non_string_keys_by_their_yaml_spelling(
+    key, key_text, selector_action, expected, tmp_path
+) -> None:
+    base = {"outer": {key: 1, "x": 2}, key: {"a": 1}, "other": 3}
+
+    assert run_transform(
+        "yaml",
+        tmp_path,
+        base,
+        "--mode", "cleanup", "--selector-type", selector_action,
+        "--selectors", key_text, f"outer.{key_text}",
+    ) == expected(key)
+
+
+@YAML_NON_STRING_KEYS
+def test_yaml_merge_replaces_a_wholly_selected_non_string_key(key, key_text, tmp_path) -> None:
+    # Selecting the key whole makes its mapping one value, so the repo's copy
+    # replaces the live one instead of merging into it key by key.
+    overlay_path = write_mapping(tmp_path / "overlay.yaml", "yaml", {key: {"a": 2}, "other": 2})
+
+    assert run_transform(
+        "yaml",
+        tmp_path,
+        {key: {"live": 1, "a": 1}, "other": 1},
+        "--mode", "merge", "--overlay-file", str(overlay_path),
+        "--selector-type", "retain", "--selectors", key_text,
+    ) == {key: {"a": 2}, "other": 2}

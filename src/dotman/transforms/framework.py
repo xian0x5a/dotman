@@ -10,7 +10,7 @@ import math
 from pathlib import Path
 import re
 import sys
-from typing import Any, ClassVar, Iterable
+from typing import Any, Callable, ClassVar, Iterable
 
 from dotman.atomic_files import write_bytes_atomic, write_text_atomic
 from dotman.errors import UsageError
@@ -19,6 +19,8 @@ STDIN_PATH = Path("-")
 # A selector with this prefix removes paths from the selection instead of adding them.
 EXCLUSION_PREFIX = "not:"
 KeyPath = tuple[str, ...]
+# The empty key path selects the whole document.
+DOCUMENT_ROOT_KEY_PATH: KeyPath = ()
 
 
 class TransformMode(StrEnum):
@@ -98,6 +100,205 @@ def without_emptied_mappings(selected: Mapping[Any, Any], base: Mapping[Any, Any
                 continue
         kept[key] = value
     return kept
+
+
+# Spells a mapping key as selectors see it. JSON and plist keys are already
+# strings; YAML keys can be booleans, numbers or null.
+KeyText = Callable[[Any], str]
+_MISSING = object()
+
+
+def identity_key_text(key: str) -> str:
+    return key
+
+
+@dataclass
+class PathSelector:
+    """Selected key paths as a tree; a node that includes its subtree has no children."""
+
+    include_subtree: bool = False
+    children: dict[str, "PathSelector"] = field(default_factory=dict)
+
+
+def build_path_selector(key_paths: tuple[KeyPath, ...]) -> PathSelector:
+    root = PathSelector()
+    for key_path in key_paths:
+        current = root
+        for key_part in key_path:
+            if current.include_subtree:
+                break
+            current = current.children.setdefault(key_part, PathSelector())
+        current.include_subtree = True
+        current.children.clear()
+    return root
+
+
+def iter_key_paths(value: Any, *, key_text: KeyText, prefix: KeyPath = ()) -> tuple[KeyPath, ...]:
+    if not isinstance(value, dict):
+        return ()
+
+    key_paths: list[KeyPath] = []
+    for key, child_value in value.items():
+        key_path = prefix + (key_text(key),)
+        key_paths.append(key_path)
+        key_paths.extend(iter_key_paths(child_value, key_text=key_text, prefix=key_path))
+    return tuple(key_paths)
+
+
+def key_paths_matching_regexes(
+    data: Mapping[Any, Any],
+    key_regexes: tuple[re.Pattern[str], ...],
+    *,
+    key_text: KeyText,
+) -> tuple[KeyPath, ...]:
+    if not key_regexes:
+        return ()
+    return tuple(
+        key_path
+        for key_path in iter_key_paths(data, key_text=key_text)
+        if any(key_regex.search(".".join(key_path)) for key_regex in key_regexes)
+    )
+
+
+def select_key_paths(
+    data: Mapping[Any, Any],
+    exact_key_paths: tuple[KeyPath, ...],
+    key_regexes: tuple[re.Pattern[str], ...],
+    *,
+    key_text: KeyText,
+) -> tuple[KeyPath, ...]:
+    return exact_key_paths + key_paths_matching_regexes(data, key_regexes, key_text=key_text)
+
+
+def retained_value(value: Any, selector: PathSelector, *, key_text: KeyText) -> Any:
+    if selector.include_subtree:
+        return value
+    if not isinstance(value, dict):
+        return _MISSING
+
+    retained_data: dict[Any, Any] = {}
+    for key, child_value in value.items():
+        child_selector = selector.children.get(key_text(key))
+        if child_selector is None:
+            continue
+        child_retained_value = retained_value(child_value, child_selector, key_text=key_text)
+        if child_retained_value is not _MISSING:
+            retained_data[key] = child_retained_value
+
+    if not retained_data:
+        return _MISSING
+    return retained_data
+
+
+def stripped_value(value: Any, selector: PathSelector, *, key_text: KeyText) -> Any:
+    if selector.include_subtree:
+        return _MISSING
+    if not isinstance(value, dict):
+        return value
+
+    stripped_data: dict[Any, Any] = {}
+    for key, child_value in value.items():
+        child_selector = selector.children.get(key_text(key))
+        if child_selector is None:
+            stripped_data[key] = child_value
+            continue
+
+        child_stripped_value = stripped_value(child_value, child_selector, key_text=key_text)
+        if child_stripped_value is not _MISSING:
+            stripped_data[key] = child_stripped_value
+
+    return stripped_data
+
+
+def select_data(
+    data: dict[Any, Any],
+    selector_action: SelectorAction,
+    selected_key_paths: tuple[KeyPath, ...],
+    *,
+    key_text: KeyText,
+) -> dict[Any, Any]:
+    path_selector = build_path_selector(selected_key_paths)
+    if selector_action == SelectorAction.REMOVE:
+        selected = stripped_value(data, path_selector, key_text=key_text)
+    else:
+        selected = retained_value(data, path_selector, key_text=key_text)
+    return {} if selected is _MISSING else selected
+
+
+def child_overlay_selector(selector: PathSelector, key: Any, *, key_text: KeyText) -> PathSelector:
+    # Everything under a whole selection is whole too. A key no selector
+    # reaches gets an empty selector, so merge still descends into it.
+    if selector.include_subtree:
+        return selector
+    return selector.children.get(key_text(key)) or PathSelector()
+
+
+def overlay_objects(
+    original_base_data: dict[Any, Any],
+    preserved_base_data: dict[Any, Any],
+    overlay_data: dict[Any, Any],
+    path_selector: PathSelector,
+    *,
+    key_text: KeyText,
+) -> dict[Any, Any]:
+    merged_data: dict[Any, Any] = {}
+
+    # Keep surviving keys in live order so repo-managed value changes do not also
+    # produce noisy key-movement diffs.
+    for key in original_base_data:
+        child_selector = child_overlay_selector(path_selector, key, key_text=key_text)
+
+        if key in overlay_data:
+            overlay_value = overlay_data[key]
+            base_value = original_base_data[key]
+            # A whole selection is one value, so the overlay's copy replaces it. Any
+            # other mapping in both base and overlay merges key by key, whether or
+            # not selection kept any of it, so its keys keep live order and the live
+            # keys selection kept survive.
+            if (
+                not child_selector.include_subtree
+                and isinstance(base_value, dict)
+                and isinstance(overlay_value, dict)
+            ):
+                merged_data[key] = overlay_objects(
+                    base_value,
+                    preserved_base_data.get(key, {}),
+                    overlay_value,
+                    child_selector,
+                    key_text=key_text,
+                )
+                continue
+
+            merged_data[key] = overlay_value
+            continue
+
+        if key in preserved_base_data:
+            merged_data[key] = preserved_base_data[key]
+
+    for source_data in (overlay_data, preserved_base_data):
+        for key, value in source_data.items():
+            if key in merged_data:
+                continue
+            merged_data[key] = value
+
+    return merged_data
+
+
+def merge_overlay_data(
+    original_base_data: dict[Any, Any],
+    preserved_base_data: dict[Any, Any],
+    overlay_data: dict[Any, Any],
+    selected_key_paths: tuple[KeyPath, ...],
+    *,
+    key_text: KeyText,
+) -> dict[Any, Any]:
+    return overlay_objects(
+        original_base_data,
+        preserved_base_data,
+        overlay_data,
+        build_path_selector(selected_key_paths),
+        key_text=key_text,
+    )
 
 
 def split_quoted_key_path(raw_key: str, format_name: str) -> tuple[str, ...]:
@@ -440,3 +641,126 @@ class BaseTransformEngine(ABC):
     @abstractmethod
     def transform(self, request: TransformRequest) -> TransformOutput:
         raise NotImplementedError
+
+
+def semantically_unchanged_compare_output(
+    compare_path: Path | None,
+    data: Any,
+    parse_existing: Callable[[bytes], Any],
+    *,
+    mode_reference_path: Path | None,
+) -> TransformOutput | None:
+    """Reuse the compare file's bytes when they already encode data.
+
+    Content parse_existing cannot read is simply not reused.
+    """
+    existing_bytes = read_reference_bytes(compare_path)
+    if existing_bytes is None:
+        return None
+    try:
+        existing_data = parse_existing(existing_bytes)
+    except Exception:
+        return None
+    if not values_strictly_equal(existing_data, data):
+        return None
+    return TransformOutput(
+        content=existing_bytes,
+        mode_reference_path=mode_reference_path,
+        reused_compare_path=compare_path,
+    )
+
+
+class MappingTransformEngine(BaseTransformEngine):
+    """Select and overlay key paths in a document whose top level is a mapping.
+
+    Formats differ only in how they load and write documents and spell keys.
+    """
+
+    SUPPORTS_EXCLUDED_SELECTORS = True
+    # Names the format in selector errors.
+    KEY_PATH_FORMAT_NAME: ClassVar[str]
+    KEY_REGEX_DESCRIPTION: ClassVar[str]
+    COMPARE_FILE_HELP: ClassVar[str]
+
+    @abstractmethod
+    def load(self, path: Path, *, stdin_bytes: bytes | None = None) -> dict[Any, Any]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def key_text(self, key: Any) -> str:
+        raise NotImplementedError
+
+    @abstractmethod
+    def build_output(self, data: dict[Any, Any], request: TransformRequest) -> TransformOutput:
+        raise NotImplementedError
+
+    def requires_selectors(self) -> bool:
+        return False
+
+    def configure_parser(self, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument("--compare-file", type=Path, help=self.COMPARE_FILE_HELP)
+
+    def build_engine_options(self, parsed_args: argparse.Namespace) -> dict[str, Any]:
+        return {
+            "compare_path": parsed_args.compare_file,
+            "stdout": parsed_args.stdout,
+            "stdin_bytes": parsed_args.stdin_bytes,
+        }
+
+    def parse_key_paths(self, raw_key_paths: tuple[str, ...]) -> tuple[KeyPath, ...]:
+        return tuple(split_quoted_key_path(raw_key, self.KEY_PATH_FORMAT_NAME) for raw_key in raw_key_paths)
+
+    def compile_key_regexes(self, raw_key_regexes: tuple[str, ...]) -> tuple[re.Pattern[str], ...]:
+        return compile_selector_regexes(raw_key_regexes, self.KEY_REGEX_DESCRIPTION)
+
+    def validate_request(self, request: TransformRequest) -> None:
+        super().validate_request(request)
+        for selector_values in (request.selector_values, request.excluded_selector_values):
+            self.parse_key_paths(selector_values("key"))
+            self.compile_key_regexes(selector_values("key_regex"))
+
+    def matched_key_paths(
+        self,
+        data: dict[Any, Any],
+        selector_values: Callable[[str], tuple[str, ...]],
+    ) -> tuple[KeyPath, ...]:
+        return select_key_paths(
+            data,
+            self.parse_key_paths(selector_values("key")),
+            self.compile_key_regexes(selector_values("key_regex")),
+            key_text=self.key_text,
+        )
+
+    def transform(self, request: TransformRequest) -> TransformOutput:
+        self.validate_request(request)
+        stdin_bytes = request.engine_option("stdin_bytes")
+        base_data = self.load(request.base_path, stdin_bytes=stdin_bytes)
+        selected_key_paths = self.matched_key_paths(base_data, request.selector_values)
+        if request.has_excluded_selectors():
+            selected_key_paths = subtract_excluded_key_paths(
+                iter_key_paths(base_data, key_text=self.key_text),
+                selected_key_paths if request.has_included_selectors() else None,
+                self.matched_key_paths(base_data, request.excluded_selector_values),
+            )
+        # Only an absent selector list means identity. Selectors that match
+        # nothing must still select nothing.
+        transformed_data = (
+            select_data(base_data, request.selector_action, selected_key_paths, key_text=self.key_text)
+            if request.has_selectors()
+            else dict(base_data)
+        )
+        transformed_data = without_emptied_mappings(transformed_data, base_data)
+
+        if request.mode == TransformMode.MERGE:
+            assert request.overlay_path is not None
+            transformed_data = merge_overlay_data(
+                base_data,
+                transformed_data,
+                self.load(request.overlay_path, stdin_bytes=stdin_bytes),
+                # Without selectors the whole base is one selection, so the overlay
+                # replaces each top-level key it shares with the base.
+                selected_key_paths if request.has_selectors() else (DOCUMENT_ROOT_KEY_PATH,),
+                key_text=self.key_text,
+            )
+
+        return self.build_output(transformed_data, request)

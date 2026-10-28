@@ -46,7 +46,11 @@ def strip_keys(
     emit_transform_output(
         output_path,
         MODULE.build_stripped_document_output(
-            base_path, stripped_key_paths, stripped_table_regexes, compare_path=compare_path
+            *MODULE.load_document(base_path),
+            stripped_key_paths,
+            stripped_table_regexes,
+            mode_reference_path=base_path,
+            compare_path=compare_path,
         ),
         stdout=stdout,
     )
@@ -65,7 +69,13 @@ def merge_with_selector_action(
     emit_transform_output(
         output_path,
         MODULE.build_merged_document_output(
-            base_path, overlay_path, selector_action, list(key_paths), table_regexes, compare_path=compare_path
+            *MODULE.load_document(base_path),
+            overlay_path,
+            selector_action,
+            list(key_paths),
+            table_regexes,
+            mode_reference_path=base_path,
+            compare_path=compare_path,
         ),
         stdout=stdout,
     )
@@ -1252,11 +1262,12 @@ output_path = Path(sys.argv[3])
 emit_transform_output(
     output_path,
     module.build_merged_document_output(
-        live_path,
+        *module.load_document(live_path),
         repo_path,
         SelectorAction.RETAIN,
         list({("model",), ("model_reasoning_effort",)}),
         [],
+        mode_reference_path=live_path,
     ),
 )
 print(output_path.read_text(encoding="utf-8"))

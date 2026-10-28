@@ -909,20 +909,21 @@ def without_emptied_tables(stripped_doc: TOMLDocument, source_doc: TOMLDocument)
 
 
 def build_stripped_document_output(
-    base_path: Path,
+    source_doc: TOMLDocument,
+    source_line_ending: str | None,
     stripped_key_paths: list[tuple[str, ...]],
     stripped_table_regexes: list[re.Pattern[str]],
+    *,
+    mode_reference_path: Path,
     compare_path: Path | None = None,
-    stdin_bytes: bytes | None = None,
 ) -> TransformOutput:
-    source_doc, source_line_ending = load_document(base_path, stdin_bytes=stdin_bytes)
     normalized_doc = without_emptied_tables(
         build_document_with_stripped_matchers(source_doc, stripped_key_paths, stripped_table_regexes),
         source_doc,
     )
     return build_document_output(
         normalized_doc,
-        mode_reference_path=base_path,
+        mode_reference_path=mode_reference_path,
         line_ending=choose_line_ending(source_line_ending),
         compare_path=compare_path,
     )
@@ -1229,15 +1230,17 @@ def merge_containers(
 
 
 def build_merged_document_output(
-    base_path: Path,
+    base_doc: TOMLDocument,
+    base_line_ending: str | None,
     overlay_path: Path,
     selector_action: SelectorAction,
     key_paths: list[tuple[str, ...]],
     table_regexes: list[re.Pattern[str]],
+    *,
+    mode_reference_path: Path,
     compare_path: Path | None = None,
     stdin_bytes: bytes | None = None,
 ) -> TransformOutput:
-    base_doc, base_line_ending = load_document(base_path, stdin_bytes=stdin_bytes)
     preserved_base = without_emptied_tables(
         build_document_with_selector_action(base_doc, selector_action, key_paths, table_regexes),
         base_doc,
@@ -1253,7 +1256,7 @@ def build_merged_document_output(
     )
     return build_document_output(
         merged_doc,
-        mode_reference_path=base_path,
+        mode_reference_path=mode_reference_path,
         line_ending=choose_line_ending(base_line_ending, overlay_line_ending),
         compare_path=compare_path,
     )
@@ -1304,11 +1307,12 @@ class TomlTransformEngine(BaseTransformEngine):
         table_regexes = compile_table_regexes(request.selector_values("table_regex"))
         compare_path = request.engine_option("compare_path")
         stdin_bytes = request.engine_option("stdin_bytes")
+        base_doc, base_line_ending = load_document(request.base_path, stdin_bytes=stdin_bytes)
         if request.has_excluded_selectors():
             # Splitting a selection around an excluded path needs the base's
             # concrete paths, so regexes are resolved against the base here.
             key_paths = selection_without_excluded_paths(
-                load_document(request.base_path, stdin_bytes=stdin_bytes)[0],
+                base_doc,
                 key_paths if request.has_included_selectors() else None,
                 table_regexes,
                 parse_key_paths(request.excluded_selector_values("key")),
@@ -1319,18 +1323,16 @@ class TomlTransformEngine(BaseTransformEngine):
         if request.mode == TransformMode.CLEANUP:
             if request.selector_action == SelectorAction.REMOVE:
                 return build_stripped_document_output(
-                    request.base_path,
+                    base_doc,
+                    base_line_ending,
                     key_paths,
                     table_regexes,
+                    mode_reference_path=request.base_path,
                     compare_path=compare_path,
-                    stdin_bytes=stdin_bytes,
                 )
 
-            source_doc, source_line_ending = load_document(
-                request.base_path, stdin_bytes=stdin_bytes
-            )
             filtered_doc = build_document_with_selector_action(
-                source_doc,
+                base_doc,
                 request.selector_action,
                 key_paths,
                 table_regexes,
@@ -1338,17 +1340,19 @@ class TomlTransformEngine(BaseTransformEngine):
             return build_document_output(
                 filtered_doc,
                 mode_reference_path=request.base_path,
-                line_ending=choose_line_ending(source_line_ending),
+                line_ending=choose_line_ending(base_line_ending),
                 compare_path=compare_path,
             )
 
         assert request.overlay_path is not None
         return build_merged_document_output(
-            request.base_path,
+            base_doc,
+            base_line_ending,
             request.overlay_path,
             request.selector_action,
             key_paths,
             table_regexes,
+            mode_reference_path=request.base_path,
             compare_path=compare_path,
             stdin_bytes=stdin_bytes,
         )

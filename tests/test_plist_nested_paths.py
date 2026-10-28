@@ -4,7 +4,6 @@ from pathlib import Path
 import plistlib
 
 from dotman import cli
-from dotman.transforms import plist as MODULE
 
 
 def load_plist(path: Path) -> dict:
@@ -15,13 +14,6 @@ def load_plist(path: Path) -> dict:
 def write_plist(path: Path, data: dict) -> None:
     with path.open("wb") as handle:
         plistlib.dump(data, handle, fmt=plistlib.FMT_XML, sort_keys=True)
-
-
-def test_parse_plist_key_path_accepts_quoted_dotted_key_parts() -> None:
-    assert MODULE.parse_plist_key_path('"settings.window".width') == (
-        "settings.window",
-        "width",
-    )
 
 
 def test_cleanup_retain_quoted_dotted_top_level_key(tmp_path: Path) -> None:
