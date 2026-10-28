@@ -1265,3 +1265,93 @@ def test_merge_of_float_and_int_spelled_keys_writes_parseable_output(tmp_path: P
     output = run_yaml_merge(tmp_path, "m: {1.0: a}\n", "m: {1: b}\n")
 
     assert isinstance(read_yaml(output), dict)
+
+
+# --- Round-trip regressions: shared structure copies, comment hand-over, line endings -----------
+
+
+def test_removing_a_key_through_a_merge_chain_keeps_every_user_correct(tmp_path: Path) -> None:
+    source = "d: &d\n  x: 1\n  y: 2\nm: &m\n  <<: *d\n  z: 3\nm2: *m\n"
+
+    data = read_yaml(run_yaml_cleanup(tmp_path, source, "--selector-type", "remove", "--selectors", "m.x"))
+
+    assert data["m"] == {"y": 2, "z": 3}
+    assert data["m2"] == {"x": 1, "y": 2, "z": 3}
+
+
+def test_removing_keys_from_an_anchor_and_a_mapping_that_merges_it(tmp_path: Path) -> None:
+    source = "base: &b {x: 1, y: 2}\nchild: {<<: *b, z: 3}\n"
+
+    data = read_yaml(
+        run_yaml_cleanup(tmp_path, source, "--selector-type", "remove", "--selectors", "base.x", "child.y")
+    )
+
+    assert data == {"base": {"y": 2}, "child": {"x": 1, "z": 3}}
+
+
+def test_nested_anchors_in_a_copied_structure_are_defined_once(tmp_path: Path) -> None:
+    import re
+
+    base = "use: &b\n  inner: &i {k: 1}\n  again: *i\n  other: 2\nbase: *b\nlater: *i\n"
+
+    output = run_yaml_merge(tmp_path, base, "base: {inner: {k: 5}}\n", "--selector-type", "remove", "--selectors", "zzz")
+
+    data = read_yaml(output)
+    # Merge descends into the shared mapping, so only `inner` changes.
+    assert data["base"] == {"inner": {"k": 5}, "again": {"k": 1}, "other": 2}
+    assert data["use"] == {"inner": {"k": 1}, "again": {"k": 1}, "other": 2}
+    assert data["later"] == {"k": 1}
+    defined = re.findall(r"&(\w+)", output)
+    assert len(defined) == len(set(defined))
+
+
+def test_overlay_edit_of_a_mapping_merging_an_anchor_leaves_the_anchor_alone(tmp_path: Path) -> None:
+    base = "base: &b {x: 1, nested: {k: 1}}\nchild: {<<: *b, z: 3}\n"
+
+    output = run_yaml_merge(
+        tmp_path, base, "child: {nested: {k: 2}}\n", "--selector-type", "remove", "--selectors", "zzz"
+    )
+
+    assert read_yaml(output)["base"]["nested"]["k"] == 1
+
+
+@pytest.mark.parametrize(
+    ("base", "overlay", "following"),
+    [
+        pytest.param(
+            "servers:\n  - {host: a, port: 1}\n# Logging\nlogging: {level: info}\n",
+            "servers: [{host: c, port: 3}]\n",
+            "logging",
+            id="block-sequence-ending-in-a-flow-item",
+        ),
+        pytest.param(
+            "m:\n  only: 1\n# about n\nn: 2\n",
+            "m: {other: 5}\n",
+            "n",
+            id="appended-key-after-the-old-last-key",
+        ),
+    ],
+)
+def test_comment_after_an_edited_value_stays_above_the_next_key(
+    tmp_path: Path, base: str, overlay: str, following: str
+) -> None:
+    output = run_yaml_merge(tmp_path, base, overlay, "--selector-type", "remove", "--selectors", "zzz")
+
+    assert read_yaml(output)
+    comment = "# Logging" if following == "logging" else "# about n"
+    assert f"{comment}\n{following}:" in output
+
+
+def test_crlf_document_keeps_crlf_line_endings_after_an_edit(tmp_path: Path) -> None:
+    input_path = tmp_path / "input.yaml"
+    output_path = tmp_path / "output.yaml"
+    input_path.write_bytes(b"a: 1 # c\r\n# about b\r\nb: 2\r\nx: 3\r\n")
+
+    assert cli.main([
+        "transform", "yaml", str(input_path), str(output_path), "--mode", "cleanup",
+        "--selector-type", "remove", "--selectors", "x",
+    ]) == 0
+
+    output = output_path.read_bytes()
+    assert read_yaml(output) == {"a": 1, "b": 2}
+    assert output.count(b"\n") == output.count(b"\r\n") > 0
