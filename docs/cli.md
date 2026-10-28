@@ -463,10 +463,10 @@ Examples:
 - A tracked `singleton` package should have at most one explicit package entry per repo and package ID.
 - A tracked `multi_instance` package may keep one explicit package entry per bound profile.
 - If tracking would replace an existing explicit package entry with a different profile, interactive mode should ask for confirmation before writing state.
-- Without a terminal, profile-replacing `track` should fail instead of silently overwriting that explicit package entry. With `--no-confirm` it replaces the entry and prints an `Applying tracked package entry replacement` notice naming the existing and new entries.
+- Without a terminal or under `--json`, profile-replacing `track` should fail instead of silently overwriting that explicit package entry. With `--no-confirm` it replaces the entry; human output prints an `Applying tracked package entry replacement` notice naming the existing and new entries.
 - Tracking a `multi_instance` package with a different bound profile should add a distinct explicit package entry instead of replacing the existing one.
 - If `track` would make a new explicit package entry override existing implicit targets, interactive mode should ask for confirmation before writing state.
-- Without a terminal, `track` should fail instead of silently overriding implicit tracked targets. With `--no-confirm` it applies the override and prints an `Applying explicit override` notice.
+- Without a terminal or under `--json`, `track` should fail instead of silently overriding implicit tracked targets. With `--no-confirm` it applies the override; human output prints an `Applying explicit override` notice.
 - `track` should validate the future expanded tracked graph before writing. A singleton dependency cannot be implicitly required by different tracked roots under different profiles unless one explicit singleton dependency profile owns that package identity.
 - To fix an implicit dependency profile ambiguity, use the same profile for the roots, make the dependency `multi_instance`, explicitly track the desired singleton dependency profile, or move the overlapping target/config into the shared dependency package.
 - `track` is state-only. It should not run repo-to-live work by itself.
