@@ -59,6 +59,16 @@ def child_elements(parent: XmlNode) -> list[XmlNode]:
     return [child for child in parent if is_element(child)]
 
 
+def element_path_name(element: XmlNode) -> str:
+    """The element's name as written, so selectors read like the document.
+
+    lxml tags carry namespaces in Clark notation (`{uri}local`); paths use the
+    written form instead, `a` under a default namespace and `x:a` for a prefix.
+    """
+    local_name = etree.QName(element).localname
+    return f"{element.prefix}:{local_name}" if element.prefix else local_name
+
+
 def element_with_leading_nodes(element: XmlNode) -> list[XmlNode]:
     """Return element preceded by the comments and processing instructions it owns.
 
@@ -211,7 +221,7 @@ def retain_nodes(
 
         retained_nodes: set[XmlNode] = set()
         for child in child_elements(current):
-            if retain_matching_descendants(child, f"{cur_path}/{child.tag}"):
+            if retain_matching_descendants(child, f"{cur_path}/{element_path_name(child)}"):
                 retained_nodes.update(element_with_leading_nodes(child))
         removed_nodes = [child for child in current if child not in retained_nodes]
         for child in removed_nodes:
@@ -220,7 +230,7 @@ def retain_nodes(
             drop_indentation_of_emptied_parent(current)
         return bool(retained_nodes)
 
-    retain_matching_descendants(root, root.tag)
+    retain_matching_descendants(root, element_path_name(root))
 
 
 def remove_child_keeping_following_text(parent: XmlNode, child: XmlNode) -> None:
@@ -243,7 +253,7 @@ def strip_nodes(
 ) -> None:
     def strip_matching_descendants(current: XmlNode, cur_path: str) -> None:
         for child in child_elements(current):
-            child_path = f"{cur_path}/{child.tag}"
+            child_path = f"{cur_path}/{element_path_name(child)}"
             if matches_node_path(child_path, node_matchers, node_regexes):
                 for node in element_with_leading_nodes(child):
                     remove_child_keeping_following_text(current, node)
@@ -251,10 +261,10 @@ def strip_nodes(
             else:
                 strip_matching_descendants(child, child_path)
 
-    if matches_node_path(root.tag, node_matchers, node_regexes):
+    if matches_node_path(element_path_name(root), node_matchers, node_regexes):
         root.clear()
     else:
-        strip_matching_descendants(root, root.tag)
+        strip_matching_descendants(root, element_path_name(root))
 
 
 def build_tree_with_selector_action(
@@ -311,10 +321,10 @@ def sort_selected_children(root: XmlNode, parent_matchers: list[str]) -> None:
             replace_children(current, [*(node for group in sorted_groups for node in group), *unowned_nodes])
 
         for child in child_elements(current):
-            child_path = f"{cur_path}/{child.tag}"
+            child_path = f"{cur_path}/{element_path_name(child)}"
             sort_selected_children_recursion(child, child_path)
 
-    sort_selected_children_recursion(root, root.tag)
+    sort_selected_children_recursion(root, element_path_name(root))
 
 
 def normalized_xml_for_compare(

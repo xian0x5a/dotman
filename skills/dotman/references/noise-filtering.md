@@ -38,7 +38,7 @@ Done when every top-level key, and every mapping you plan to split, has a verdic
 Ask: when the app adds a new key upstream, should it sync by default?
 
 - **Denylist** (yes): a preferences file with a few noisy keys. List the noise. Pull or sync before pushing, or push deletes keys the app added since the last capture.
-- **Allowlist** (no): a file that is mostly app state, such as `~/.claude.json` or Electron app data. List the portable keys. To leave a few keys of a portable subtree live-local, select the subtree and exclude them with `not:`: `settings 'not:settings.windowBounds'`, or `'not:re:(^|\.)cache$'` for a key at any depth. XML has no `not:`.
+- **Allowlist** (no): a file that is mostly app state, such as `~/.claude.json` or Electron app data. List the portable keys. To leave a few keys of a portable subtree live-local, select the subtree and exclude them with `not:`: `settings 'not:settings.windowBounds'`, or `'not:re:(^|\.)cache$'` for a key at any depth. XML has no `not:`, and its selectors are element paths with names as the file writes them: `config/a` under a default namespace, `config/x:a` for `<x:a>`.
 
 ## 4. Write the transform pair
 
