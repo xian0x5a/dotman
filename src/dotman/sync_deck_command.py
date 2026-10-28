@@ -139,13 +139,11 @@ class SyncDeckCommandRunner:
                     event_sink=timeline, stream_output=timeline is not None)
 
     def _select_defaults(self, session):
-        set_all_selected(session, True, tuple(row.row_id for row in session.view.rows))
         # No Base means no evidence of which side changed; --no-confirm runs
-        # leave that drift for a first review instead of guessing a side.
-        for row in session.view.rows:
-            if needs_first_review(row):
-                view = session.view
-                session.dispatch(SetApproval(view.session_id, view.revision, row.row_id, False))
+        # leave that drift for a first review instead of guessing a side. It is
+        # never approved, so a failed materialization cannot block the run.
+        set_all_selected(session, True, tuple(
+            row.row_id for row in session.view.rows if not needs_first_review(row)))
 
     def _resolve_scope_inputs(self, engine, scopes, *, interaction: Interaction | None) -> list[str]:
         """Resolve shorthand or ambiguous scopes to the canonical identities Sync requires."""
