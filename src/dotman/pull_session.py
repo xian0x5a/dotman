@@ -42,7 +42,7 @@ class PullSession(ProposalSession):
             additional_changes=self._row_additional(row),
         ))
 
-    def _publish(self):
+    def _publish(self, stores):
         selected = tuple(row for row in self.view.rows
                          if isinstance(row, SessionRow) and row.included
                          and row.approved and row.proposal is not None)
@@ -61,7 +61,7 @@ class PullSession(ProposalSession):
                                       row.proposal.primary_source_change,
                                       requires_publication=False) for row in selected),
             command_runtime=self._context.projection.command_runtime,
-            complete=lambda unit: self._acknowledge(by_id[unit.row_id]), auxiliary=auxiliary, run_noop=self._run_noop,
+            complete=lambda unit: self._acknowledge(by_id[unit.row_id], stores), auxiliary=auxiliary, run_noop=self._run_noop,
             no_confirm=no_confirm_enabled(),
             check_cancelled=self.check_cancelled, blocked=bool(diagnostics),
             stream_output=self._stream_output, observe=self._emit,
