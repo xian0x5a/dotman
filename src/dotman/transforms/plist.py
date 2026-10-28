@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -9,7 +7,6 @@ import re
 from typing import Any
 from xml.parsers.expat import ExpatError
 
-from dotman.transforms.cli import run_engine_cli
 from dotman.transforms.framework import (
     BaseTransformEngine,
     SelectorAction,
@@ -430,11 +427,3 @@ class PlistTransformEngine(BaseTransformEngine):
             mode_reference_path=request.base_path,
             compare_path=request.engine_option("compare_path"),
         )
-
-
-def main(argv: list[str] | None = None) -> int:
-    return run_engine_cli(PlistTransformEngine(), argv=argv)
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

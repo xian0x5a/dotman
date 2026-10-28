@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 from __future__ import annotations
 
 import copy
@@ -28,7 +26,6 @@ from tomlkit.items import (
 from tomlkit.toml_document import TOMLDocument
 
 from dotman.errors import UsageError
-from dotman.transforms.cli import run_engine_cli
 from dotman.transforms.framework import (
     BaseTransformEngine,
     SelectorAction,
@@ -1347,11 +1344,3 @@ class TomlTransformEngine(BaseTransformEngine):
             compare_path=compare_path,
             stdin_bytes=stdin_bytes,
         )
-
-
-def main(argv: list[str] | None = None) -> int:
-    return run_engine_cli(TomlTransformEngine(), argv=argv)
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

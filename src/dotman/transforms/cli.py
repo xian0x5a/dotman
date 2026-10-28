@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 from __future__ import annotations
 
 import argparse
@@ -10,8 +8,8 @@ from dotman.errors import UsageError
 from dotman.transforms.framework import (
     EXCLUSION_PREFIX,
     STDIN_PATH,
+    BaseTransformEngine,
     SelectorAction,
-    TransformEngine,
     TransformMode,
     TransformRequest,
     emit_transform_output,
@@ -19,7 +17,7 @@ from dotman.transforms.framework import (
 
 
 def parse_selectors(
-    engine: TransformEngine, selectors: list[str]
+    engine: BaseTransformEngine, selectors: list[str]
 ) -> tuple[dict[str, tuple[str, ...]], dict[str, tuple[str, ...]]]:
     """Split selectors into included and excluded values, each keyed by selector type."""
     included_by_type: dict[str, list[str]] = {spec.name: [] for spec in engine.selector_specs()}
@@ -53,7 +51,7 @@ def parse_selectors(
 
 
 
-def selector_help(engine: TransformEngine) -> str:
+def selector_help(engine: BaseTransformEngine) -> str:
     specs = engine.selector_specs()
     default_spec = next((spec for spec in specs if spec.is_default), None)
     prefix_descriptions = "; ".join(
@@ -77,7 +75,7 @@ def selector_help(engine: TransformEngine) -> str:
     )
 
 
-def configure_parser(parser: argparse.ArgumentParser, engine: TransformEngine) -> None:
+def configure_parser(parser: argparse.ArgumentParser, engine: BaseTransformEngine) -> None:
     parser.add_argument(
         "base_path",
         type=Path,
@@ -123,18 +121,9 @@ def configure_parser(parser: argparse.ArgumentParser, engine: TransformEngine) -
     engine.configure_parser(parser)
 
 
-def build_parser(engine: TransformEngine) -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description=f"Run the {engine.name} structured transform."
-    )
-    configure_parser(parser, engine)
-    return parser
-
-
-
 def build_request(
     parser: argparse.ArgumentParser,
-    engine: TransformEngine,
+    engine: BaseTransformEngine,
     parsed_args: argparse.Namespace,
 ) -> TransformRequest:
     try:
@@ -166,7 +155,7 @@ def build_request(
 
 
 
-def run_parsed_engine(engine: TransformEngine, parser: argparse.ArgumentParser, parsed_args: argparse.Namespace) -> int:
+def run_parsed_engine(engine: BaseTransformEngine, parser: argparse.ArgumentParser, parsed_args: argparse.Namespace) -> int:
     stdin_inputs = [
         path for path in (parsed_args.base_path, parsed_args.overlay_path) if path == STDIN_PATH
     ]
@@ -200,8 +189,3 @@ def read_stdin_bytes() -> bytes:
     if stdin_buffer is not None:
         return stdin_buffer.read()
     return sys.stdin.read().encode("utf-8")
-
-
-def run_engine_cli(engine: TransformEngine, argv: list[str] | None = None) -> int:
-    parser = build_parser(engine)
-    return run_parsed_engine(engine, parser, parser.parse_args(argv))

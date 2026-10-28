@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -9,7 +7,6 @@ from typing import Any
 
 import yaml
 
-from dotman.transforms.cli import run_engine_cli
 from dotman.transforms.framework import (
     BaseTransformEngine,
     SelectorAction,
@@ -649,11 +646,3 @@ class YamlTransformEngine(BaseTransformEngine):
             indent_reference_paths=(request.base_path, request.overlay_path),
             stdin_bytes=request.engine_option("stdin_bytes"),
         )
-
-
-def main(argv: list[str] | None = None) -> int:
-    return run_engine_cli(YamlTransformEngine(), argv=argv)
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

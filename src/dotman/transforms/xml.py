@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 from __future__ import annotations
 
 import copy
@@ -10,7 +8,6 @@ import re
 from lxml import etree
 
 from dotman.errors import UsageError
-from dotman.transforms.cli import run_engine_cli
 from dotman.transforms.framework import (
     STDIN_PATH,
     BaseTransformEngine,
@@ -431,11 +428,11 @@ def read_xml_root(path: Path, stdin_bytes: bytes | None) -> XmlNode | None:
 
 def render_xml_output(
     base_path: str | Path,
+    selector_action: SelectorAction,
     node_matchers: list[str] | None = None,
     node_regexes: tuple[NodeRegex, ...] = (),
     sort_attributes: bool = False,
     overlay_path: str | Path | None = None,
-    selector_action: SelectorAction | None = None,
     compare_path: str | Path | None = None,
     child_sort_parent_matchers: list[str] | None = None,
     stdin_bytes: bytes | None = None,
@@ -443,13 +440,6 @@ def render_xml_output(
     base_path = Path(base_path)
     overlay_path = Path(overlay_path) if overlay_path is not None else None
     compare_path = Path(compare_path) if compare_path is not None else None
-    effective_selector_action = (
-        selector_action
-        if selector_action is not None
-        else SelectorAction.RETAIN
-        if overlay_path is not None
-        else SelectorAction.REMOVE
-    )
     parsed_node_matchers = node_matchers or []
     parsed_child_sort_parent_matchers = child_sort_parent_matchers or []
 
@@ -464,7 +454,7 @@ def render_xml_output(
         root = build_tree_with_selector_action(
             base_root,
             parsed_node_matchers,
-            effective_selector_action,
+            selector_action,
             node_regexes,
         )
         if overlay_root is not None:
@@ -569,10 +559,3 @@ class XmlTransformEngine(BaseTransformEngine):
             ),
             stdin_bytes=request.engine_option("stdin_bytes"),
         )
-
-def main(argv: list[str] | None = None) -> int:
-    return run_engine_cli(XmlTransformEngine(), argv=argv)
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

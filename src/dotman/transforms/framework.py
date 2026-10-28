@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 from __future__ import annotations
 
 import argparse
@@ -12,7 +10,7 @@ import math
 from pathlib import Path
 import re
 import sys
-from typing import Any, ClassVar, Iterable, Protocol, runtime_checkable
+from typing import Any, ClassVar, Iterable
 
 from dotman.atomic_files import write_bytes_atomic, write_text_atomic
 from dotman.errors import UsageError
@@ -375,34 +373,6 @@ def emit_transform_output(
 
     assert output_path is not None
     write_output_to_path(output_path, output)
-
-
-@runtime_checkable
-class TransformEngine(Protocol):
-    name: str
-    SUPPORTS_EXCLUDED_SELECTORS: bool
-
-    @classmethod
-    def selector_specs(cls) -> tuple[SelectorSpec, ...]:
-        ...
-
-    def requires_selectors(self) -> bool:
-        ...
-
-    def configure_parser(self, parser: argparse.ArgumentParser) -> None:
-        ...
-
-    def build_engine_options(
-        self,
-        parsed_args: argparse.Namespace,
-    ) -> Mapping[str, Any]:
-        ...
-
-    def validate_request(self, request: TransformRequest) -> None:
-        ...
-
-    def transform(self, request: TransformRequest) -> TransformOutput:
-        ...
 
 
 class BaseTransformEngine(ABC):

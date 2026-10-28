@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from dotman import cli
 import dotman.transforms.yaml as MODULE
 
 
@@ -30,8 +31,8 @@ def test_yaml_11_boolean_words_load_as_strings_and_keep_plain_spelling(tmp_path:
         encoding="utf-8",
     )
 
-    exit_code = MODULE.main(
-        [str(input_path), str(output_path), "--mode", "cleanup"]
+    exit_code = cli.main(
+        ["transform", "yaml", str(input_path), str(output_path), "--mode", "cleanup"]
     )
 
     assert exit_code == 0
@@ -53,8 +54,10 @@ def test_serialized_yaml_uses_two_space_fallback_indent(tmp_path: Path) -> None:
 
     input_path.write_text("alpha: 1\nbeta: {nested: true}\n", encoding="utf-8")
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "yaml",
             str(input_path),
             str(output_path),
             "--mode",
@@ -83,8 +86,10 @@ def test_serialized_yaml_preserves_compare_file_indent(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "yaml",
             str(input_path),
             str(output_path),
             "--mode",
@@ -114,8 +119,10 @@ def test_merge_with_missing_base_preserves_overlay_content(tmp_path: Path) -> No
         encoding="utf-8",
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "yaml",
             str(live_path),
             str(output_path),
             "--mode",
@@ -151,8 +158,10 @@ def test_merge_without_selectors_replaces_unselected_mappings_wholesale(
         encoding="utf-8",
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "yaml",
             str(live_path),
             str(output_path),
             "--mode",
@@ -177,8 +186,10 @@ def test_compare_file_preserves_existing_text(tmp_path: Path) -> None:
     input_path.write_text("alpha: 1\nbeta: true\n", encoding="utf-8")
     compare_path.write_text("alpha: 1\nbeta: true\n", encoding="utf-8")
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "yaml",
             str(input_path),
             str(output_path),
             "--mode",
@@ -206,8 +217,10 @@ def test_cleanup_retain_key_path_keeps_selected_nested_object_key(tmp_path: Path
         encoding="utf-8",
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "yaml",
             str(input_path),
             str(output_path),
             "--mode",
@@ -237,8 +250,10 @@ def test_cleanup_remove_key_path_strips_selected_nested_object_key(tmp_path: Pat
         encoding="utf-8",
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "yaml",
             str(input_path),
             str(output_path),
             "--mode",
@@ -271,8 +286,10 @@ def test_cleanup_key_path_accepts_quoted_dotted_key_parts(tmp_path: Path) -> Non
         encoding="utf-8",
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "yaml",
             str(input_path),
             str(output_path),
             "--mode",
@@ -300,8 +317,10 @@ def test_cleanup_remove_key_strips_selected_top_level_keys(tmp_path: Path) -> No
         encoding="utf-8",
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "yaml",
             str(input_path),
             str(output_path),
             "--mode",
@@ -333,8 +352,10 @@ def test_cleanup_retain_key_regex_keeps_matching_nested_key_paths(tmp_path: Path
         encoding="utf-8",
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "yaml",
             str(input_path),
             str(output_path),
             "--mode",
@@ -362,8 +383,10 @@ def test_cleanup_remove_key_regex_strips_matching_nested_key_paths(tmp_path: Pat
         encoding="utf-8",
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "yaml",
             str(input_path),
             str(output_path),
             "--mode",
@@ -393,8 +416,10 @@ def test_cleanup_remove_key_regex_strips_matching_top_level_keys(tmp_path: Path)
         encoding="utf-8",
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "yaml",
             str(input_path),
             str(output_path),
             "--mode",
@@ -432,8 +457,10 @@ def test_merge_retain_key_preserves_selected_live_keys_and_reapplies_repo_conten
         encoding="utf-8",
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "yaml",
             str(live_path),
             str(output_path),
             "--mode",
@@ -475,8 +502,10 @@ def test_merge_remove_key_regex_preserves_unselected_nested_live_keys(tmp_path: 
         encoding="utf-8",
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "yaml",
             str(live_path),
             str(output_path),
             "--mode",
@@ -513,8 +542,10 @@ def test_merge_retain_key_regex_preserves_matching_live_keys_and_reapplies_repo_
     )
     repo_path.write_text("managed: repo\n", encoding="utf-8")
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "yaml",
             str(live_path),
             str(output_path),
             "--mode",
@@ -559,8 +590,10 @@ def test_merge_retain_key_preserves_live_order_and_drops_deleted_repo_keys(
         encoding="utf-8",
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "yaml",
             str(live_path),
             str(output_path),
             "--mode",
@@ -604,8 +637,10 @@ def test_merge_remove_key_path_preserves_unselected_nested_live_keys(tmp_path: P
         encoding="utf-8",
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "yaml",
             str(live_path),
             str(output_path),
             "--mode",
@@ -640,8 +675,10 @@ def test_merge_remove_key_path_preserves_nested_repo_deletions(tmp_path: Path) -
     )
     repo_path.write_text("{}\n", encoding="utf-8")
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "yaml",
             str(live_path),
             str(output_path),
             "--mode",
@@ -676,8 +713,10 @@ def test_merge_retain_key_path_preserves_selected_nested_live_keys(tmp_path: Pat
         encoding="utf-8",
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "yaml",
             str(live_path),
             str(output_path),
             "--mode",
@@ -712,8 +751,10 @@ def test_merge_top_level_object_key_still_replaces_with_overlay_value(tmp_path: 
         encoding="utf-8",
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "yaml",
             str(live_path),
             str(output_path),
             "--mode",
@@ -748,8 +789,10 @@ def test_merge_remove_key_preserves_unselected_live_keys(tmp_path: Path) -> None
         encoding="utf-8",
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "yaml",
             str(live_path),
             str(output_path),
             "--mode",
@@ -781,8 +824,10 @@ def test_cleanup_retain_key_matches_non_string_yaml_key(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    exit_code = MODULE.main(
+    exit_code = cli.main(
         [
+            "transform",
+            "yaml",
             str(input_path),
             str(output_path),
             "--mode",
@@ -803,7 +848,7 @@ def run_yaml_cleanup(tmp_path: Path, source: str, *arguments: str) -> str:
     output_path = tmp_path / "output.yaml"
     input_path.write_text(source, encoding="utf-8")
 
-    assert MODULE.main([str(input_path), str(output_path), "--mode", "cleanup", *arguments]) == 0
+    assert cli.main(["transform", "yaml", str(input_path), str(output_path), "--mode", "cleanup", *arguments]) == 0
     return output_path.read_text(encoding="utf-8")
 
 
@@ -829,14 +874,13 @@ def test_comment_only_base_is_an_empty_mapping(tmp_path: Path) -> None:
     input_path.write_text("# managed: value\n", encoding="utf-8")
     overlay_path.write_text("managed: 1\n", encoding="utf-8")
 
-    assert MODULE.main(
-        [str(input_path), str(output_path), "--mode", "merge", "--overlay-file", str(overlay_path)]
+    assert cli.main(
+        ["transform", "yaml", str(input_path), str(output_path), "--mode", "merge", "--overlay-file", str(overlay_path)]
     ) == 0
     assert MODULE.load_yaml(output_path) == {"managed": 1}
 
 
 def test_invalid_yaml_is_a_clean_cli_error(tmp_path: Path, capsys) -> None:
-    from dotman import cli
 
     for index, source in enumerate(["a: [1\n", "a: 1\n---\nb: 2\n", "r: !Ref foo\n"]):
         input_path = tmp_path / f"input{index}.yaml"
@@ -855,7 +899,6 @@ def test_indent_detection_ignores_block_scalar_content(tmp_path: Path) -> None:
 def test_stdin_base_indent_is_preserved(monkeypatch, capsys) -> None:
     import io
 
-    from dotman import cli
 
     source = "settings:\n    a: 1\n"
     monkeypatch.setattr("sys.stdin", io.StringIO(source))
