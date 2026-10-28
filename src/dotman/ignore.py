@@ -9,10 +9,6 @@ from pathspec import PathSpec
 from pathspec.gitignore import GitIgnoreSpec
 
 
-
-
-
-
 @dataclass(frozen=True)
 class GitIgnoreChain:
     """Control files retain their own coordinate system; Git globs are never rebased."""

@@ -31,7 +31,6 @@ from dotman.toml_utils import dump_toml_text, load_toml_text
 
 @dataclass(frozen=True)
 class LivePathSpec:
-    raw_input: str
     resolved_path: Path
     target_kind: str
     target_name_base: str
@@ -117,7 +116,6 @@ def resolve_live_path_spec(live_path_text: str, *, cwd: Path | None = None, home
         hint="Rename the file so its path is printable, or track a directory above it instead.",
     )
     return LivePathSpec(
-        raw_input=live_path_text,
         resolved_path=resolved_path,
         target_kind=target_kind,
         target_name_base=build_target_name(config_path=config_path, target_kind=target_kind),

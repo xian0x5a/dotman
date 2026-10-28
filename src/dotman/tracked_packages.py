@@ -275,8 +275,8 @@ def find_tracked_package_matches(
     }
     exact_matches = [
         (repo, package_id, match_bound_profile)
-        for (repo_name, package_id, match_bound_profile), repo in tracked_package_ids.items()
-        if package_id == selector and repo_name == repo.config.name
+        for (_repo_name, package_id, match_bound_profile), repo in tracked_package_ids.items()
+        if package_id == selector
         and (bound_profile is None or match_bound_profile == bound_profile)
     ]
     partial_matches = [

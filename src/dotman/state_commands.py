@@ -203,11 +203,7 @@ class StateCommandRunner:
                 return review_result.exit_code
             if review_result.manifest_text == result.before_text:
                 return cli_emit.emit_noop_add_result()
-            if not resolver.confirm_manifest_write(
-                repo_name=repo_name,
-                package_id=package_id,
-                no_confirm=args.no_confirm,
-            ):
+            if not resolver.confirm_manifest_write(repo_name=repo_name, package_id=package_id):
                 return cli_emit.emit_kept_add_result(
                     repo_name=repo_name,
                     package_id=package_id,
