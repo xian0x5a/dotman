@@ -117,8 +117,6 @@ class DotmanEngine:
         for repo in candidate_repos:
             package_match = selector in repo.packages
             group_match = selector in repo.groups
-            if package_match and group_match:
-                raise UsageError(f"selector '{selector}' is ambiguous between package and group in repo '{repo.config.name}'")
             if package_match:
                 exact_matches.append((repo, selector, "package"))
                 continue

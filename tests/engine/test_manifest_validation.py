@@ -65,6 +65,7 @@ def load_repo(tmp_path: Path, files: dict[str, str]) -> None:
         ("groups/g.toml", "members = [1]\n", r"g\.toml members\[0\] must be a string"),
         ("groups/g.toml", 'members = ["p"]\ndescription = 5\n', r"g\.toml description must be a string"),
         ("groups/dotted.name.toml", 'members = ["p"]\n', r"dotted\.name\.toml: invalid group id 'dotted\.name'"),
+        ("groups/p.toml", "members = []\n", r"uses the same ID for a package and a group: p; rename one of them"),
         ("profiles/work.toml", 'include = ["default"]\n', r"work\.toml has unsupported keys: include"),
         ("profiles/work.toml", "[var]\nx = 1\n", r"work\.toml has unsupported keys: var"),
         ("profiles/work.toml", "vars = 5\n", r"work\.toml vars must be a table"),
