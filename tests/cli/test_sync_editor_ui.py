@@ -375,3 +375,22 @@ def test_unchanged_editor_quit_says_resolution_was_kept(tmp_path, monkeypatch):
         deck = CommandDeck(session, use_color=False)
         deck.edit()
         assert deck.notice == "Editor closed without changes; Resolution kept."
+
+
+def test_rejected_action_on_observation_failed_row_explains_instead_of_showing_code(tmp_path, monkeypatch):
+    from dotman.sync_deck import CommandDeck, row_resolution
+    from tests.engine.test_sync_session import make_engine
+
+    engine = make_engine(tmp_path, monkeypatch, [("bad", "push-only", b"repo", b"live", "")])
+    live = tmp_path / "live/bad"
+    live.unlink()
+    live.mkdir()
+    with engine.open_sync_session(engine.resolve_sync_scope([]), preview=True) as session:
+        deck = CommandDeck(session, use_color=False)
+        assert row_resolution(deck.focused_row) == "Observation failed"
+        for action in (deck.select, deck.open_review):
+            deck.notice = ""
+            action()
+            assert deck.notice != "disallowed"
+            assert "observation failed" in deck.notice.lower()
+            assert "run sync again" in deck.notice.lower()

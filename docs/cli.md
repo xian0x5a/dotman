@@ -191,7 +191,9 @@ otherwise **Use repository** is the visible fallback and Merge is unavailable.
   color removed, added and hunk lines. Long lines wrap to the terminal width, with
   continuations hanging under their value or after the diff marker, and rewrap on
   resize. A notice answers the previous key, so the next key press or click clears
-  it; clicking the notice dismisses it without other effects. The `y` copy
+  it; clicking the notice dismisses it without other effects. When a key cannot act
+  on the focused row, the notice says why in words, for example that an
+  Observation failed and sync must run again after the fix. The `y` copy
   confirmation and `No match for …` also clear themselves after a moment.
   `v` in review opens Full View: one diff or merge-conflict section with the whole
   file as context instead of three lines. With several such sections (for example,
