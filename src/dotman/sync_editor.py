@@ -32,6 +32,10 @@ class EditorOutput:
     additional: tuple[AdditionalEdit, ...] = ()
 
 
+def _present_bytes(payload) -> bytes:
+    return payload.content if isinstance(payload, (FilePresent, DirectoryChildPresent)) else b''
+
+
 def freeze_additional_sources(*, metadata, repo_root, primary_paths):
     sources = resolve_editor_additional_sources(metadata.additional_source_entries)
     if (metadata.editor.type == 'jinja' or metadata.render_command == 'jinja') and metadata.repo_path.exists():
@@ -65,13 +69,13 @@ def repository_workspace(*, metadata, repo_root, preimages):
             destination.write_bytes(content)
         env = {key: value.replace(str(repo_root), str(root)) for key, value in metadata.command_env.items()}
         yield replace(metadata, repo_path=staged(metadata.repo_path),
-                      command_cwd=staged(metadata.command_cwd), command_env=env), staged, root.parent
+                      command_cwd=staged(metadata.command_cwd), command_env=env), staged
 
 
 def edit_sources(*, observation, initial, metadata, repo_root, preimages, additional=()):
     sources = tuple(preimages)
     retained = {change.path: change for change in additional}
-    with repository_workspace(metadata=metadata, repo_root=repo_root, preimages=preimages) as (staged_metadata, staged, directory):
+    with repository_workspace(metadata=metadata, repo_root=repo_root, preimages=preimages) as (staged_metadata, staged):
         primary = staged(metadata.repo_path)
         if primary.is_symlink() or primary.resolve() != primary:
             raise ValueError('Editor sources must be regular repository paths')
@@ -84,20 +88,15 @@ def edit_sources(*, observation, initial, metadata, repo_root, preimages, additi
             ))
         for path in sources:
             staged(path).write_bytes(retained[path].candidate if path in retained else preimages[path])
-        live = directory / 'live'
-        live.write_bytes(observation.live.content if isinstance(observation.live, (FilePresent, DirectoryChildPresent)) else b'')
         try:
             result = run_basic_reconcile(
-                repo_path=str(primary), live_path=str(live),
-                additional_sources=[str(staged(path)) for path in sources],
+                repo_path=primary,
+                additional_sources=[staged(path) for path in sources],
+                review_repo_bytes=_present_bytes(observation.comparison_repository),
+                review_live_bytes=_present_bytes(observation.comparison_live),
                 editor=metadata.editor.run if metadata.editor.type is None else None,
-                approve_write=True, review_repo_bytes=observation.comparison_repository.content
-                if isinstance(observation.comparison_repository, (FilePresent, DirectoryChildPresent)) else b'',
-                review_live_bytes=observation.comparison_live.content
-                if isinstance(observation.comparison_live, (FilePresent, DirectoryChildPresent)) else b'',
                 editor_env=staged_metadata.command_env, editor_cwd=staged_metadata.command_cwd,
                 editor_io=metadata.editor.io, editor_elevation=metadata.editor.elevation,
-                return_result=True, quiet=True,
                 preserve_primary_executable=observation.identity.child_path is not None,
             )
         except InterruptedError:

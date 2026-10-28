@@ -48,22 +48,24 @@ def test_edit_config_hands_the_real_path_to_the_configured_editor(
     ['{editor} -d -t "$@"', "{editor} -d -t"],
     ids=["shell", "direct"],
 )
-def test_reconcile_hands_staged_sources_to_an_explicit_editor(tmp_path: Path, run_template: str) -> None:
+def test_sync_editor_hands_staged_sources_to_an_explicit_editor(tmp_path: Path, run_template: str) -> None:
     # Arguments such as `nvim -d` reach the editor as written.
     editor_path, record_path = _write_recording_editor(tmp_path)
     repo_path = tmp_path / "repo-file"
-    live_path = tmp_path / "live-file"
     repo_path.write_text("repo\n")
-    live_path.write_text("live\n")
 
     assert run_basic_reconcile(
-        repo_path=str(repo_path),
-        live_path=str(live_path),
+        repo_path=repo_path,
         additional_sources=[],
+        review_repo_bytes=b"repo\n",
+        review_live_bytes=b"live\n",
         editor=run_template.format(editor=shlex.quote(str(editor_path))),
+        editor_env={},
+        editor_cwd=tmp_path,
         editor_io="pipe",
-        approve_write=True,
-    ) == 0
+        editor_elevation="none",
+        preserve_primary_executable=False,
+    ).exit_code == 0
 
     diff_flag, flag, staged_source = record_path.read_text().splitlines()
     assert (diff_flag, flag) == ("-d", "-t")

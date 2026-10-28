@@ -1503,7 +1503,7 @@ class ProposalSession:
                 with ExitStack() as resources:
                     preimages = self._input_bytes(observation)
                     if preimages:
-                        metadata, _, _ = resources.enter_context(repository_workspace(
+                        metadata, _ = resources.enter_context(repository_workspace(
                             metadata=metadata, repo_root=item.repo.root, preimages=preimages,
                         ))
                     self._captures[observation.identity] = capture_observation(
@@ -1527,7 +1527,7 @@ class ProposalSession:
             with ExitStack() as resources:
                 preimages = self._input_bytes(observation)
                 if preimages:
-                    metadata, _, _ = resources.enter_context(repository_workspace(
+                    metadata, _ = resources.enter_context(repository_workspace(
                         metadata=metadata, repo_root=item.repo.root, preimages=preimages,
                     ))
                 outcome = project_file_view(

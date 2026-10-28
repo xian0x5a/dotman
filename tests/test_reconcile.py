@@ -1,128 +1,77 @@
 from __future__ import annotations
 
-import inspect
-from io import StringIO
 from pathlib import Path
-from types import SimpleNamespace
 
 import dotman.reconcile as reconcile_module
 from dotman.command_runtime import ArgvCommand, CommandResult, MemoryCommandRuntime
-from dotman.reconcile import _reconcile_write_confirmation_prompt, run_basic_reconcile
+from dotman.reconcile import run_basic_reconcile
 
 
-def _patch_editor_runtime(monkeypatch, fake_run) -> MemoryCommandRuntime:
+def _run_editor(
+    repo_path: Path,
+    *,
+    additional_sources: tuple[Path, ...] = (),
+    editor: str,
+    review_repo_bytes: bytes = b"",
+    review_live_bytes: bytes = b"",
+) -> CommandResult:
+    return run_basic_reconcile(
+        repo_path=repo_path,
+        additional_sources=list(additional_sources),
+        review_repo_bytes=review_repo_bytes,
+        review_live_bytes=review_live_bytes,
+        editor=editor,
+        editor_env={},
+        editor_cwd=repo_path.parent,
+        editor_io="pipe",
+        editor_elevation="none",
+        preserve_primary_executable=False,
+    )
+
+
+def test_editor_gets_read_only_review_and_edits_transactional_copies(tmp_path: Path, monkeypatch) -> None:
+    repo_path = tmp_path / "repo-file"
+    include_path = tmp_path / "include-file"
+    repo_path.write_text("repo\n", encoding="utf-8")
+    include_path.write_text("include\n", encoding="utf-8")
+    recorded: dict[str, object] = {}
+
     def run_editor(request):
         assert isinstance(request.command, ArgvCommand)
         command = list(request.command.arguments)
-        if len(inspect.signature(fake_run).parameters) >= 3:
-            completed = fake_run(command, False, request)
-        else:
-            completed = fake_run(command, False)
-        return CommandResult(exit_code=completed.returncode)
-
-    runtime = MemoryCommandRuntime([run_editor])
-    monkeypatch.setattr(reconcile_module, "current_command_runtime", lambda: runtime)
-    return runtime
-
-
-def _answer_prompts(monkeypatch, *answers: str) -> None:
-    monkeypatch.setattr("sys.stdin", StringIO("".join(f"{answer}\n" for answer in answers)))
-
-
-class _UnreadableStdin(StringIO):
-    def readline(self, *_args) -> str:
-        raise AssertionError("reconcile should not prompt")
-
-
-def test_reconcile_write_confirmation_prompt_uses_bracket_style() -> None:
-    assert _reconcile_write_confirmation_prompt() == "Write these changes? [y/n] "
-
-
-def test_run_basic_reconcile_pins_vim_like_editor_to_review_header(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    repo_path = tmp_path / "repo-file"
-    live_path = tmp_path / "live-file"
-    repo_path.write_text("repo\n", encoding="utf-8")
-    live_path.write_text("live\n", encoding="utf-8")
-
-    recorded: dict[str, object] = {}
-
-    def fake_run(command: list[str], check: bool):
         recorded["command"] = command
-        recorded["check"] = check
-        recorded["editable_text"] = Path(command[1]).read_text(encoding="utf-8")
-        return SimpleNamespace(returncode=0)
-
-    _patch_editor_runtime(monkeypatch, fake_run)
-
-    exit_code = run_basic_reconcile(
-        repo_path=str(repo_path),
-        live_path=str(live_path),
-        additional_sources=[],
-        editor="nvim",
-    )
-
-    assert exit_code == 0
-    assert recorded["command"][0] == "nvim"
-    editable_path = Path(recorded["command"][1])
-    assert editable_path != repo_path.resolve()
-    assert recorded["editable_text"] == "repo\n"
-
-
-def test_run_basic_reconcile_opens_review_file_then_transactional_source_copies(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    repo_path = tmp_path / "repo-file"
-    live_path = tmp_path / "live-file"
-    review_repo_path = tmp_path / "review-repo-file"
-    review_live_path = tmp_path / "review-live-file"
-    include_path = tmp_path / "include-file"
-    repo_path.write_text("repo\n", encoding="utf-8")
-    live_path.write_text("live\n", encoding="utf-8")
-    review_repo_path.write_text("rendered repo\n", encoding="utf-8")
-    review_live_path.write_text("rendered live\n", encoding="utf-8")
-    include_path.write_text("include\n", encoding="utf-8")
-
-    recorded: dict[str, object] = {}
-
-    def fake_run(command: list[str], check: bool, request):
-        recorded["command"] = command
-        recorded["check"] = check
         review_path = Path(request.env["DOTMAN_EDITOR_REVIEW_PATH"])
-        editable_repo_path = Path(command[1])
-        editable_include_path = Path(command[2])
-        assert review_path.name == "reconcile-review.md"
+        review_repo_path = request.env["DOTMAN_REVIEW_REPO_PATH"]
+        review_live_path = request.env["DOTMAN_REVIEW_LIVE_PATH"]
+        editable_repo_path, editable_include_path = Path(command[1]), Path(command[2])
         assert review_path.stat().st_mode & 0o222 == 0
         assert editable_repo_path.read_text(encoding="utf-8") == "repo\n"
         assert editable_include_path.read_text(encoding="utf-8") == "include\n"
         assert review_path.read_text(encoding="utf-8") == "\n".join(
             [
-                "# Dotman Reconcile Review",
+                "# Dotman Editor Review",
                 "",
                 "Review only. Do not edit this file.",
                 "Inspect the diff below, then edit the temporary source copies listed under editable sources.",
-                "Nothing is written back to the repo until dotman asks for confirmation after the editor exits.",
+                "Saved edits return to the Deck as a new Proposal; nothing reaches the repo until it is approved and applied.",
                 "",
                 "## Review Inputs",
                 "",
-                f"- review repo path: {review_repo_path.resolve()}",
-                f"- review live path: {review_live_path.resolve()}",
+                f"- review repo path: {review_repo_path}",
+                f"- review live path: {review_live_path}",
                 "",
                 "## Editable Sources",
                 "",
-                f"- repo destination: {repo_path.resolve()}",
+                f"- repo destination: {repo_path}",
                 f"  editable copy: {editable_repo_path}",
-                f"- repo destination: {include_path.resolve()}",
+                f"- repo destination: {include_path}",
                 f"  editable copy: {editable_include_path}",
                 "",
                 "## Diff",
                 "",
                 "```diff",
-                f"--- {review_repo_path.resolve()}",
-                f"+++ {review_live_path.resolve()}",
+                f"--- {review_repo_path}",
+                f"+++ {review_live_path}",
                 "@@ -1 +1 @@",
                 "-rendered repo",
                 "+rendered live",
@@ -132,347 +81,46 @@ def test_run_basic_reconcile_opens_review_file_then_transactional_source_copies(
         )
         editable_repo_path.write_text("edited repo\n", encoding="utf-8")
         editable_include_path.write_text("edited include\n", encoding="utf-8")
-        return SimpleNamespace(returncode=0)
+        return CommandResult(exit_code=0)
 
-    _patch_editor_runtime(monkeypatch, fake_run)
-    _answer_prompts(monkeypatch, "y")
+    runtime = MemoryCommandRuntime([run_editor])
+    monkeypatch.setattr(reconcile_module, "current_command_runtime", lambda: runtime)
 
-    exit_code = run_basic_reconcile(
-        repo_path=str(repo_path),
-        live_path=str(live_path),
-        additional_sources=[str(include_path)],
-        review_repo_path=str(review_repo_path),
-        review_live_path=str(review_live_path),
-        editor="nvim",
+    result = _run_editor(
+        repo_path, additional_sources=(include_path,), editor="nvim",
+        review_repo_bytes=b"rendered repo\n", review_live_bytes=b"rendered live\n",
     )
 
-    assert exit_code == 0
-    assert recorded["check"] is False
-    command = recorded["command"]
-    assert command[0] == "nvim"
-    assert Path(command[1]) != repo_path.resolve()
-    assert Path(command[2]) != include_path.resolve()
+    assert result.exit_code == 0
+    assert recorded["command"][0] == "nvim"
     assert repo_path.read_text(encoding="utf-8") == "edited repo\n"
     assert include_path.read_text(encoding="utf-8") == "edited include\n"
 
 
-def test_run_basic_reconcile_reads_live_diff_through_sudo_aware_reader(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
+def test_failed_editor_leaves_sources_unchanged(tmp_path: Path) -> None:
     repo_path = tmp_path / "repo-file"
-    live_path = tmp_path / "live-file"
-    repo_path.write_text("repo\n", encoding="utf-8")
-    live_path.write_text("live\n", encoding="utf-8")
-    live_path.chmod(0o000)
-
-    def fake_read_bytes(path: Path) -> bytes:
-        if path == live_path.resolve():
-            return b"live\n"
-        return path.read_bytes()
-
-    def fake_run(command: list[str], check: bool, request):
-        review_path = Path(request.env["DOTMAN_EDITOR_REVIEW_PATH"])
-        assert "+live" in review_path.read_text(encoding="utf-8")
-        return SimpleNamespace(returncode=0)
-
-    monkeypatch.setattr("dotman.reconcile.read_bytes", fake_read_bytes)
-    _patch_editor_runtime(monkeypatch, fake_run)
-
-    try:
-        exit_code = run_basic_reconcile(
-            repo_path=str(repo_path),
-            live_path=str(live_path),
-            additional_sources=[],
-            editor="nvim",
-        )
-    finally:
-        live_path.chmod(0o644)
-
-    assert exit_code == 0
-
-
-
-def test_run_basic_reconcile_builds_review_file_from_provided_review_paths(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    repo_path = tmp_path / "repo-file"
-    live_path = tmp_path / "live-file"
-    review_repo_path = tmp_path / "review-repo-file"
-    review_live_path = tmp_path / "review-live-file"
-    repo_path.write_text("repo\n", encoding="utf-8")
-    live_path.write_text("live\n", encoding="utf-8")
-    review_repo_path.write_text("projected repo\n", encoding="utf-8")
-    review_live_path.write_text("projected live\n", encoding="utf-8")
-
-    recorded: dict[str, object] = {}
-
-    def fake_run(command: list[str], check: bool, request):
-        recorded["command"] = command
-        recorded["check"] = check
-        review_path = Path(request.env["DOTMAN_EDITOR_REVIEW_PATH"])
-        editable_repo_path = Path(command[1])
-        assert review_path.name == "reconcile-review.md"
-        assert review_path.read_text(encoding="utf-8") == "\n".join(
-            [
-                "# Dotman Reconcile Review",
-                "",
-                "Review only. Do not edit this file.",
-                "Inspect the diff below, then edit the temporary source copies listed under editable sources.",
-                "Nothing is written back to the repo until dotman asks for confirmation after the editor exits.",
-                "",
-                "## Review Inputs",
-                "",
-                f"- review repo path: {review_repo_path.resolve()}",
-                f"- review live path: {review_live_path.resolve()}",
-                "",
-                "## Editable Sources",
-                "",
-                f"- repo destination: {repo_path.resolve()}",
-                f"  editable copy: {editable_repo_path}",
-                "",
-                "## Diff",
-                "",
-                "```diff",
-                f"--- {review_repo_path.resolve()}",
-                f"+++ {review_live_path.resolve()}",
-                "@@ -1 +1 @@",
-                "-projected repo",
-                "+projected live",
-                "```",
-                "",
-            ]
-        )
-        return SimpleNamespace(returncode=0)
-
-    _patch_editor_runtime(monkeypatch, fake_run)
-
-    exit_code = run_basic_reconcile(
-        repo_path=str(repo_path),
-        live_path=str(live_path),
-        additional_sources=[],
-        review_repo_path=str(review_repo_path),
-        review_live_path=str(review_live_path),
-        editor="nvim",
-    )
-
-    assert exit_code == 0
-    assert recorded["command"][0] == "nvim"
-    assert Path(recorded["command"][1]) != repo_path.resolve()
-
-
-def test_run_basic_reconcile_reports_no_changes_when_editor_makes_no_edits(
-    tmp_path: Path,
-    monkeypatch,
-    capsys,
-) -> None:
-    repo_path = tmp_path / "repo-file"
-    live_path = tmp_path / "live-file"
-    repo_path.write_text("repo\n", encoding="utf-8")
-    live_path.write_text("live\n", encoding="utf-8")
-
-    _patch_editor_runtime(
-        monkeypatch,
-        lambda command, check: SimpleNamespace(returncode=0),
-    )
-    monkeypatch.setattr("sys.stdin", _UnreadableStdin())
-
-    exit_code = run_basic_reconcile(
-        repo_path=str(repo_path),
-        live_path=str(live_path),
-        additional_sources=[],
-        editor="nvim",
-    )
-
-    assert exit_code == 0
-    output = capsys.readouterr().out
-    assert "No reconciled repo source changes." in output
-
-
-
-def test_run_basic_reconcile_accepts_approve_write_without_prompting(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    repo_path = tmp_path / "repo-file"
-    live_path = tmp_path / "live-file"
-    repo_path.write_text("repo\n", encoding="utf-8")
-    live_path.write_text("live\n", encoding="utf-8")
-
-    def fake_run(command: list[str], check: bool):
-        Path(command[1]).write_text("edited repo\n", encoding="utf-8")
-        return SimpleNamespace(returncode=0)
-
-    _patch_editor_runtime(monkeypatch, fake_run)
-    monkeypatch.setattr("sys.stdin", _UnreadableStdin())
-
-    exit_code = run_basic_reconcile(
-        repo_path=str(repo_path),
-        live_path=str(live_path),
-        additional_sources=[],
-        editor="nvim",
-        approve_write=True,
-    )
-
-    assert exit_code == 0
-    assert repo_path.read_text(encoding="utf-8") == "edited repo\n"
-
-
-def test_run_basic_reconcile_lists_only_changed_repo_sources_before_prompt(
-    tmp_path: Path,
-    monkeypatch,
-    capsys,
-) -> None:
-    repo_path = tmp_path / "repo-file"
-    live_path = tmp_path / "live-file"
-    include_path = tmp_path / "include-file"
-    repo_path.write_text("repo\n", encoding="utf-8")
-    live_path.write_text("live\n", encoding="utf-8")
-    include_path.write_text("include\n", encoding="utf-8")
-
-    def fake_run(command: list[str], check: bool):
-        Path(command[1]).write_text("edited repo\n", encoding="utf-8")
-        return SimpleNamespace(returncode=0)
-
-    _patch_editor_runtime(monkeypatch, fake_run)
-    _answer_prompts(monkeypatch, "n")
-
-    exit_code = run_basic_reconcile(
-        repo_path=str(repo_path),
-        live_path=str(live_path),
-        additional_sources=[str(include_path)],
-        editor="nvim",
-    )
-
-    assert exit_code == 0
-    output = capsys.readouterr().out
-    assert output.index("Reconciled repo source changes:") < output.index("Write these changes? [y/n] ")
-    assert f"  - {repo_path.resolve()}" in output
-    assert str(include_path.resolve()) not in output
-
-
-
-def test_run_basic_reconcile_lists_a_destination_path_with_unprintable_characters_escaped_on_one_line(
-    tmp_path: Path,
-    monkeypatch,
-    capsys,
-) -> None:
-    repo_path = tmp_path / "repo\nforged: row\x1b[31m"
-    live_path = tmp_path / "live-file"
-    repo_path.write_text("repo\n", encoding="utf-8")
-    live_path.write_text("live\n", encoding="utf-8")
-
-    def fake_run(command: list[str], check: bool):
-        Path(command[1]).write_text("edited repo\n", encoding="utf-8")
-        return SimpleNamespace(returncode=0)
-
-    _patch_editor_runtime(monkeypatch, fake_run)
-    _answer_prompts(monkeypatch, "n")
-
-    run_basic_reconcile(repo_path=str(repo_path), live_path=str(live_path), additional_sources=[], editor="nvim")
-
-    output = capsys.readouterr().out
-    assert f"  - {tmp_path}/repo\\u000aforged: row\\u001b[31m\n" in output
-    assert "\x1b" not in output
-
-
-def test_run_basic_reconcile_discards_temp_edits_when_write_is_not_confirmed(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    repo_path = tmp_path / "repo-file"
-    live_path = tmp_path / "live-file"
-    repo_path.write_text("repo\n", encoding="utf-8")
-    live_path.write_text("live\n", encoding="utf-8")
-
-    def fake_run(command: list[str], check: bool):
-        Path(command[1]).write_text("edited repo\n", encoding="utf-8")
-        return SimpleNamespace(returncode=0)
-
-    _patch_editor_runtime(monkeypatch, fake_run)
-    _answer_prompts(monkeypatch, "n")
-
-    exit_code = run_basic_reconcile(
-        repo_path=str(repo_path),
-        live_path=str(live_path),
-        additional_sources=[],
-        editor="nvim",
-    )
-
-    assert exit_code == 0
-    assert repo_path.read_text(encoding="utf-8") == "repo\n"
-
-
-def test_run_basic_reconcile_requires_explicit_confirmation_answer(
-    tmp_path: Path,
-    monkeypatch,
-    capsys,
-) -> None:
-    repo_path = tmp_path / "repo-file"
-    live_path = tmp_path / "live-file"
-    repo_path.write_text("repo\n", encoding="utf-8")
-    live_path.write_text("live\n", encoding="utf-8")
-
-    def fake_run(command: list[str], check: bool):
-        Path(command[1]).write_text("edited repo\n", encoding="utf-8")
-        return SimpleNamespace(returncode=0)
-
-    _patch_editor_runtime(monkeypatch, fake_run)
-    _answer_prompts(monkeypatch, "", "maybe", "y")
-
-    exit_code = run_basic_reconcile(
-        repo_path=str(repo_path),
-        live_path=str(live_path),
-        additional_sources=[],
-        editor="nvim",
-    )
-
-    assert exit_code == 0
-    assert repo_path.read_text(encoding="utf-8") == "edited repo\n"
-    assert capsys.readouterr().err.count("invalid confirmation: enter 'y' or 'n'") == 2
-
-
-def test_shell_editor_receives_primary_as_first_positional_argument(tmp_path: Path) -> None:
-    repo_path = tmp_path / "primary source"
-    live_path = tmp_path / "live"
     repo_path.write_text("original")
-    live_path.write_text("live")
 
-    assert run_basic_reconcile(
-        repo_path=str(repo_path),
-        live_path=str(live_path),
-        additional_sources=[],
-        editor='printf edited > "$1"',
-        editor_io="pipe",
-        approve_write=True,
-    ) == 0
+    result = _run_editor(repo_path, editor='printf edited > "$1"; exit 3')
 
-    assert repo_path.read_text() == "edited"
-    assert live_path.read_text() == "live"
+    assert result.exit_code == 3
+    assert repo_path.read_text() == "original"
 
 
-def test_shell_editor_receives_only_sources_in_primary_then_additional_order(
-    tmp_path: Path,
-) -> None:
+def test_shell_editor_receives_only_sources_in_primary_then_additional_order(tmp_path: Path) -> None:
     sources = [tmp_path / name for name in ("primary source", "second source", "third source")]
     for index, source in enumerate(sources):
         source.write_text(str(index))
-    live_path = tmp_path / "live"
-    live_path.write_text("live")
 
-    assert run_basic_reconcile(
-        repo_path=str(sources[0]),
-        live_path=str(live_path),
-        additional_sources=[str(source) for source in sources[1:]],
+    result = _run_editor(
+        sources[0],
+        additional_sources=tuple(sources[1:]),
         editor=(
             'test "$#" -eq 3 || exit 1; i=0; '
             'for source in "$@"; do printf "edited %s" "$i" > "$source"; '
             'i=$((i + 1)); done'
         ),
-        editor_io="pipe",
-        approve_write=True,
-    ) == 0
+    )
 
+    assert result.exit_code == 0
     assert [source.read_text() for source in sources] == ["edited 0", "edited 1", "edited 2"]
-    assert live_path.read_text() == "live"
