@@ -10,10 +10,10 @@ from pathlib import Path
 from typing import Mapping
 
 from dotman.atomic_files import write_text_atomic
-from dotman.editor import parse_editor_command, resolve_editor_value
+from dotman.editor import editor_command
 from dotman.errors import UsageError
 from dotman.models import AdditionalSource
-from dotman.command_runtime import ArgvCommand, CommandRequest, CommandResult, current_command_runtime
+from dotman.command_runtime import CommandRequest, CommandResult, current_command_runtime
 from dotman.file_access import chmod, read_bytes, write_bytes_atomic as sudo_write_bytes_atomic
 from dotman.printable import terminal_safe_line
 from dotman.terminal import colors_enabled, read_prompt_line
@@ -279,10 +279,6 @@ def run_basic_reconcile(
         for path_value in additional_sources
     ]
 
-    editor_value = resolve_editor_value(editor)
-    if editor_value is None:
-        raise ValueError("could not resolve an editor")
-    editor_command = parse_editor_command(editor_value)
     source_paths = _dedupe_paths([resolved_repo_path, *resolved_additional_sources])
     with tempfile.TemporaryDirectory(prefix="dotman-reconcile-") as temp_dir:
         temp_root = Path(temp_dir)
@@ -328,11 +324,9 @@ def run_basic_reconcile(
         positional_paths = [
             *(str(editable_source.editable_copy_path) for editable_source in editable_sources),
         ]
-        if "$" in editor_value:
-            # sh -c reserves its first argument for $0; staged sources start at $1.
-            command = ArgvCommand(("/bin/sh", "-c", editor_value, "dotman-editor", *positional_paths))
-        else:
-            command = ArgvCommand((*editor_command, *positional_paths))
+        command = editor_command(positional_paths, explicit=editor)
+        if command is None:
+            raise ValueError("could not resolve an editor")
         result = current_command_runtime().run(
             CommandRequest(
                 command=command,

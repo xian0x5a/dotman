@@ -1,8 +1,9 @@
-"""The one rule dotman uses to find the user's editor.
+"""The one rule dotman uses to find and run the user's editor.
 
 It follows Git's own lookup so `edit`, `add`, `doctor` and Sync Editors agree:
 an explicit command, `VISUAL`, `EDITOR`, `GIT_EDITOR`, Git's `core.editor`,
-then the first common editor found on PATH.
+then the first common editor found on PATH. It also runs the editor the way Git
+does: through the shell when the value uses shell syntax, otherwise directly.
 """
 
 from __future__ import annotations
@@ -10,7 +11,7 @@ from __future__ import annotations
 import os
 import shlex
 import shutil
-from typing import Callable
+from typing import Callable, Sequence
 
 from dotman.command_runtime import ArgvCommand, CommandRequest, current_command_runtime
 
@@ -18,15 +19,33 @@ from dotman.command_runtime import ArgvCommand, CommandRequest, current_command_
 EDITOR_ENVIRONMENT_VARIABLES = ("VISUAL", "EDITOR", "GIT_EDITOR")
 GIT_CORE_EDITOR_QUERY = ("git", "config", "--get", "core.editor")
 FALLBACK_EDITORS = ("sensible-editor", "editor", "nvim", "vim", "vi", "nano")
-# Diff flags such as `nvim -d` would turn dotman's file arguments into a diff.
-STRIPPED_EDITOR_ARGUMENTS = frozenset({"-d"})
+# Git's run-command hands a command to the shell when it contains one of these.
+# Spaces, quotes and backslashes are left out: shlex splits those as sh would.
+SHELL_METACHARACTERS = frozenset("|&;<>()$`*?[#~=%")
 
 # PATH lookup for the fallback editors. Tests replace it so a developer's real
 # editors never satisfy the chain.
 find_executable: Callable[[str], str | None] = shutil.which
 
 
-def resolve_editor_value(explicit: str | None = None) -> str | None:
+def editor_command(paths: Sequence[str], *, explicit: str | None = None) -> ArgvCommand | None:
+    """The command that opens `paths` in the editor, or None when the chain is empty.
+
+    Raises ValueError when the configured command cannot be used.
+    """
+    value = _resolve_editor_value(explicit)
+    if value is None:
+        return None
+    if SHELL_METACHARACTERS.isdisjoint(value):
+        return ArgvCommand((*_parse_editor_command(value), *paths))
+    # Git's form appends "$@": shell syntax without `$` cannot name the files.
+    script = value if "$" in value else f'{value} "$@"'
+    # A value that uses `$` places the files itself, through "$@" or "$1".
+    # sh -c reserves its first argument for $0; the files start at $1.
+    return ArgvCommand(("/bin/sh", "-c", script, "dotman-editor", *paths))
+
+
+def _resolve_editor_value(explicit: str | None = None) -> str | None:
     """The editor command text as configured, or None when the chain is empty."""
     if explicit:
         return explicit
@@ -45,19 +64,19 @@ def resolve_editor_command(explicit: str | None = None) -> list[str] | None:
 
     Raises ValueError when the configured command cannot be used.
     """
-    value = resolve_editor_value(explicit)
-    return None if value is None else parse_editor_command(value)
+    value = _resolve_editor_value(explicit)
+    return None if value is None else _parse_editor_command(value)
 
 
-def parse_editor_command(value: str) -> list[str]:
+def _parse_editor_command(value: str) -> list[str]:
     try:
         arguments = shlex.split(value)
     except ValueError as exc:
         raise ValueError("editor command could not be parsed") from exc
-    editor_command = [argument for argument in arguments if argument not in STRIPPED_EDITOR_ARGUMENTS]
-    if not editor_command:
+    if not arguments:
         raise ValueError("editor command is empty after parsing")
-    return editor_command
+    return arguments
+
 
 
 def _git_core_editor() -> str | None:

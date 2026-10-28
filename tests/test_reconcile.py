@@ -133,7 +133,7 @@ def test_run_basic_reconcile_opens_review_file_then_transactional_source_copies(
         additional_sources=[str(include_path)],
         review_repo_path=str(review_repo_path),
         review_live_path=str(review_live_path),
-        editor="nvim -d",
+        editor="nvim",
     )
 
     assert exit_code == 0
