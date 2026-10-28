@@ -60,7 +60,6 @@ $XDG_DATA_HOME/dotman/snapshots/
   - status
   - restore count
   - last restore time when the snapshot has been restored before
-  - selected operation scope summary
 - For each recorded live path, the manifest should record enough pre-publication state to restore it later, including:
   - absolute live path
   - whether the path existed before publication

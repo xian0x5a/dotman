@@ -42,6 +42,11 @@ def _blocking_conflict(conflicts: Sequence[TrackedTargetConflictError]) -> Track
     return next((conflict for conflict in conflicts if conflict.precedence != "implicit"), conflicts[0])
 
 
+def _notice_heading(*, no_confirm: bool) -> str:
+    """Under --no-confirm the change is reported, not asked about."""
+    return "Applying" if no_confirm else "Confirm"
+
+
 class TrackResolver:
     def __init__(
         self,
@@ -164,18 +169,19 @@ class TrackResolver:
         ]
         if not replacements:
             return None
+        heading = _notice_heading(no_confirm=no_confirm)
         if len(replacements) == 1:
             existing, replacement = replacements[0]
             message = "\n".join(
                 [
-                    f"Confirm tracked package entry replacement for {replacement.repo}:{replacement.selector}:",
+                    f"{heading} tracked package entry replacement for {replacement.repo}:{replacement.selector}:",
                     "  existing: " + self._binding_label(existing),
                     "  new:      " + self._binding_label(replacement),
                 ]
             )
         else:
             message_lines = [
-                f"Confirm tracked package entry replacements for {binding.repo}:{binding.selector}@{binding.profile}:"
+                f"{heading} tracked package entry replacements for {binding.repo}:{binding.selector}@{binding.profile}:"
             ]
             for existing, replacement in replacements:
                 message_lines.extend(
@@ -372,7 +378,7 @@ class TrackResolver:
         if not overrides:
             return True
         message_lines = [
-            f"Confirm explicit override for {self._binding_label(binding)}:",
+            f"{_notice_heading(no_confirm=no_confirm)} explicit override for {self._binding_label(binding)}:",
             "  this track request will replace implicitly tracked package owners:",
         ]
         for override in overrides:
