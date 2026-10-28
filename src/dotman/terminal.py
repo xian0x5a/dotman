@@ -23,6 +23,15 @@ def colors_enabled(stream: TextIO) -> bool:
     return stream.isatty() and os.environ.get("NO_COLOR") is None
 
 
+def has_controlling_terminal() -> bool:
+    # The same check sudo makes before it prompts on a terminal.
+    try:
+        os.close(os.open("/dev/tty", os.O_RDWR))
+    except OSError:
+        return False
+    return True
+
+
 # Foreground terminal commands (a sudo password prompt, a tty Editor) and
 # background commands run on different threads. A snapshot goes stale once
 # another foreground command takes the terminal: restoring it would undo that

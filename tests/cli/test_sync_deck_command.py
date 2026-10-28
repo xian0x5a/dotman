@@ -189,7 +189,8 @@ def test_failed_materialization_stops_no_confirm_publication(tmp_path, monkeypat
 
 
 def test_json_summary_counts_only_selected_effects(tmp_path, monkeypatch):
-    from dotman.sync_deck_command import review, sync_document
+    from dotman.sync_deck import review
+    from dotman.sync_deck_command import sync_document
     from dotman.sync_session import Preview
 
     engine = make_engine(tmp_path, monkeypatch, [("unit", "push-only", b"repo", b"live", "")])
@@ -687,3 +688,15 @@ def test_no_confirm_sync_json_reports_an_unreadable_base_apart_from_an_absent_on
     assert runner_for(engine).run(arguments(dry_run=False)) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["no_base_skips"] == [{"identity": "main:app.fresh", "reason": reason}]
+
+
+def test_no_confirm_sync_skips_no_base_drift_whose_render_fails(tmp_path, monkeypatch, capsys):
+    # The skipped row must not be materialized: its Render failure would otherwise
+    # block the run although only determined work participates.
+    engine = make_engine(tmp_path, monkeypatch, [
+        ("fresh", "both", b"repo", None, 'render = "exit 3"'), ("owned", "push-only", b"repo", b"live", ""),
+    ])
+    assert runner_for(engine).run(arguments(dry_run=False, json_output=False)) == 0
+    output = capsys.readouterr().out
+    assert "[skipped] main:app.fresh (no Base)" in output
+    assert (tmp_path / "live/owned").read_bytes() == b"repo"

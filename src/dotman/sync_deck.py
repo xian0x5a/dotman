@@ -37,8 +37,8 @@ from dotman.models import projection_display_text
 from dotman.cli_style import MENU_HEADER_MARKER, MENU_HEADER_MARKER_STYLE, MENU_HINT_STYLE, MENU_PROMPT_STYLE, render_annotation_parentheses, render_conflict_lines, render_diff_lines, render_info_section_header, render_key_hint, render_key_hint_chip, render_key_hint_separator, render_payload_action, render_payload_section_label, render_sync_term, render_package_label, style_text, SYNC_TERM_STYLE_BY_NAME
 from dotman.sync_base_store import DirectoryChildPresent, FilePresent, Missing
 from dotman.printable import terminal_safe_content
-from dotman.sync_deck_command import CommandDeckCrashed, selection_uses_inclusion, auxiliary_resolution, additional_label, guard_skip_explanation, guard_skip_label, set_all_selected, set_selected, row_diagnostics, auxiliary_label, review, edit_proposal, set_resolution_intent, retry_materialization, effect_summary, primary_change_summary, render_guess_annotation, render_resolution, resolution_label, live_counts, summary_stats
-from dotman.sync_session import AuthorizeSymlinkReplacement, AdditionalRow, AuxiliaryRow, CommandRejected, CommitOption, SessionRow, SetCommit, SyncSession, conflict_diagnostic
+from dotman.sync_deck_command import CommandDeckCrashed, selection_uses_inclusion, auxiliary_resolution, additional_label, guard_skip_explanation, guard_skip_label, set_all_selected, row_diagnostics, auxiliary_label, effect_summary, primary_change_summary, render_guess_annotation, render_resolution, resolution_label, live_counts, summary_stats
+from dotman.sync_session import AuthorizeSymlinkReplacement, AdditionalRow, AuxiliaryRow, CommandRejected, CommitOption, EditProposal, PrepareProposalReview, PrepareSourceReview, RetryMaterialization, SessionRow, SetApproval, SetCommit, SetIncluded, SetResolutionIntent, SyncSession, conflict_diagnostic
 
 
 @dataclass(frozen=True)
@@ -310,6 +310,34 @@ def _review_difference(
 
 
 NOOP_NOTICE = "Nothing to do: Approval would neither write nor record a Sync Base"
+
+
+def set_selected(session: SyncSession, row, selected: bool):
+    view = session.view
+    command = SetIncluded if selection_uses_inclusion(row) else SetApproval
+    return session.dispatch(command(view.session_id, view.revision, row.row_id, selected))
+
+
+def review(session: SyncSession, row_id: str):
+    view = session.view
+    row = next(row for row in view.rows if row.row_id == row_id)
+    command = PrepareSourceReview if isinstance(row, AdditionalRow) else PrepareProposalReview
+    return session.dispatch(command(view.session_id, view.revision, row_id))
+
+
+def edit_proposal(session: SyncSession, row_id: str):
+    view = session.view
+    return session.dispatch(EditProposal(view.session_id, view.revision, row_id))
+
+
+def set_resolution_intent(session: SyncSession, row_id: str, intent: str):
+    view = session.view
+    return session.dispatch(SetResolutionIntent(view.session_id, view.revision, row_id, intent))
+
+
+def retry_materialization(session: SyncSession, row_id: str):
+    view = session.view
+    return session.dispatch(RetryMaterialization(view.session_id, view.revision, row_id))
 
 
 class CommandDeck:

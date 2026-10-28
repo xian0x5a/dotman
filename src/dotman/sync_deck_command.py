@@ -17,8 +17,8 @@ from dotman.cli_style import SYNC_TERM_STYLE_BY_NAME, full_spec_selector_label_t
 from dotman.sync_scope import _parse_scope_selector, split_scope_child_path
 from dotman.sync_base_store import DirectoryChildPresent, FilePresent, Missing
 from dotman.sync_session import (
-    AdditionalRow, BatchSetApproval, PrepareSourceReview, AuxiliaryRow, CommandRejected, EditProposal, PrepareProposalReview, Preview, SessionOpenFailed,
-    SessionRow, SetApproval, SetCommit, SetIncluded, SetResolutionIntent, RetryMaterialization, SyncSession, has_errors,
+    AdditionalRow, BatchSetApproval, AuxiliaryRow, CommandRejected, Preview, SessionOpenFailed,
+    SessionRow, SetCommit, SyncSession, has_errors,
 )
 from dotman.tracking import SkippedTrackedRow, take_unreported_skipped_entries
 from dotman.ui_context import ui_config_scope
@@ -28,12 +28,6 @@ def selection_uses_inclusion(row) -> bool:
     # Directory children are ordinary Proposal rows; only auxiliary work uses
     # inclusion because it has no independent Proposal/Approval.
     return isinstance(row, AuxiliaryRow)
-
-
-def set_selected(session: SyncSession, row, selected: bool):
-    view = session.view
-    command = SetIncluded if selection_uses_inclusion(row) else SetApproval
-    return session.dispatch(command(view.session_id, view.revision, row.row_id, selected))
 
 
 def set_all_selected(session: SyncSession, selected: bool, row_ids: tuple[str, ...]):
@@ -91,32 +85,10 @@ def guard_skip_explanation(row) -> str:
     return f"guard_{row.directions[0]} exited 100{reason}"
 
 
-def review(session: SyncSession, row_id: str):
-    view = session.view
-    row = next(row for row in view.rows if row.row_id == row_id)
-    command = PrepareSourceReview if isinstance(row, AdditionalRow) else PrepareProposalReview
-    return session.dispatch(command(view.session_id, view.revision, row_id))
-
-
 def select_all_commits(session: SyncSession) -> None:
     for option in session.view.commit_options:
         view = session.view
         session.dispatch(SetCommit(view.session_id, view.revision, option.repo, True))
-
-
-def edit_proposal(session: SyncSession, row_id: str):
-    view = session.view
-    return session.dispatch(EditProposal(view.session_id, view.revision, row_id))
-
-
-def set_resolution_intent(session: SyncSession, row_id: str, intent: str):
-    view = session.view
-    return session.dispatch(SetResolutionIntent(view.session_id, view.revision, row_id, intent))
-
-
-def retry_materialization(session: SyncSession, row_id: str):
-    view = session.view
-    return session.dispatch(RetryMaterialization(view.session_id, view.revision, row_id))
 
 
 class CommandDeckCrashed(RuntimeError):
@@ -139,13 +111,11 @@ class SyncDeckCommandRunner:
                     event_sink=timeline, stream_output=timeline is not None)
 
     def _select_defaults(self, session):
-        set_all_selected(session, True, tuple(row.row_id for row in session.view.rows))
         # No Base means no evidence of which side changed; --no-confirm runs
-        # leave that drift for a first review instead of guessing a side.
-        for row in session.view.rows:
-            if needs_first_review(row):
-                view = session.view
-                session.dispatch(SetApproval(view.session_id, view.revision, row.row_id, False))
+        # leave that drift for a first review instead of guessing a side. It is
+        # never approved, so a failed materialization cannot block the run.
+        set_all_selected(session, True, tuple(
+            row.row_id for row in session.view.rows if not needs_first_review(row)))
 
     def _resolve_scope_inputs(self, engine, scopes, *, interaction: Interaction | None) -> list[str]:
         """Resolve shorthand or ambiguous scopes to the canonical identities Sync requires."""
@@ -722,31 +692,26 @@ def primary_change_summary(proposal, path) -> dict | None:
     return summary
 
 
-class PullDeckCommandRunner(SyncDeckCommandRunner):
-    """Pull has fixed initially approved work, not --no-confirm Sync defaults."""
+class FixedApprovalDeckCommandRunner(SyncDeckCommandRunner):
+    """Fixed initially approved work, not --no-confirm Sync defaults."""
 
+    def _select_defaults(self, session):
+        # Opening already materialized standing opt-out Approval. In particular,
+        # do not retry and silently reauthorize a failed initial Proposal.
+        pass
+
+
+class PullDeckCommandRunner(FixedApprovalDeckCommandRunner):
     command_names = frozenset({"pull"})
     operation = "pull"
 
     def _open(self, engine, scope, args, timeline):
         return engine.open_pull_session(scope, **self._session_options(args, timeline))
 
-    def _select_defaults(self, session):
-        # Opening already materialized standing opt-out Approval. In particular,
-        # do not retry and silently reauthorize a failed initial Proposal.
-        pass
 
-
-class PushDeckCommandRunner(SyncDeckCommandRunner):
-    """Push has fixed initially approved work, not --no-confirm Sync defaults."""
-
+class PushDeckCommandRunner(FixedApprovalDeckCommandRunner):
     command_names = frozenset({"push"})
     operation = "push"
 
     def _open(self, engine, scope, args, timeline):
         return engine.open_push_session(scope, **self._session_options(args, timeline))
-
-    def _select_defaults(self, session):
-        # Opening already materialized standing opt-out Approval. In particular,
-        # do not retry and silently reauthorize a failed initial Proposal.
-        pass

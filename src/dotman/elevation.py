@@ -206,6 +206,7 @@ import socket
 import sys
 
 from dotman.command_runtime import INTERRUPTED_EXIT_CODE, ArgvCommand, CommandRequest, ProductionCommandRuntime, exit_from_interrupt, sigint_received
+from dotman.terminal import has_controlling_terminal
 
 broker = os.environ.get("DOTMAN_ELEVATION_BROKER")
 real_sudo = os.environ.get("DOTMAN_REAL_SUDO")
@@ -217,14 +218,6 @@ if not broker:
 if not real_sudo:
     print("dotman sudo shim: DOTMAN_REAL_SUDO is not set", file=sys.stderr)
     raise SystemExit(1)
-
-
-def has_controlling_terminal() -> bool:
-    try:
-        os.close(os.open("/dev/tty", os.O_RDWR))
-    except OSError:
-        return False
-    return True
 
 
 def request_broker_lease() -> None:
