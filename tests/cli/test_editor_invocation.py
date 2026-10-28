@@ -23,12 +23,11 @@ def _write_recording_editor(tmp_path: Path) -> tuple[Path, Path]:
     [
         # Git documents GIT_EDITOR as shell text, so "$@" places the files.
         ('{editor} -t "$@"', ["-t"]),
-        ('{editor} -d -t "$@"', ["-t"]),
         ('{editor} "$1"', []),
         # Shell syntax without "$@": Git appends "$@" for the files.
-        ("FOO=1 {editor} -d -t", ["-t"]),
+        ("FOO=1 {editor} -t", ["-t"]),
         # Plain words run without a shell.
-        ("{editor} -d -t", ["-t"]),
+        ("{editor} -t", ["-t"]),
     ],
 )
 def test_edit_config_hands_the_real_path_to_the_configured_editor(
@@ -49,9 +48,8 @@ def test_edit_config_hands_the_real_path_to_the_configured_editor(
     ['{editor} -d -t "$@"', "{editor} -d -t"],
     ids=["shell", "direct"],
 )
-def test_reconcile_keeps_diff_flag_of_an_explicit_editor(tmp_path: Path, run_template: str) -> None:
-    # A custom Sync Editor's `run` is the user's own command; only an editor
-    # found through the lookup chain loses `-d`.
+def test_reconcile_hands_staged_sources_to_an_explicit_editor(tmp_path: Path, run_template: str) -> None:
+    # Arguments such as `nvim -d` reach the editor as written.
     editor_path, record_path = _write_recording_editor(tmp_path)
     repo_path = tmp_path / "repo-file"
     live_path = tmp_path / "live-file"

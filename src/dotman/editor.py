@@ -9,7 +9,6 @@ does: through the shell when the value uses shell syntax, otherwise directly.
 from __future__ import annotations
 
 import os
-import re
 import shlex
 import shutil
 from typing import Callable, Sequence
@@ -20,17 +19,9 @@ from dotman.command_runtime import ArgvCommand, CommandRequest, current_command_
 EDITOR_ENVIRONMENT_VARIABLES = ("VISUAL", "EDITOR", "GIT_EDITOR")
 GIT_CORE_EDITOR_QUERY = ("git", "config", "--get", "core.editor")
 FALLBACK_EDITORS = ("sensible-editor", "editor", "nvim", "vim", "vi", "nano")
-# Diff flags such as `nvim -d` would turn dotman's file arguments into a diff.
-# Only an editor found through the lookup chain loses them: an explicit command,
-# such as a custom Sync Editor's `run`, may diff on purpose.
-STRIPPED_EDITOR_ARGUMENTS = frozenset({"-d"})
 # Git's run-command hands a command to the shell when it contains one of these.
 # Spaces, quotes and backslashes are left out: shlex splits those as sh would.
 SHELL_METACHARACTERS = frozenset("|&;<>()$`*?[#~=%")
-# One shell word: unquoted characters other than operators, quoted strings and
-# escapes. The first simple command runs up to the first operator or newline.
-_SHELL_WORD = re.compile(r"""(?:[^\s|&;<>()'"\\]|'[^']*'|"(?:[^"\\]|\\.)*"|\\.)+""")
-_FIRST_SIMPLE_COMMAND = re.compile(rf"[ \t]*(?:{_SHELL_WORD.pattern}[ \t]*)*")
 
 # PATH lookup for the fallback editors. Tests replace it so a developer's real
 # editors never satisfy the chain.
@@ -45,13 +36,10 @@ def editor_command(paths: Sequence[str], *, explicit: str | None = None) -> Argv
     value = _resolve_editor_value(explicit)
     if value is None:
         return None
-    strip_diff_flags = not explicit
     if SHELL_METACHARACTERS.isdisjoint(value):
-        return ArgvCommand((*_parse_editor_command(value, strip_diff_flags=strip_diff_flags), *paths))
-    script = _drop_stripped_arguments_from_first_command(value) if strip_diff_flags else value
-    if "$" not in value:
-        # Git's form: the shell syntax cannot name the files, so they follow it.
-        script = f'{script} "$@"'
+        return ArgvCommand((*_parse_editor_command(value), *paths))
+    # Git's form appends "$@": shell syntax without `$` cannot name the files.
+    script = value if "$" in value else f'{value} "$@"'
     # A value that uses `$` places the files itself, through "$@" or "$1".
     # sh -c reserves its first argument for $0; the files start at $1.
     return ArgvCommand(("/bin/sh", "-c", script, "dotman-editor", *paths))
@@ -77,33 +65,18 @@ def resolve_editor_command(explicit: str | None = None) -> list[str] | None:
     Raises ValueError when the configured command cannot be used.
     """
     value = _resolve_editor_value(explicit)
-    return None if value is None else _parse_editor_command(value, strip_diff_flags=not explicit)
+    return None if value is None else _parse_editor_command(value)
 
 
-def _parse_editor_command(value: str, *, strip_diff_flags: bool) -> list[str]:
+def _parse_editor_command(value: str) -> list[str]:
     try:
         arguments = shlex.split(value)
     except ValueError as exc:
         raise ValueError("editor command could not be parsed") from exc
-    editor_command = [
-        argument for argument in arguments
-        if not (strip_diff_flags and argument in STRIPPED_EDITOR_ARGUMENTS)
-    ]
-    if not editor_command:
+    if not arguments:
         raise ValueError("editor command is empty after parsing")
-    return editor_command
+    return arguments
 
-
-def _drop_stripped_arguments_from_first_command(script: str) -> str:
-    # Only the first simple command runs the editor; a `-d` after `;` or `|`
-    # belongs to another command.
-    command_end = _FIRST_SIMPLE_COMMAND.match(script).end()
-    command = script[:command_end]
-    # Delete each word with the blanks before it, so the rest keeps its spacing.
-    for word in reversed(list(_SHELL_WORD.finditer(command))):
-        if word.group() in STRIPPED_EDITOR_ARGUMENTS:
-            command = command[:word.start()].rstrip(" \t") + command[word.end():]
-    return command + script[command_end:]
 
 
 def _git_core_editor() -> str | None:

@@ -155,7 +155,7 @@ def test_edit_config_cli_opens_selected_config_without_loading_it(
     config_path = tmp_path / "broken.toml"
     config_path.write_text("not valid toml = [", encoding="utf-8")
 
-    monkeypatch.setenv("EDITOR", "nvim -d")
+    monkeypatch.setenv("EDITOR", "nvim")
     recorded: dict[str, object] = {}
 
     def fake_run(command: list[str], check: bool):
@@ -196,7 +196,7 @@ def test_edit_repo_cli_opens_selected_repo_without_loading_repo_contents(
     (repo_root / "repo.toml").write_text("not valid toml = [", encoding="utf-8")
     config_path = write_named_manager_config(tmp_path, {"fixture": repo_root})
 
-    monkeypatch.setenv("EDITOR", "nvim -d")
+    monkeypatch.setenv("EDITOR", "nvim")
     recorded: dict[str, object] = {}
 
     def fake_run(command: list[str], check: bool):
@@ -255,7 +255,7 @@ def test_edit_local_cli_defaults_to_only_repo_and_creates_parent_for_editor(
     local_path = tmp_path / "xdg-config" / "dotman" / "repos" / "fixture" / "local.toml"
     assert not local_path.parent.exists()
 
-    monkeypatch.setenv("EDITOR", "nvim -d")
+    monkeypatch.setenv("EDITOR", "nvim")
     recorded: dict[str, object] = {}
 
     def fake_run(command: list[str], check: bool):
@@ -461,7 +461,7 @@ def test_edit_cli_opens_tracked_package_directory_with_editor(
     config_path = write_named_manager_config(tmp_path, {"fixture": repo_root})
     _write_tracked_binding_state(tmp_path / "state", repo_name="fixture", selector="git", profile="basic")
 
-    monkeypatch.setenv("EDITOR", "nvim -d")
+    monkeypatch.setenv("EDITOR", "nvim")
     recorded: dict[str, object] = {}
 
     def fake_run(command: list[str], check: bool):
@@ -487,7 +487,7 @@ def test_edit_cli_sugar_opens_tracked_package_directory_with_editor(
     config_path = write_named_manager_config(tmp_path, {"fixture": repo_root})
     _write_tracked_binding_state(tmp_path / "state", repo_name="fixture", selector="git", profile="basic")
 
-    monkeypatch.setenv("EDITOR", "nvim -d")
+    monkeypatch.setenv("EDITOR", "nvim")
     recorded: dict[str, object] = {}
 
     def fake_run(command: list[str], check: bool):
@@ -620,7 +620,7 @@ def test_edit_target_cli_opens_tracked_file_target_repo_path_with_editor(
         bindings=[("git", "basic"), ("ssh", "basic"), ("nvim", "basic")],
     )
 
-    monkeypatch.setenv("EDITOR", "nvim -d")
+    monkeypatch.setenv("EDITOR", "nvim")
     recorded: dict[str, object] = {}
 
     def fake_run(command: list[str], check: bool):
