@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 from pathlib import Path
 
 import pytest
+from ruamel.yaml import YAML
 from dotman.cli import build_parser
 from dotman.command_runtime import ArgvCommand, CommandRequest, current_command_runtime
 from dotman.models import PackagePlan, ResolvedPackageIdentity, ResolvedPackageSelection
@@ -626,3 +628,14 @@ def full_spec_selector(engine, selector_text: str):
     exact_matches, _partial_matches = engine.find_selector_matches(selector, repo_name)
     [(repo, matched_selector, selector_kind)] = exact_matches
     return FullSpecSelector(repo=repo.config.name, selector=matched_selector, selector_kind=selector_kind, profile=profile)
+
+
+def read_yaml(text: str | bytes) -> object:
+    """Plain Python data of a YAML 1.2 document, for asserting on transform output."""
+    return YAML(typ="safe", pure=True).load(text)
+
+
+def dump_yaml(data: object) -> str:
+    stream = io.StringIO()
+    YAML(typ="safe", pure=True).dump(data, stream)
+    return stream.getvalue()
