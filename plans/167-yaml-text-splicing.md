@@ -131,7 +131,8 @@ mostly on ruamel span quirks (recorded above) and comment placement.
 Lesson: a broad `except` around the comment retry hid a copy bug that
 silently dropped comments; the retry now guards only ruamel's emitter.
 
-Known limits, filed as follow-up issues: a mapping tag change is not
-captured (the framework rebuilds mappings as plain dicts), spacing after a
-colon is not kept, removing the last key leaves the blank line above it,
-and a nested sequence item renders with ruamel's offset (`-   - a`).
+Follow-up issues #351–#354, found in review, were fixed on the same branch:
+rebuilt mappings now carry their source mapping's tag (so plain values
+include mapping tags and the separate tag check went away), one-line values
+keep the spacing before them, removals leave no trailing blank lines, and
+nested sequences under indented dashes render compact (`- - x`).
