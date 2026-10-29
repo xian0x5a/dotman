@@ -78,6 +78,9 @@ every dump renormalised untouched values (`~`, `TRUE`, `%YAML 1.1`).
 
 - 2026-10-28: design accepted by user (text splicing on ruamel parse events,
   head-comment rule). Implementation started.
+- 2026-10-28: splicer for mappings, anchors and merges (6a12b38); block
+  sequences item by item (b19b81f); docs and skill note updated. Existing
+  164 YAML/mapping tests pass. Next: independent tests and review.
 
 ## Surprises & Discoveries
 
@@ -87,6 +90,14 @@ every dump renormalised untouched values (`~`, `TRUE`, `%YAML 1.1`).
   derived from children and trimmed instead.
 
 ## Decisions
+
+- The compare file is the splice target when it holds a mapping: it is the
+  file output replaces (repo copy on capture, live file on render), so the
+  repo's notes survive a capture. Base, then overlay (merge, no base) follow.
+- Sequence items are matched with `difflib.SequenceMatcher` on the `repr` of
+  plain values; a non-match only costs a less minimal edit.
+- Whole-document loads are cached by text (ruamel's `<<` handling is
+  quadratic); nothing mutates a loaded document.
 
 - Text splicing over patching the ruamel graph: weighted 3.95 vs 2.75
   (fidelity 35, robustness 25, cost 20, maintainability 20).
