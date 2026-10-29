@@ -1719,3 +1719,168 @@ def test_crlf_document_stays_crlf_when_keys_are_added_and_values_changed(tmp_pat
     output = output_path.read_bytes()
     assert read_yaml(output) == {"a": 1, "k": ["x", "z"], "b": 2, "new": {"n": 1}}
     assert output.count(b"\n") == output.count(b"\r\n") > 0
+
+
+# Text splicing regressions ----------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("base", "overlay", "expected_text"),
+    [
+        ("a: !foo [1]\nb: 2\n", "a: !foo [true]\n", "[true]"),
+        ("a: !!set {1}\nb: 2\n", "a: !!set {true}\n", "{true}"),
+    ],
+)
+def test_tagged_flow_value_is_replaced_by_the_overlay_value(
+    tmp_path: Path, base: str, overlay: str, expected_text: str
+) -> None:
+    output = run_yaml_merge(tmp_path, base, overlay)
+
+    assert expected_text in output
+    assert "b: 2" in output
+
+
+@pytest.mark.parametrize(
+    ("base", "overlay", "arguments", "expected"),
+    [
+        ("a: x\nb: 2\n", "a: |+\n  y\n\nb: 2\n", (), {"a": "y\n\n", "b": 2}),
+        ("a: |+\n  x\n\n", "b: 2\n", remove_keys("b"), {"a": "x\n\n", "b": 2}),
+        ("a: |+\n  x\n\nb: 1\n", "a: |+\n  y\n\n\nb: 1\n", (), {"a": "y\n\n\n", "b": 1}),
+    ],
+)
+def test_keep_chomped_block_scalars_read_back_exactly(
+    tmp_path: Path, base: str, overlay: str, arguments: tuple[str, ...], expected: dict
+) -> None:
+    assert read_yaml(run_yaml_merge(tmp_path, base, overlay, *arguments)) == expected
+
+
+def test_removing_a_key_before_a_keep_chomped_block_scalar_leaves_the_next_key(tmp_path: Path) -> None:
+    output = run_yaml_cleanup(tmp_path, "a: |+\n  x\n\nb: 1\n", *remove_keys("a"))
+
+    assert output == "b: 1\n"
+
+
+def test_whitespace_only_line_in_a_nested_literal_block_is_kept(tmp_path: Path) -> None:
+    output = run_yaml_merge(tmp_path, "a:\n  b: 1\n", "a:\n  b: |\n    x\n      \n    y\n")
+
+    assert read_yaml(output)["a"]["b"] == "x\n  \ny\n"
+
+
+def test_mapping_tag_dropped_from_a_sequence_item_is_not_written(tmp_path: Path) -> None:
+    output = run_yaml_merge(tmp_path, "l:\n- !foo\n  a: 1\n", "l:\n- a: 1\n")
+
+    assert "!foo" not in output
+    assert read_yaml(output) == {"l": [{"a": 1}]}
+
+
+@pytest.mark.parametrize(
+    ("source", "key", "expected"),
+    [
+        ("--- &r\na: 1\n?\n: 2\nb: 3\n", "a", {None: 2, "b": 3}),
+        ("--- &r\nbase: &b\n  p: 1\n<<: *b\nq: 2\n", "p", {"base": {"p": 1}, "q": 2}),
+    ],
+)
+def test_anchor_on_the_document_start_line_survives_a_removal(
+    tmp_path: Path, source: str, key: str, expected: dict
+) -> None:
+    assert read_yaml(run_yaml_cleanup(tmp_path, source, *remove_keys(key))) == expected
+
+
+def test_explicit_key_without_a_value_survives_adding_a_key(tmp_path: Path) -> None:
+    output = run_yaml_merge(tmp_path, "? a\n? b\nc: 1\n", "a:\n  x: 1\n", *remove_keys("a"))
+
+    assert read_yaml(output) == {"a": {"x": 1}, "b": None, "c": 1}
+
+
+@pytest.mark.parametrize(
+    ("base", "overlay", "arguments", "expected"),
+    [
+        (
+            "e:\n  # c8\n  d: 1\nx: 1\n",
+            "e: {}\n",
+            ("--selector-type", "retain", "--selectors", "x"),
+            {"e": {}, "x": 1},
+        ),
+        (
+            "z: 1\n",
+            "m:\n  a: &x\n    # c\n    - w\n  b: *x\n",
+            (),
+            {"z": 1, "m": {"a": ["w"], "b": ["w"]}},
+        ),
+    ],
+)
+def test_comments_of_the_old_shape_do_not_leak_onto_the_new_one(
+    tmp_path: Path, base: str, overlay: str, arguments: tuple[str, ...], expected: dict
+) -> None:
+    assert read_yaml(run_yaml_merge(tmp_path, base, overlay, *arguments)) == expected
+
+
+def test_changing_an_aliasing_value_keeps_the_anchor_and_its_comment_intact(tmp_path: Path) -> None:
+    output = run_yaml_merge(
+        tmp_path,
+        "a: &M\n  e: |-  # note\n    s\n  d: 1\nc: *M\n",
+        "c:\n  e: [y]\n  d: 1\n",
+        *remove_keys("zzz"),
+    )
+
+    data = read_yaml(output)
+    assert data["c"] == {"e": ["y"], "d": 1}
+    assert data["a"] == {"e": "s", "d": 1}
+
+
+def test_whole_document_rewrite_does_not_repeat_the_header(tmp_path: Path) -> None:
+    output = run_yaml_cleanup(tmp_path, "# header\na: 1\n", *remove_keys("a"))
+
+    assert output.count("# header") == 1
+
+
+def test_deferred_alias_removal_does_not_rewrite_the_rest(tmp_path: Path) -> None:
+    source = (
+        "# header\n\na: &x\n  p: &y 1\n  q: 2\nb: *x\nk: *y\n"
+        "z: ~  # untouched\nw: TRUE\n"
+    )
+
+    output = run_yaml_cleanup(tmp_path, source, *remove_keys("a.p", "k"))
+
+    lines = output.splitlines()
+    assert "z: ~  # untouched" in lines
+    assert "w: TRUE" in lines
+    assert output.count("# header") == 1
+    assert read_yaml(output) == {"a": {"q": 2}, "b": {"p": 1, "q": 2}, "z": None, "w": True}
+
+
+def test_comment_after_an_anchor_stays_on_the_replaced_value_line(tmp_path: Path) -> None:
+    output = run_yaml_merge(tmp_path, "a: &x # note\n  p: 1\nb: 2\n", "a: 5\n", *remove_keys("a"))
+
+    lines = output.splitlines()
+    assert lines[0].startswith("a: 5")
+    assert lines[0].split("a: 5", 1)[1].strip() == "# note"
+    assert "b: 2" in lines
+    assert read_yaml(output) == {"a": 5, "b": 2}
+
+
+def test_document_without_a_final_line_break_stays_without_one(tmp_path: Path) -> None:
+    output = run_yaml_merge(tmp_path, "a:\n  x: 1", "a:\n  y: 1\n")
+
+    assert output == "a:\n  y: 1"
+
+
+def test_block_scalar_replacing_a_value_inside_a_flow_mapping(tmp_path: Path) -> None:
+    output = run_yaml_merge(
+        tmp_path,
+        "b: {c: 2, b: 1}\n",
+        "b:\n  c: >\n    f1\n    f2\n",
+        "--selector-type", "retain", "--selectors", "b.b",
+    )
+
+    assert read_yaml(output)["b"] == {"c": "f1 f2\n", "b": 1}
+
+
+def test_anchored_sequence_with_an_empty_first_item_and_a_comment_above_it(tmp_path: Path) -> None:
+    output = run_yaml_merge(
+        tmp_path,
+        "b: &A1\n# c17\n-\n- true\nc: *A1\n",
+        "b:\n- d: ~\n-\n- 1\n",
+    )
+
+    assert read_yaml(output) == {"b": [{"d": None}, None, 1], "c": [None, True]}
