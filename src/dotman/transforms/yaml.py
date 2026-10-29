@@ -44,6 +44,7 @@ from ruamel.yaml.events import (
 from ruamel.yaml.nodes import MappingNode, Node, ScalarNode, SequenceNode
 from ruamel.yaml.representer import RoundTripRepresenter
 from ruamel.yaml.scalarbool import ScalarBoolean
+from ruamel.yaml.scalarstring import FoldedScalarString, LiteralScalarString
 from ruamel.yaml.tag import Tag
 
 from dotman.transforms.framework import (
@@ -83,12 +84,19 @@ class YamlLayout:
     offset: int = 0
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class TaggedValue:
     """A value under a custom tag such as `!Ref`, which differs from the same untagged value."""
 
     tag: str
     value: Any
+
+    # Compared like other plain values, so `!foo [1]` and `!foo [true]` differ.
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, TaggedValue) and self.tag == other.tag and values_strictly_equal(self.value, other.value)
+
+    def __hash__(self) -> int:
+        return hash((self.tag, repr(self.value)))
 
 
 class YamlRepresenter(RoundTripRepresenter):
@@ -168,13 +176,14 @@ def plain_value(value: Any) -> Any:
         # Mappings and sequences used as keys must stay hashable.
         return tuple(plain_value(item) for item in (value.items() if isinstance(value, Mapping) else value))
     if isinstance(value, CommentedSet):
-        return frozenset(plain_value(member) for member in value)
+        # Typed members, so `{1}` and `{true}` differ.
+        return frozenset(strict_key(member) for member in value)
     if isinstance(value, Mapping):
         return {plain_value(key): plain_value(child) for key, child in value.items()}
     if isinstance(value, list):
         items = [plain_value(child) for child in value]
         tag = collection_tag(value)
-        return items if tag is None or tag.startswith(_STANDARD_TAG_PREFIX) else TaggedValue(tag, tuple(items))
+        return items if tag is None or tag.startswith(_STANDARD_TAG_PREFIX) else TaggedValue(tag, items)
     if isinstance(value, tuple):
         return tuple(plain_value(child) for child in value)
     if isinstance(value, ScalarBoolean):
@@ -384,8 +393,8 @@ class TextTree:
     aliases: list[TextNode]
 
 
-def after_indicator(text: str, position: int, indicator: str) -> int:
-    """The position just past the next `indicator`, skipping blanks and comments, or position if absent."""
+def after_indicator(text: str, position: int, indicator: str) -> int | None:
+    """The position just past the next `indicator`, skipping blanks and comments, or None if absent."""
     scan = position
     while scan < len(text):
         character = text[scan]
@@ -397,7 +406,14 @@ def after_indicator(text: str, position: int, indicator: str) -> int:
             scan += 1
         else:
             break
-    return position
+    return None
+
+
+def is_keep_chomped(text: str, event: ScalarEvent) -> bool:
+    if event.style not in ("|", ">"):
+        return False
+    header = text[event.start_mark.index : line_end(text, event.start_mark.index)]
+    return "+" in header.partition("#")[0]
 
 
 def text_tree(text: str) -> TextTree:
@@ -424,6 +440,9 @@ def text_tree(text: str) -> TextTree:
                     start = end = cursor
                 else:
                     end = start + len(text[start:line_end(text, start)].partition(" #")[0].rstrip())
+            elif is_keep_chomped(text, event):
+                # Its trailing blank lines are part of its value.
+                end -= text[start:end].endswith("\n")
             else:
                 end = start + len(text[start:end].rstrip())
             node = TextNode(NodeKind.SCALAR, start, end, parent)
@@ -434,6 +453,9 @@ def text_tree(text: str) -> TextTree:
             if event.anchor is not None:
                 anchors[event.anchor] = node
             child_cursor = start if event.anchor is None and event.tag is None else end
+            if not is_mapping and text[start:end].endswith("-"):
+                # A block sequence's start event ends after its first dash.
+                child_cursor = end - 1
             while not isinstance(child_event := next(events), CollectionEndEvent):
                 if is_mapping:
                     key = build(child_event, node, child_cursor)
@@ -443,12 +465,12 @@ def text_tree(text: str) -> TextTree:
                         and child_event.style is None
                         and child_event.tag is None
                     )
-                    value = build(next(events), node, after_indicator(text, key.end, ":"))
+                    value = build(next(events), node, after_indicator(text, key.end, ":") or key.end)
                     value.entry_key = key
                     node.entries.append((key, value))
                     child_cursor = max(key.end, value.end)
                 else:
-                    item = build(child_event, node, after_indicator(text, child_cursor, "-"))
+                    item = build(child_event, node, after_indicator(text, child_cursor, "-") or child_cursor)
                     node.items.append(item)
                     child_cursor = item.end
             node.end = child_event.end_mark.index if node.flow else child_cursor
@@ -539,41 +561,56 @@ def entry_end(text: str, key: TextNode, value: TextNode, indent: int) -> int:
 
 
 def indented(text: str, indent: int) -> str:
+    # A line of only spaces can be literal block content, so only empty lines stay as they are.
     padding = " " * indent
-    return "".join(padding + line if line.strip() else line for line in text.splitlines(keepends=True))
+    return "".join(line if line == "\n" else padding + line for line in text.splitlines(keepends=True))
 
 
 # Rendering changed values.
 
 
-def copy_presentation(source: Any, copied: CommentedMap | CommentedSeq) -> None:
+def copy_presentation(source: Any, copied: CommentedMap | CommentedSeq, *, comments: bool) -> None:
     for attribute in (Comment.attrib, Format.attrib, Tag.attrib):
-        if hasattr(source, attribute):
+        if hasattr(source, attribute) and (comments or attribute != Comment.attrib):
             setattr(copied, attribute, copy.deepcopy(getattr(source, attribute)))
 
 
-def render_copy(value: Any, written: Any = None) -> Any:
+def render_copy(value: Any, written: Any = None, *, comments: bool = True, in_flow: bool = False) -> Any:
     """A copy of value to render, sharing nothing: aliases become copies, `<<` merges own keys, anchors go.
 
-    It keeps comments, tags and flow style: value's own, or, for a mapping
+    It keeps tags, flow style and comments: value's own, or, for a mapping
     that selection or merge rebuilt as a plain dict, those of written, the
-    mapping at the same place in the target. Rendering a copy cannot define
-    an anchor that redirects another place's alias.
+    mapping at the same place in the target. ruamel files comments by key
+    and position, so written's comments only carry over when the keys are
+    the same. Rendering a copy cannot define an anchor that redirects
+    another place's alias.
     """
     if isinstance(value, Mapping) and not isinstance(value, (CommentedKeyMap, CommentedSet)):
         presentation = value if isinstance(value, CommentedMap) else written if isinstance(written, CommentedMap) else None
         # An `!!omap` stays ordered.
         copied_mapping = CommentedMap() if presentation is None else type(presentation)()
         written_children = {strict_key(key): child for key, child in written.items()} if isinstance(written, Mapping) else {}
+        child_in_flow = in_flow or (presentation is not None and bool(presentation.fa.flow_style()))
         for key, child in value.items():
-            copied_mapping[key] = render_copy(child, written_children.get(strict_key(key)))
+            copied_mapping[render_copy(key)] = render_copy(
+                child, written_children.get(strict_key(key)), comments=comments, in_flow=child_in_flow
+            )
         if presentation is not None:
-            copy_presentation(presentation, copied_mapping)
+            same_keys = presentation is value or list(written_children) == [strict_key(key) for key in value]
+            copy_presentation(presentation, copied_mapping, comments=comments and same_keys)
         return copied_mapping
     if isinstance(value, list):
-        copied_sequence = CommentedSeq(render_copy(item) for item in value)
-        copy_presentation(value, copied_sequence)
+        written_items = written if isinstance(written, list) and len(written) == len(value) else [None] * len(value)
+        child_in_flow = in_flow or (isinstance(value, CommentedSeq) and bool(value.fa.flow_style()))
+        copied_sequence = CommentedSeq(
+            render_copy(item, written_item, comments=comments, in_flow=child_in_flow)
+            for item, written_item in zip(value, written_items)
+        )
+        copy_presentation(value, copied_sequence, comments=comments)
         return copied_sequence
+    if in_flow and isinstance(value, (LiteralScalarString, FoldedScalarString)):
+        # A block scalar cannot sit inside a flow collection.
+        return str(value)
     if getattr(getattr(value, "anchor", None), "value", None) is not None:
         copied_scalar = copy.deepcopy(value)
         copied_scalar.anchor.value = None
@@ -598,18 +635,48 @@ def without_trailing_comments(rendered: str) -> str:
     while lines and (not lines[-1].strip() or is_comment_line(lines[-1])):
         lines.pop()
     candidate = "".join(lines)
-    if candidate == rendered:
-        return rendered
-    if values_strictly_equal(plain_value(parse_yaml_text(candidate)), plain_value(parse_yaml_text(rendered))):
+    if candidate != rendered and reads_as(candidate, rendered):
         return candidate
     return rendered
+
+
+def reads_as(text: str, expected_text: str) -> bool:
+    try:
+        return values_strictly_equal(plain_value(parse_yaml_text(text)), plain_value(parse_yaml_text(expected_text)))
+    except YAMLError:
+        return False
+
+
+def rendered_fragment(data: Mapping[Any, Any], layout: YamlLayout, written: Any) -> str:
+    """data rendered as a document, without trailing comments or a document end marker.
+
+    ruamel's emitter can crash on, or write unreadable YAML for, comments
+    copied to a value written at another place or indentation; those are
+    dropped then.
+    """
+    plain_data = plain_value(data)
+    for comments in (True, False):
+        copied = render_copy(data, written, comments=comments)
+        try:
+            # ruamel ends a document whose last scalar keeps its trailing
+            # newlines (`|+`) with `...`, which would end the spliced document.
+            rendered = without_trailing_comments(yaml_text(copied, layout).removesuffix("...\n"))
+            if comments and not values_strictly_equal(plain_value(parse_yaml_text(rendered)), plain_data):
+                continue
+        except Exception:
+            if not comments:
+                raise
+            continue
+        return rendered
+    raise AssertionError("unreachable")
 
 
 def rendered_entry(key: Any, value: Any, layout: YamlLayout, indent: int, written: Any = None) -> str:
     """The `key: value` lines, indented, each ending in a newline."""
     entry = CommentedMap()
-    entry[key] = render_copy(value, written)
-    return indented(without_trailing_comments(yaml_text(entry, layout)), indent)
+    entry[key] = value
+    written_entry = None if written is None else {key: written}
+    return indented(rendered_fragment(entry, layout, written_entry), indent)
 
 
 def rendered_after_colon(value: Any, layout: YamlLayout, indent: int, written: Any) -> str:
@@ -634,12 +701,18 @@ def rendered_items(values: list[Any], layout: YamlLayout, indent: int) -> str:
 
 def rendered_after_dash(value: Any, layout: YamlLayout, indent: int, written: Any) -> str:
     """The item as written after its dash: ` 1`, or ` a: 1` and indented block lines."""
-    first_line, newline, block = rendered_items([render_copy(value, written)], layout, 0).removeprefix("-").partition("\n")
+    entry = rendered_entry(_RENDERED_VALUE_KEY, [value], layout, 0, [written])
+    item = indented(dedented(entry.partition("\n")[2], layout.offset), 0)
+    first_line, newline, block = item.removeprefix("-").partition("\n")
     return (first_line + newline + indented(block, indent)).removesuffix("\n")
 
 
 def rendered_document(desired: Mapping[Any, Any], layout: YamlLayout, written: Any) -> str:
-    return without_trailing_comments(yaml_text(render_copy(desired, written), layout))
+    """The desired document, without the comment lines above its first key, which the target text keeps."""
+    lines = rendered_fragment(desired, layout, written).splitlines(keepends=True)
+    while lines and (not lines[0].strip() or is_comment_line(lines[0])):
+        lines.pop(0)
+    return "".join(lines)
 
 
 # Splicing.
@@ -659,7 +732,10 @@ class Edit:
 
 
 class DocumentSplicer:
-    """One round of edits that turn the document text toward the desired data."""
+    """One round of edits that turn the document text toward the desired data.
+
+    The text ends with a line break, so whole-line edits never need one added.
+    """
 
     def __init__(self, text: str, desired: Mapping[Any, Any], layout: YamlLayout) -> None:
         self.text = text
@@ -673,30 +749,30 @@ class DocumentSplicer:
         if root is None:
             if not self.desired:
                 return []
-            separator = "" if not self.text or self.text.endswith("\n") else "\n"
-            return [Edit(len(self.text), len(self.text), separator + rendered_document(self.desired, self.layout, self.loaded), None)]
+            return [Edit(len(self.text), len(self.text), rendered_document(self.desired, self.layout, self.loaded), None)]
         if same_value(self.loaded, self.desired):
             return []
-        edits = self.mapping_edits(root, self.loaded, self.desired)
-        if edits is None:
-            edits = [self.root_replacement()]
+        planned = self.mapping_edits(root, self.loaded, self.desired)
+        if planned is None:
+            planned = [self.root_replacement()]
         # An edit to an anchored value also changes its aliases and `<<`
         # merges, so those are diffed again only after it lands.
         shared_values = {alias.target for alias in self.tree.aliases if alias.target is not None}
         shared_edits = [
             edit
-            for edit in edits
+            for edit in planned
             if edit.owner is not None and any(edit.owner.is_within(shared) for shared in shared_values)
         ]
-        return self.with_aliases_written_out(shared_edits or edits)
+        return self.with_aliases_written_out(shared_edits or planned, planned)
 
     def root_replacement(self) -> Edit:
         root = self.tree.root
         assert root is not None
         end = after_deeper_comments(self.text, next_line_start(self.text, root.end), 0)
         rendered = rendered_document(self.desired, self.layout, self.loaded)
-        if end == len(self.text) and not self.text.endswith("\n"):
-            rendered = rendered.removesuffix("\n")
+        if self.text[line_start(self.text, root.start) : root.start].strip():
+            # The root's anchor or tag follows `---` on its line.
+            rendered = "\n" + rendered
         return Edit(root.start, end, rendered, root)
 
     def mapping_edits(self, node: TextNode, loaded: Any, desired: Mapping[Any, Any]) -> list[Edit] | None:
@@ -722,18 +798,20 @@ class DocumentSplicer:
             place = line_place(self.text, key_node.start)
             if place is None:
                 return None
-            indent = place.indent
             desired_item = desired_items.get(strict_key(key))
             if desired_item is None:
                 if not place.owns_line:
                     return None
-                start = head_comment_start(self.text, line_start(self.text, key_node.start), indent)
-                edits.append(Edit(start, entry_end(self.text, key_node, value_node, indent), "", node))
+                start = head_comment_start(self.text, line_start(self.text, key_node.start), place.indent)
+                edits.append(Edit(start, entry_end(self.text, key_node, value_node, place.indent), "", value_node))
                 continue
             kept_entries += 1
             desired_value = desired_item[1]
             if not same_value(current, desired_value):
-                edits.extend(self.value_edits(key_node, value_node, current, desired_value, indent))
+                value_edits = self.value_edits(key_node, value_node, current, desired_value, place.indent)
+                if value_edits is None:
+                    return None
+                edits.extend(value_edits)
 
         appended = [
             (key, value)
@@ -745,13 +823,12 @@ class DocumentSplicer:
             first_place = line_place(self.text, node.entries[0][0].start)
             if first_place is None:
                 return None
-            indent = first_place.indent
-            position = entry_end(self.text, last_key, last_value, indent)
-            separator = "" if position == 0 or self.text[position - 1] == "\n" else "\n"
+            position = entry_end(self.text, last_key, last_value, first_place.indent)
             rendered = "".join(
-                rendered_entry(key, value, self.layout, indent, merged_values.get(strict_key(key))) for key, value in appended
+                rendered_entry(key, value, self.layout, first_place.indent, merged_values.get(strict_key(key)))
+                for key, value in appended
             )
-            edits.append(Edit(position, position, separator + rendered, node))
+            edits.append(Edit(position, position, rendered, node))
         if not kept_entries and not appended and len(own_entries) == len(node.entries):
             # An emptied mapping is written `{}`.
             return None
@@ -764,11 +841,12 @@ class DocumentSplicer:
             return self.sequence_edits(node, current, desired)
         return None
 
-    def value_edits(self, key: TextNode, value: TextNode, current: Any, desired: Any, indent: int) -> list[Edit]:
+    def value_edits(self, key: TextNode, value: TextNode, current: Any, desired: Any, indent: int) -> list[Edit] | None:
         nested_edits = self.nested_edits(value, current, desired)
         if nested_edits is not None:
             return nested_edits
-        return [self.value_replacement(key, value, current, desired, indent)]
+        replacement = self.value_replacement(key, value, current, desired, indent)
+        return None if replacement is None else [replacement]
 
     def sequence_edits(self, node: TextNode, loaded: Any, desired: list[Any]) -> list[Edit] | None:
         """Line edits that make a block sequence hold desired, or None when it must be rendered whole.
@@ -800,19 +878,17 @@ class DocumentSplicer:
         )
         edits: list[Edit] = []
         for operation, old_start, old_end, new_start, new_end in matcher.get_opcodes():
-            if operation == "equal":
-                continue
-            if operation == "replace" and old_end - old_start == new_end - new_start:
+            if operation in ("equal", "replace") and old_end - old_start == new_end - new_start:
+                # Matching by plain value misses a changed mapping tag.
                 for offset in range(old_end - old_start):
                     index = old_start + offset
-                    edits.extend(self.item_edits(node.items[index], loaded[index], desired[new_start + offset], indent))
+                    if not same_value(loaded[index], desired[new_start + offset]):
+                        edits.extend(self.item_edits(node.items[index], loaded[index], desired[new_start + offset], indent))
                 continue
-            edits.extend(Edit(item_start(index), item_end(index), "", node) for index in range(old_start, old_end))
+            edits.extend(Edit(item_start(index), item_end(index), "", node.items[index]) for index in range(old_start, old_end))
             if new_end > new_start:
                 position = item_start(old_end) if old_end < len(node.items) else item_end(len(node.items) - 1)
-                separator = "" if position == 0 or self.text[position - 1] == "\n" else "\n"
-                rendered = rendered_items(desired[new_start:new_end], self.layout, indent)
-                edits.append(Edit(position, position, separator + rendered, node))
+                edits.append(Edit(position, position, rendered_items(desired[new_start:new_end], self.layout, indent), node))
         return edits
 
     def item_dash(self, item: TextNode) -> int | None:
@@ -830,9 +906,11 @@ class DocumentSplicer:
         rendered = rendered_after_dash(desired, self.layout, indent, current)
         return [self.replacement_edit(dash + 1, item, rendered, indent)]
 
-    def value_replacement(self, key: TextNode, value: TextNode, current: Any, desired: Any, indent: int) -> Edit:
-        """Replace what follows the key's colon."""
+    def value_replacement(self, key: TextNode, value: TextNode, current: Any, desired: Any, indent: int) -> Edit | None:
+        """Replace what follows the key's colon, or None for an explicit `?` key written without one."""
         start = after_indicator(self.text, key.end, ":")
+        if start is None:
+            return None
         return self.replacement_edit(start, value, rendered_after_colon(desired, self.layout, indent, current), indent)
 
     def replacement_edit(self, start: int, value: TextNode, rendered: str, indent: int) -> Edit:
@@ -845,46 +923,45 @@ class DocumentSplicer:
         """
         value_end = max(start, value.end)
         first_line, newline, block = rendered.partition("\n")
-        key_line_end = line_end(self.text, start)
-        if value_end > key_line_end:
-            key_line_rest = self.text[start:key_line_end]
-            if key_line_rest.lstrip().startswith("#"):
-                rendered = first_line + key_line_rest + newline + block
+        start_line_end = line_end(self.text, start)
+        if value_end > start_line_end:
+            start_line_rest = self.text[start:start_line_end]
+            # The value's anchor or tag may come before the comment.
+            comment_start = 0 if start_line_rest.lstrip().startswith("#") else start_line_rest.find(" #")
+            if comment_start >= 0:
+                rendered = first_line + start_line_rest[comment_start:] + newline + block
             end = after_deeper_comments(self.text, next_line_start(self.text, value_end), indent)
-            if self.text[end - 1] == "\n":
-                rendered += "\n"
-            else:
-                end = line_end(self.text, value_end)
-            return Edit(start, end, rendered, value)
-        trailing = self.text[value_end:key_line_end]
+            return Edit(start, end, rendered + "\n", value)
+        trailing = self.text[value_end:start_line_end]
         if newline and trailing.lstrip().startswith("#"):
-            return Edit(start, key_line_end, first_line + trailing + newline + block, value)
+            return Edit(start, start_line_end, first_line + trailing + newline + block, value)
         return Edit(start, value_end, rendered, value)
 
-    def with_aliases_written_out(self, edits: list[Edit]) -> list[Edit]:
+    def with_aliases_written_out(self, edits: list[Edit], planned: list[Edit]) -> list[Edit]:
         """Add edits so no alias outlives the anchor an edit removes.
 
-        Such an alias's mapping entry is rendered whole from the desired
-        data, or the document when no block mapping entry holds it.
+        An alias that a planned edit removes anyway gets that edit now.
+        Otherwise its mapping entry is rendered whole from the desired data,
+        or the document when no block mapping entry holds it.
         """
         while True:
             removing = [edit for edit in edits if edit.start < edit.end]
-            stranded = next(
-                (
-                    alias
-                    for alias in self.tree.aliases
-                    if alias.target is not None
-                    and any(edit.removes(alias.target.start) for edit in removing)
-                    and not any(edit.removes(alias.start) for edit in removing)
-                ),
-                None,
-            )
-            if stranded is None:
+            stranded = [
+                alias
+                for alias in self.tree.aliases
+                if alias.target is not None
+                and any(edit.removes(alias.target.start) for edit in removing)
+                and not any(edit.removes(alias.start) for edit in removing)
+            ]
+            if not stranded:
                 return edits
-            replacement = self.entry_replacement(stranded)
-            owner = replacement.owner
-            assert owner is not None
-            edits = [edit for edit in edits if edit.owner is None or not edit.owner.is_within(owner)] + [replacement]
+            for alias in stranded:
+                if any(edit.removes(alias.start) for edit in edits):
+                    continue
+                replacement = next((edit for edit in planned if edit.removes(alias.start)), None) or self.entry_replacement(alias)
+                owner = replacement.owner
+                assert owner is not None
+                edits = [edit for edit in edits if edit.owner is None or not edit.owner.is_within(owner)] + [replacement]
 
     def entry_replacement(self, node: TextNode) -> Edit:
         """Render the nearest mapping entry around node reachable through block mapping entries."""
@@ -916,9 +993,8 @@ class DocumentSplicer:
         entry_value = entry_values[-1]
         assert entry_value.entry_key is not None
         place = line_place(self.text, entry_value.entry_key.start)
-        if place is None:
-            return self.root_replacement()
-        return self.value_replacement(entry_value.entry_key, entry_value, loaded, desired, place.indent)
+        replacement = None if place is None else self.value_replacement(entry_value.entry_key, entry_value, loaded, desired, place.indent)
+        return self.root_replacement() if replacement is None else replacement
 
 
 def applied_edits(text: str, edits: list[Edit]) -> str:
@@ -942,6 +1018,10 @@ def spliced_yaml_text(text: str, desired: Mapping[Any, Any], layout: YamlLayout)
     writes them out, or overrides the merged key.
     """
     expected = plain_value(desired)
+    # Splice a text ending in a line break, and give back the one added.
+    added_line_break = bool(text) and not text.endswith("\n")
+    if added_line_break:
+        text += "\n"
     for _ in range(_MAX_SPLICE_ROUNDS):
         try:
             splicer = DocumentSplicer(text, desired, layout)
@@ -951,7 +1031,9 @@ def spliced_yaml_text(text: str, desired: Mapping[Any, Any], layout: YamlLayout)
         if not edits:
             loaded = {} if splicer.loaded is None else splicer.loaded
             if values_strictly_equal(plain_value(loaded), expected) and mapping_tags_match(loaded, desired):
-                return text if text.strip() or desired else "{}\n"
+                if not text.strip() and not desired:
+                    return "{}\n"
+                return text.removesuffix("\n") if added_line_break else text
             break
         edited_text = applied_edits(text, edits)
         if edited_text == text:
