@@ -517,6 +517,8 @@ SYNC_TERM_STYLE_BY_NAME: dict[str, tuple[str, ...]] = {
     # A Resolution fixed by a one-way Policy is not a decision; keep it recessive
     # like auxiliary kinds so choosable Resolutions stand out.
     "fixed": ("2",),
+    # A Writes side predicted before its Proposal exists, or unknown (`?`), is not yet a fact.
+    "predicted": ("2",),
     "completed": ("1", "32"),
     "incomplete": ("1", "33"),
     "aborted": ("1", "31"),

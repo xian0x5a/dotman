@@ -45,7 +45,7 @@ async def guard_skip_deck(engine):
         app = SyncDeckApp(CommandDeck(session, use_color=False))
         async with app.run_test() as pilot:
             table = app.query_one(WorksetTable)
-            marker, target, _policy, resolution = (str(cell) for cell in table.get_row_at(0))
+            marker, target, _policy, resolution, _writes = (str(cell) for cell in table.get_row_at(0))
             assert (marker, target, resolution) == ("[-]", "main:app.unit (guard_pull)", "Guard skipped")
             await pilot.press("space")
             assert not session.view.rows[0].included

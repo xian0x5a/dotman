@@ -57,12 +57,25 @@ async def auxiliary_table_interaction():
             assert table.row_count == 2
             assert str(table.get_row_at(0)[1]) == "r:p.check"
             assert str(table.get_row_at(1)[1]) == "r:p (pull-hooks)"
+            # Auxiliary work never has a Proposal, so there is no side to name.
+            assert [str(table.get_row_at(index)[4]) for index in range(2)] == ["", ""]
             app.action_resolution()
             await pilot.press("down", "enter")
             await pilot.pause()
             assert app.deck.focus == 1
             assert not app.deck.reviewing
             app.action_retry()
+
+
+def test_directory_root_work_writes_live_while_hook_and_probe_work_stay_blank():
+    async def interact():
+        root = AuxiliaryRow("root:r:p.tree", "directory-root", False, "r:p.tree", ("push",))
+        with SyncSession((), preview=True, auxiliary=(root, *auxiliary_session().view.rows)) as session:
+            app = SyncDeckApp(CommandDeck(session, use_color=False))
+            async with app.run_test():
+                table = app.query_one(WorksetTable)
+                assert [str(table.get_row_at(index)[4]) for index in range(table.row_count)] == ["live", "", ""]
+    asyncio.run(asyncio.wait_for(interact(), timeout=5))
 
 
 def test_no_confirm_selects_auxiliary_and_forwards_run_noop(capsys):

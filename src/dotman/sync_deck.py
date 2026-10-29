@@ -870,6 +870,49 @@ def render_row_resolution(row, *, use_color: bool, mark_guess: bool = False) -> 
     return render_resolution(label, guessed=guessed, fixed=fixed, use_color=use_color)
 
 
+def proposal_writes(proposal) -> str:
+    repository = proposal.primary_source_change is not None
+    live = bool(proposal.publication_effects)
+    return {(True, True): "both", (True, False): "repo", (False, True): "live"}.get((repository, live), "—")
+
+
+def predicted_writes(row: SessionRow) -> str | None:
+    """The only side an unbuilt Proposal can write, when direction alone bounds it.
+
+    Use repository never changes the repository source. Pull-only Use live never
+    publishes, but both-policy Use live re-renders live and applies chmod, and
+    Merge or Edited depend on content.
+    """
+    if row.diagnostics:
+        return None
+    if row.intent == "use-repository":
+        return "live"
+    if row.intent == "use-live" and row.observation.effective_policy == "pull-only":
+        return "repo"
+    return None
+
+
+def render_row_writes(row, *, use_color: bool) -> str:
+    """The sides a row writes: exact once its Proposal exists, else predicted or `?`.
+
+    Proposals materialize lazily (Capture may run commands). Like a guessed
+    Resolution, a prediction carries a trailing `?` so it reads without color;
+    a bare `?` stays unknown until the row is materialized or its conflict or
+    failure is resolved.
+    """
+    if isinstance(row, AuxiliaryRow):
+        # Root work always chmods the live root; hook and probe effects are not known ahead.
+        return "live" if row.kind == "directory-root" else ""
+    if isinstance(row, AdditionalRow):
+        return "repo"
+    if row.proposal is not None:
+        return proposal_writes(row.proposal)
+    if "prepare-proposal-review" not in row.allowed_commands:
+        return ""
+    label = f"{predicted_writes(row) or ''}?"
+    return style_text(label, *SYNC_TERM_STYLE_BY_NAME["predicted"]) if use_color else label
+
+
 def elide_middle(label: Text, width: int) -> Text:
     """Keep both the repo prefix and the target-name tail of long identities."""
     if label.cell_len <= width:
@@ -943,7 +986,7 @@ class WorksetTable(DataTable):
     def add_workset_row(self, row_id: str, target: Text, policy: str) -> None:
         self.full_targets[row_id] = target
         self._fitted_target_width = None
-        self.add_row("", target, policy, "", key=row_id)
+        self.add_row("", target, policy, "", "", key=row_id)
 
     def clear(self, columns: bool = False):
         self.full_targets.clear()
@@ -951,7 +994,7 @@ class WorksetTable(DataTable):
         return super().clear(columns)
 
     def fit_targets(self) -> None:
-        """Shrink the Target column so Selection, Policy and Resolution stay on screen."""
+        """Shrink the Target column so Selection, Policy, Resolution and Writes stay on screen."""
         if not self.full_targets or not self.size.width:
             return
         target_key = self.ordered_columns[self.TARGET_COLUMN].key
@@ -1336,7 +1379,7 @@ class SyncDeckApp(App[bool]):
         self.watch(self.query_one("#help"), "hover_style", self.hover_hint, init=False)
         table = self.query_one(WorksetTable)
         # The Selection header matches its narrow "[ ]" markers, leaving width for targets.
-        table.add_columns("✓", "Target", "Policy", "Resolution")
+        table.add_columns("✓", "Target", "Policy", "Resolution", "Writes")
         self.show_workset()
 
     def rebuild_workset(self) -> None:
@@ -1368,7 +1411,10 @@ class SyncDeckApp(App[bool]):
             table.update_cell(row.row_id, table.ordered_columns[3].key,
                               Text.from_ansi(render_row_resolution(row, use_color=self.deck.use_color, mark_guess=True)),
                               update_width=True)
-        # Resolution width varies with intent, so refit after every cell update.
+            table.update_cell(row.row_id, table.ordered_columns[4].key,
+                              Text.from_ansi(render_row_writes(row, use_color=self.deck.use_color)),
+                              update_width=True)
+        # Resolution and Writes widths vary with intent and Proposal, so refit after every cell update.
         table.fit_targets()
         self.update_detail()
         if not self.deck.reviewing and not self.deck.confirming:

@@ -353,6 +353,72 @@ def test_workset_resolution_names_a_reconciliation_conflict_by_its_intent(tmp_pa
                 assert session.view.rows[0].diagnostics[0].code == "reconciliation-conflict"
                 line = app.query_one(DataTable).render_line(1).text
                 assert label in line and "Proposal failed" not in line
+                # A conflict leaves the written side unknown until it is resolved.
+                assert writes_cells(app) == ["?"]
+        run(interact())
+
+
+def writes_cells(app):
+    table = app.query_one(WorksetTable)
+    return [str(table.get_row_at(index)[4]) for index in range(table.row_count)]
+
+
+def test_writes_are_predicted_from_the_resolution_until_a_proposal_exists(tmp_path, monkeypatch):
+    from dataclasses import replace
+    from dotman.cli_style import SYNC_TERM_STYLE_BY_NAME, style_text
+    from dotman.sync_deck import render_row_writes
+    from dotman.sync_session import Diagnostic
+
+    engine = make_engine(tmp_path, monkeypatch, [
+        ("push", "push-only", b"repo", b"live", ""),
+        ("pull", "pull-only", b"repo", b"live", ""),
+        ("both", "both", b"repo", b"live", ""),
+    ])
+    with engine.open_sync_session(engine.resolve_sync_scope([]), preview=True) as session:
+        app = SyncDeckApp(CommandDeck(session, use_color=False))
+
+        async def interact():
+            async with app.run_test(size=(110, 24)):
+                # The trailing ? marks a prediction without color, like a guessed Resolution.
+                assert writes_cells(app) == ["live?", "repo?", "live?"]
+        run(interact())
+        push, pull, both = session.view.rows
+        failed = (Diagnostic("materialization-failed", "boom"),)
+        for row, expected in [
+            (replace(both, intent="use-live"), "?"),  # both-policy Use live may also re-render or chmod live
+            (replace(both, intent="merge"), "?"),
+            (replace(both, intent="editor"), "?"),
+            (replace(push, diagnostics=failed), "?"),  # a failed Proposal leaves the side unknown
+            (replace(pull, diagnostics=failed), "?"),
+        ]:
+            assert render_row_writes(row, use_color=False) == expected, (row.row_id, row.intent)
+        # The prediction is dimmed, unlike an exact value.
+        assert render_row_writes(push, use_color=True) == style_text("live?", *SYNC_TERM_STYLE_BY_NAME["predicted"])
+
+
+@pytest.mark.parametrize("repo,live,expected", [
+    (b"repository\nmiddle\nlast\n", b"first\nmiddle\nlive\n", "both"),
+    (b"repository\nmiddle\nlast\n", b"first\nmiddle\nlast\n", "live"),
+    (b"first\nmiddle\nlast\n", b"first\nmiddle\nlive\n", "repo"),
+])
+def test_writes_become_exact_once_the_merge_proposal_is_built(tmp_path, monkeypatch, repo, live, expected):
+    from tests.engine.test_sync_both_convergence import established
+
+    engine = established(tmp_path, monkeypatch)
+    (tmp_path / "repo/packages/app/unit").write_bytes(repo)
+    (tmp_path / "live/unit").write_bytes(live)
+    with engine.open_sync_session(engine.resolve_sync_scope([]), preview=True) as session:
+        app = SyncDeckApp(CommandDeck(session, use_color=False))
+
+        async def interact():
+            async with app.run_test(size=(110, 24)) as pilot:
+                # Merge depends on content, so nothing is predicted before the Proposal exists.
+                assert session.view.rows[0].intent == "merge" and session.view.rows[0].proposal is None
+                assert writes_cells(app) == ["?"]
+                await pilot.press("space")
+                await wait_until_idle(app, pilot)
+                assert session.view.rows[0].proposal is not None
+                assert writes_cells(app) == [expected]
         run(interact())
 
 
@@ -766,7 +832,7 @@ def test_resolution_key_toggles_between_two_intents_without_menu(tmp_path, monke
                 assert session.view.rows[0].intent == 'use-live'
                 assert not session.view.rows[0].approved
                 # A chosen side is no longer a guess.
-                assert 'Use live' in table.render_line(1).text and '?' not in table.render_line(1).text
+                assert 'Use live' in table.render_line(1).text and '?' not in str(table.get_row_at(0)[3])
                 await pilot.press('r')
                 await pilot.pause()
                 assert session.view.rows[0].intent == 'use-repository'
