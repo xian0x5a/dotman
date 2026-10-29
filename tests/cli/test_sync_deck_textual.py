@@ -353,6 +353,8 @@ def test_workset_resolution_names_a_reconciliation_conflict_by_its_intent(tmp_pa
                 assert session.view.rows[0].diagnostics[0].code == "reconciliation-conflict"
                 line = app.query_one(DataTable).render_line(1).text
                 assert label in line and "Proposal failed" not in line
+                # A conflict leaves the written side unknown until it is resolved.
+                assert writes_cells(app) == ["?"]
         run(interact())
 
 
@@ -417,25 +419,6 @@ def test_writes_become_exact_once_the_merge_proposal_is_built(tmp_path, monkeypa
                 await wait_until_idle(app, pilot)
                 assert session.view.rows[0].proposal is not None
                 assert writes_cells(app) == [expected]
-        run(interact())
-
-
-def test_writes_stay_unknown_for_a_conflicted_merge(tmp_path, monkeypatch):
-    from tests.engine.test_sync_both_convergence import established
-
-    engine = established(tmp_path, monkeypatch)
-    (tmp_path / "live/unit").write_bytes(b"conflict\nmiddle\nlast\n")
-    with engine.open_sync_session(engine.resolve_sync_scope([]), preview=True) as session:
-        app = SyncDeckApp(CommandDeck(session, use_color=False))
-
-        async def interact():
-            async with app.run_test(size=(110, 24)) as pilot:
-                await pilot.press("enter")
-                await wait_until_idle(app, pilot)
-                await pilot.press("escape")
-                await wait_until_idle(app, pilot)
-                assert session.view.rows[0].diagnostics
-                assert writes_cells(app) == ["?"]
         run(interact())
 
 
