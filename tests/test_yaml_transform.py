@@ -2087,3 +2087,181 @@ def test_eol_comment_after_an_anchor_containing_a_quote_stays_when_the_value_is_
     assert output.splitlines()[0].startswith("key:")
     assert "# keep me" in output.splitlines()[0]
     assert read_yaml(output) == {"key": [1, 2], "z": 1}
+
+
+# --- Follow-up fixes (#351-#354) --------------------------------------------------------------------
+
+
+def run_yaml_transform(tmp_path: Path, base: str, *arguments: str, overlay: str | None = None, compare: str | None = None) -> str:
+    """Run the CLI with optional overlay and compare files written next to the base."""
+    base_path = tmp_path / "base.yaml"
+    output_path = tmp_path / "out.yaml"
+    base_path.write_text(base, encoding="utf-8")
+    extra: list[str] = []
+    if overlay is not None:
+        (tmp_path / "overlay.yaml").write_text(overlay, encoding="utf-8")
+        extra += ["--overlay-file", str(tmp_path / "overlay.yaml")]
+    if compare is not None:
+        (tmp_path / "compare.yaml").write_text(compare, encoding="utf-8")
+        extra += ["--compare-file", str(tmp_path / "compare.yaml")]
+    mode = "merge" if overlay is not None else "cleanup"
+    assert cli.main(["transform", "yaml", str(base_path), str(output_path), "--mode", mode, *extra, *arguments]) == 0
+    return output_path.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    ("live", "repo", "arguments", "expected"),
+    [
+        pytest.param("a: !Thing\n  x: 1\nb: 1\n", "a:\n  x: 1\nb: 1\n", (), "a: !Thing\n  x: 1\nb: 1\n", id="added-tag"),
+        pytest.param(
+            "a: !Thing\n  x: 1\n  y: 2\nb: 1\n", "a:\n  x: 1\n  y: 2\nb: 1\n",
+            ("--selector-type", "remove", "--selectors", "a.y"),
+            "a: !Thing\n  x: 1\nb: 1\n", id="added-tag-with-selector",
+        ),
+    ],
+)
+def test_capture_writes_a_tag_added_to_a_mapping(
+    tmp_path: Path, live: str, repo: str, arguments: tuple[str, ...], expected: str,
+) -> None:
+    assert run_yaml_transform(tmp_path, live, *arguments, compare=repo) == expected
+
+
+def test_capture_drops_a_tag_removed_from_a_mapping(tmp_path: Path) -> None:
+    output = run_yaml_transform(tmp_path, "a:\n  x: 1\nb: 1\n", compare="a: !Thing\n  x: 1\nb: 1\n")
+
+    assert output == "a:\n  x: 1\nb: 1\n"
+
+
+def test_render_removes_a_mapping_tag_the_repo_lacks(tmp_path: Path) -> None:
+    live = "a: !Thing\n  x: 1\nb: 1\n"
+
+    output = run_yaml_transform(tmp_path, live, overlay="a:\n  x: 1\nb: 1\n", compare=live)
+
+    assert "!Thing" not in output
+    assert read_yaml(output) == {"a": {"x": 1}, "b": 1}
+
+
+@pytest.mark.parametrize(
+    ("base", "overlay", "selector", "expected_line"),
+    [
+        pytest.param("a: !Base\n  x: 1\n", "a: !Over\n  y: 2\n", "a.x", "a: !Over\n", id="overlay-tag-wins"),
+        pytest.param("a: !Base\n  x: 1\n", "a:\n  y: 2\n", "a.x", "a:\n", id="overlay-mapping-without-tag-drops-it"),
+        pytest.param(
+            "a:\n  n: !Base\n    p: 1\n", "a:\n  y: 2\n", "a.n", "  n: !Base\n",
+            id="base-tag-when-overlay-lacks-the-mapping",
+        ),
+    ],
+)
+def test_merged_mapping_takes_the_overlay_tag_else_the_base_tag(
+    tmp_path: Path, base: str, overlay: str, selector: str, expected_line: str,
+) -> None:
+    # A selector makes the merge descend into "a" instead of replacing it wholesale.
+    output = run_yaml_transform(tmp_path, base, "--selector-type", "retain", "--selectors", selector, overlay=overlay)
+
+    assert expected_line in output
+    assert output.count("!") == (0 if "!" not in expected_line else 1)
+
+
+def test_capture_removes_a_tag_from_a_mapping_inside_a_sequence_item(tmp_path: Path) -> None:
+    output = run_yaml_transform(tmp_path, "l:\n- a: 1\n  b: 2\n", compare="l:\n- !foo\n  a: 1\n  b: 2\n")
+
+    assert "!foo" not in output
+    assert read_yaml(output) == {"l": [{"a": 1, "b": 2}]}
+
+
+@pytest.mark.parametrize(
+    ("base", "overlay", "expected"),
+    [
+        pytest.param(
+            "version:  1.0\nname:     x\n", "version: \"2.0\"\nname: x\n",
+            "version:  \"2.0\"\nname:     x\n", id="aligned-after-colon",
+        ),
+        pytest.param("l:\n-   a\n-   b\n", "l:\n- a\n- c\n", "l:\n-   a\n-   c\n", id="after-sequence-dash"),
+        pytest.param("a:    1\nb:     2\n", "a: 1\nb: 2\nz: 0\n", "a:    1\nb:     2\nz: 0\n", id="unchanged-values-untouched"),
+        pytest.param("a:   1\n", "a:\n  x: 1\n", "a:\n  x: 1\n", id="multi-line-value-ignores-old-spacing"),
+        pytest.param("a: 1\n", "a: 2\n", "a: 2\n", id="single-space-is-unchanged"),
+    ],
+)
+def test_rewritten_one_line_value_keeps_the_spacing_before_it(
+    tmp_path: Path, base: str, overlay: str, expected: str,
+) -> None:
+    selectors = ("--selector-type", "retain", "--selectors", "nothing")
+
+    output = run_yaml_transform(tmp_path, base, *selectors, overlay=overlay)
+
+    assert output == expected
+
+
+@pytest.mark.parametrize(
+    ("source", "key", "expected"),
+    [
+        pytest.param("a: 1\n\nb: 2\n", "b", "a: 1\n", id="last-key-after-blank-line"),
+        pytest.param("a: 1\n\nb: 2\n\n", "b", "a: 1\n\n", id="document-ending-in-blank-line-keeps-it"),
+        pytest.param("a: 1\n\nb:\n  x: 1\n  y: 2\n", "b", "a: 1\n", id="last-block-mapping"),
+    ],
+)
+def test_removing_the_last_key_leaves_no_trailing_blank_line(
+    tmp_path: Path, source: str, key: str, expected: str,
+) -> None:
+    assert run_yaml_cleanup(tmp_path, source, *remove_keys(key)) == expected
+
+
+def test_removing_adjacent_last_keys_leaves_no_trailing_blank_line(tmp_path: Path) -> None:
+    output = run_yaml_cleanup(tmp_path, "a: 1\n\nb: 2\nc: 3\n", *remove_keys("b", "c"))
+
+    assert output == "a: 1\n"
+
+
+def test_keep_chomped_block_scalar_at_the_end_keeps_its_trailing_blank_lines(tmp_path: Path) -> None:
+    source = "a: 1\nb: |+\n  text\n\n\n"
+
+    output = run_yaml_cleanup(tmp_path, source, *remove_keys("zzz"))
+    changed = run_yaml_cleanup(tmp_path, "a: 2\nb: |+\n  text\n\n\n", "--selector-type", "retain", "--selectors", "b")
+
+    assert read_yaml(output) == {"a": 1, "b": "text\n\n\n"}
+    assert read_yaml(changed)["b"] == "text\n\n\n"
+
+
+def test_keep_chomped_block_scalar_stays_exact_when_an_earlier_key_is_removed(tmp_path: Path) -> None:
+    output = run_yaml_cleanup(tmp_path, "a: 1\n\nb: |+\n  text\n\n\n", *remove_keys("a"))
+
+    assert read_yaml(output) == {"b": "text\n\n\n"}
+
+
+@pytest.mark.parametrize(
+    ("base", "overlay", "expected"),
+    [
+        pytest.param(
+            "a:\n  - 1\n", "a:\n  - 1\n  - - x\n    - y\n",
+            "a:\n  - 1\n  - - x\n    - y\n", id="indented-dash"),
+        pytest.param(
+            "a:\n  - 1\n", "a:\n  - 1\n  - - - z\n",
+            "a:\n  - 1\n  - - - z\n", id="indented-dash-three-deep"),
+        pytest.param(
+            "a:\n- 1\n", "a:\n- 1\n- - x\n  - y\n",
+            "a:\n- 1\n- - x\n  - y\n", id="non-indented-dash"),
+    ],
+)
+def test_added_nested_sequence_item_starts_right_after_the_dash(
+    tmp_path: Path, base: str, overlay: str, expected: str,
+) -> None:
+    output = run_yaml_transform(tmp_path, base, overlay=overlay)
+
+    assert output == expected
+    assert read_yaml(output) == read_yaml(overlay)
+
+
+@pytest.mark.parametrize(
+    "overlay",
+    [
+        pytest.param("a:\n  - 1\n  - - |\n      text\n      more\n    - y\n", id="block-scalar"),
+        pytest.param("a:\n  - 1\n  - - k: v\n      m: w\n    - y\n", id="mapping"),
+        pytest.param("a:\n  - 1\n  - - - |\n        deep\n      - k: v\n        m: w\n", id="deeper-block-scalar-and-mapping"),
+    ],
+)
+def test_added_nested_sequence_item_with_block_content_stays_valid_and_placed(tmp_path: Path, overlay: str) -> None:
+    output = run_yaml_transform(tmp_path, "a:\n  - 1\nz: 1\n", overlay=overlay + "z: 1\n")
+
+    assert read_yaml(output) == read_yaml(overlay + "z: 1\n")
+    assert "-   -" not in output
+    assert output.endswith("z: 1\n")
