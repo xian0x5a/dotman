@@ -2265,3 +2265,24 @@ def test_added_nested_sequence_item_with_block_content_stays_valid_and_placed(tm
     assert read_yaml(output) == read_yaml(overlay + "z: 1\n")
     assert "-   -" not in output
     assert output.endswith("z: 1\n")
+
+
+@pytest.mark.parametrize(
+    "overlay",
+    [
+        pytest.param("a:\n  - 1\n  - - !T\n      - x\n", id="tagged-sequence-inside-a-nested-item"),
+        pytest.param("a:\n  - !T\n    - x\n  - - y\n", id="tagged-sequence-item-beside-a-nested-item"),
+    ],
+)
+def test_tagged_sequence_nested_in_a_sequence_item_is_written(tmp_path: Path, overlay: str) -> None:
+    output = run_yaml_transform(tmp_path, "a:\n  - 1\n", overlay=overlay)
+
+    assert "!T" in output
+    # read_yaml cannot load the custom tag, so compare the data with the tag stripped from both sides.
+    assert read_yaml(output.replace("!T ", "").replace("!T", "")) == read_yaml(overlay.replace("!T ", "").replace("!T", ""))
+
+
+def test_unchanged_document_ending_in_a_whitespace_only_line_keeps_its_bytes(tmp_path: Path) -> None:
+    source = "a: 1\n\n  "
+
+    assert run_yaml_cleanup(tmp_path, source) == source
