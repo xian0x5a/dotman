@@ -999,8 +999,8 @@ def test_identity_cleanup_reproduces_the_input_byte_for_byte(tmp_path: Path, sou
         pytest.param(
             "# header\n\n# about a\na: 1  # eol a\n# about b\nb: 2  # eol b\n# about c\nc: 3  # eol c\n",
             "a",
-            # Lines above the first key may describe the whole file, so they stay.
-            "# header\n\n# about a\n# about b\nb: 2  # eol b\n# about c\nc: 3  # eol c\n",
+            # Comment lines touching a key belong to it; a blank line keeps the file header.
+            "# header\n\n# about b\nb: 2  # eol b\n# about c\nc: 3  # eol c\n",
             id="first-key",
         ),
         pytest.param(
@@ -1216,10 +1216,9 @@ def test_unusual_nodes_survive_identity_byte_for_byte(tmp_path: Path, source: st
 
 
 def test_complex_key_survives_identity(tmp_path: Path) -> None:
-    # ruamel writes the explicit `?` key form as an equivalent implicit flow key.
     source = "? {a: 1}\n: v\n"
 
-    assert run_yaml_cleanup(tmp_path, source) == "{a: 1}: v\n"
+    assert run_yaml_cleanup(tmp_path, source) == source
 
 
 def test_custom_tag_on_a_mapping_survives_an_edit_elsewhere(tmp_path: Path) -> None:
