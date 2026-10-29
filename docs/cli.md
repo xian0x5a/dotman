@@ -261,7 +261,11 @@ otherwise **Use repository** is the visible fallback and Merge is unavailable.
   keys scroll it; **Tab** or **Esc** returns to the workset. Row commands keep
   acting on the focused row. The mouse wheel scrolls it without moving focus.
 - **Observation failed** and **Proposal failed** retain their diagnostic details
-  in the detail panel. Directory scopes discover independent canonical child rows.
+  in the detail panel. A conflict is not a failure: a Merge that conflicts shows
+  **Merge conflict**, and a saved Editor outcome that still has conflict blocks
+  shows **Edited conflict**. The row awaits a decision, so `r` (where offered)
+  picks another Resolution, or `e` opens the Editor to resolve it.
+  Directory scopes discover independent canonical child rows.
   Their **Selection** grants opt-in Approval, just like file targets. Each child
   has its own policy-allowed Resolution, Proposal, effects and completion result.
   Review shows child executable changes with Git mode lines. Exact Path Rule
