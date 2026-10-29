@@ -662,9 +662,9 @@ def render_copy(
 
     It keeps tags, flow style and comments: value's own, or, for a mapping
     that selection or merge rebuilt as a plain dict, the flow style and
-    comments of written, the mapping at the same place in the target. ruamel files comments by key
-    and position, so written's comments only carry over when the keys are
-    the same. ruamel also files the comment lines that follow a collection
+    comments of written, the mapping at the same place in the target.
+    ruamel files comments by key and position, so written's comments only
+    carry over when the keys are the same. ruamel also files the comment lines that follow a collection
     with it; they stay only where the copy is followed by what followed it
     in its source (followed_as_in_source). Rendering a copy cannot define an
     anchor that redirects another place's alias.
@@ -825,6 +825,8 @@ def compact_nested_sequences(node: TextNode | None, text: str) -> Iterator[TextN
             and not child.flow
             and node.kind is NodeKind.SEQUENCE
             and not node.flow
+            # A tag or anchor before the sequence can share the dash line while its first dash does not.
+            and text[child.start] == "-"
             and text[line_start(text, child.start) : child.start].strip()
         ):
             yield child
@@ -1238,11 +1240,11 @@ def spliced_yaml_text(text: str, desired: Mapping[Any, Any], layout: YamlLayout)
     writes them out, or overrides the merged key.
     """
     expected = plain_value(desired)
-    ended_in_blank_lines = without_trailing_blank_lines(text) != text
     # Splice a text ending in a line break, and give back the one added.
     added_line_break = bool(text) and not text.endswith("\n")
     if added_line_break:
         text += "\n"
+    ended_in_blank_lines = without_trailing_blank_lines(text) != text
     for _ in range(_MAX_SPLICE_ROUNDS):
         try:
             splicer = DocumentSplicer(text, desired, layout)
