@@ -385,7 +385,7 @@ def test_writes_are_predicted_from_the_resolution_until_a_proposal_exists(tmp_pa
         for row, expected in [
             (replace(both, intent="use-live"), "?"),  # both-policy Use live may also re-render or chmod live
             (replace(both, intent="merge"), "?"),
-            (replace(both, intent="edited"), "?"),
+            (replace(both, intent="editor"), "?"),
             (replace(push, diagnostics=failed), "?"),  # a failed Proposal leaves the side unknown
             (replace(pull, diagnostics=failed), "?"),
         ]:
