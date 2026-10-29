@@ -16,6 +16,7 @@ import warnings
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from difflib import SequenceMatcher
 from enum import Enum, auto
 from pathlib import Path
 from typing import Any, Mapping
@@ -483,10 +484,25 @@ def is_comment_line(line: str) -> bool:
     return line.lstrip(" ").startswith("#")
 
 
-def entry_indent(text: str, key: TextNode) -> int | None:
-    """The key's line indentation, or None when the line holds more than an explicit `?` before the key."""
-    prefix = text[line_start(text, key.start) : key.start]
-    return indentation(prefix) if prefix.strip() in ("", "?") else None
+@dataclass(frozen=True)
+class LinePlace:
+    """Where a key or sequence dash starts its line."""
+
+    # The column its block is indented at.
+    indent: int
+    # Only indentation, or an explicit key's `?`, precedes it, so whole-line
+    # edits can remove or insert beside it. A key after a sequence dash
+    # (`- key: 1`) shares its line with the item.
+    owns_line: bool
+
+
+def line_place(text: str, position: int) -> LinePlace | None:
+    prefix = text[line_start(text, position) : position]
+    if prefix.strip() in ("", "?"):
+        return LinePlace(indentation(prefix), owns_line=True)
+    if not prefix.strip(" -"):
+        return LinePlace(len(prefix), owns_line=False)
+    return None
 
 
 def after_deeper_comments(text: str, position: int, indent: int) -> int:
@@ -603,6 +619,25 @@ def rendered_after_colon(value: Any, layout: YamlLayout, indent: int, written: A
     return (first_line + newline + indented(block, indent)).removesuffix("\n")
 
 
+def dedented(text: str, columns: int) -> str:
+    return "".join(
+        line[min(columns, indentation(line)) :] for line in text.splitlines(keepends=True)
+    )
+
+
+def rendered_items(values: list[Any], layout: YamlLayout, indent: int) -> str:
+    """The `- value` lines with their dashes at indent, each ending in a newline."""
+    entry = rendered_entry(_RENDERED_VALUE_KEY, values, layout, 0)
+    # Under a key, ruamel offsets the dashes by the layout's dash offset.
+    return indented(dedented(entry.partition("\n")[2], layout.offset), indent)
+
+
+def rendered_after_dash(value: Any, layout: YamlLayout, indent: int, written: Any) -> str:
+    """The item as written after its dash: ` 1`, or ` a: 1` and indented block lines."""
+    first_line, newline, block = rendered_items([render_copy(value, written)], layout, 0).removeprefix("-").partition("\n")
+    return (first_line + newline + indented(block, indent)).removesuffix("\n")
+
+
 def rendered_document(desired: Mapping[Any, Any], layout: YamlLayout, written: Any) -> str:
     return without_trailing_comments(yaml_text(render_copy(desired, written), layout))
 
@@ -684,11 +719,14 @@ class DocumentSplicer:
         edits: list[Edit] = []
         kept_entries = 0
         for (key_node, value_node), (key, current) in zip(own_entries, own_items):
-            indent = entry_indent(self.text, key_node)
-            if indent is None:
+            place = line_place(self.text, key_node.start)
+            if place is None:
                 return None
+            indent = place.indent
             desired_item = desired_items.get(strict_key(key))
             if desired_item is None:
+                if not place.owns_line:
+                    return None
                 start = head_comment_start(self.text, line_start(self.text, key_node.start), indent)
                 edits.append(Edit(start, entry_end(self.text, key_node, value_node, indent), "", node))
                 continue
@@ -704,9 +742,10 @@ class DocumentSplicer:
         ]
         if appended:
             last_key, last_value = node.entries[-1]
-            indent = entry_indent(self.text, node.entries[0][0])
-            if indent is None:
+            first_place = line_place(self.text, node.entries[0][0].start)
+            if first_place is None:
                 return None
+            indent = first_place.indent
             position = entry_end(self.text, last_key, last_value, indent)
             separator = "" if position == 0 or self.text[position - 1] == "\n" else "\n"
             rendered = "".join(
@@ -718,24 +757,93 @@ class DocumentSplicer:
             return None
         return edits
 
-    def value_edits(self, key: TextNode, value: TextNode, current: Any, desired: Any, indent: int) -> list[Edit]:
+    def nested_edits(self, node: TextNode, current: Any, desired: Any) -> list[Edit] | None:
         if isinstance(desired, Mapping):
-            nested_edits = self.mapping_edits(value, current, desired)
-            if nested_edits is not None:
-                return nested_edits
+            return self.mapping_edits(node, current, desired)
+        if isinstance(desired, list):
+            return self.sequence_edits(node, current, desired)
+        return None
+
+    def value_edits(self, key: TextNode, value: TextNode, current: Any, desired: Any, indent: int) -> list[Edit]:
+        nested_edits = self.nested_edits(value, current, desired)
+        if nested_edits is not None:
+            return nested_edits
         return [self.value_replacement(key, value, current, desired, indent)]
 
+    def sequence_edits(self, node: TextNode, loaded: Any, desired: list[Any]) -> list[Edit] | None:
+        """Line edits that make a block sequence hold desired, or None when it must be rendered whole.
+
+        Items are matched by value, so an item that stays keeps its text even
+        when items before it come or go.
+        """
+        if node.kind is not NodeKind.SEQUENCE or node.flow or type(loaded) is not CommentedSeq or not desired:
+            return None
+        if isinstance(desired, CommentedSeq) and collection_tag(desired) != collection_tag(loaded):
+            return None
+        dashes = [self.item_dash(item) for item in node.items]
+        places = [None if dash is None else line_place(self.text, dash) for dash in dashes]
+        if len(node.items) != len(loaded) or any(place is None or not place.owns_line for place in places):
+            return None
+        indent = places[0].indent
+
+        def item_start(index: int) -> int:
+            return head_comment_start(self.text, line_start(self.text, dashes[index]), indent)
+
+        def item_end(index: int) -> int:
+            return after_deeper_comments(self.text, next_line_start(self.text, node.items[index].end), indent)
+
+        matcher = SequenceMatcher(
+            None,
+            [repr(plain_value(item)) for item in loaded],
+            [repr(plain_value(item)) for item in desired],
+            autojunk=False,
+        )
+        edits: list[Edit] = []
+        for operation, old_start, old_end, new_start, new_end in matcher.get_opcodes():
+            if operation == "equal":
+                continue
+            if operation == "replace" and old_end - old_start == new_end - new_start:
+                for offset in range(old_end - old_start):
+                    index = old_start + offset
+                    edits.extend(self.item_edits(node.items[index], loaded[index], desired[new_start + offset], indent))
+                continue
+            edits.extend(Edit(item_start(index), item_end(index), "", node) for index in range(old_start, old_end))
+            if new_end > new_start:
+                position = item_start(old_end) if old_end < len(node.items) else item_end(len(node.items) - 1)
+                separator = "" if position == 0 or self.text[position - 1] == "\n" else "\n"
+                rendered = rendered_items(desired[new_start:new_end], self.layout, indent)
+                edits.append(Edit(position, position, separator + rendered, node))
+        return edits
+
+    def item_dash(self, item: TextNode) -> int | None:
+        dash = item.start - 1
+        while dash >= 0 and self.text[dash].isspace():
+            dash -= 1
+        return dash if dash >= 0 and self.text[dash] == "-" else None
+
+    def item_edits(self, item: TextNode, current: Any, desired: Any, indent: int) -> list[Edit]:
+        nested_edits = self.nested_edits(item, current, desired)
+        if nested_edits is not None:
+            return nested_edits
+        dash = self.item_dash(item)
+        assert dash is not None
+        rendered = rendered_after_dash(desired, self.layout, indent, current)
+        return [self.replacement_edit(dash + 1, item, rendered, indent)]
+
     def value_replacement(self, key: TextNode, value: TextNode, current: Any, desired: Any, indent: int) -> Edit:
-        """Replace what follows the key's colon.
+        """Replace what follows the key's colon."""
+        start = after_indicator(self.text, key.end, ":")
+        return self.replacement_edit(start, value, rendered_after_colon(desired, self.layout, indent, current), indent)
+
+    def replacement_edit(self, start: int, value: TextNode, rendered: str, indent: int) -> Edit:
+        """Replace value, written from start on (after its colon or dash), with rendered.
 
         A replaced multi-line value takes its last line's end-of-line comment
-        and the deeper comment lines after it along; the key's own end-of-line
-        comment stays. A one-line value that becomes a block hands its
-        end-of-line comment to the key's line.
+        and the deeper comment lines after it along; the comment on the line
+        it starts after stays. A one-line value that becomes a block hands its
+        end-of-line comment to that line.
         """
-        start = after_indicator(self.text, key.end, ":")
         value_end = max(start, value.end)
-        rendered = rendered_after_colon(desired, self.layout, indent, current)
         first_line, newline, block = rendered.partition("\n")
         key_line_end = line_end(self.text, start)
         if value_end > key_line_end:
@@ -807,10 +915,10 @@ class DocumentSplicer:
             return self.root_replacement()
         entry_value = entry_values[-1]
         assert entry_value.entry_key is not None
-        indent = entry_indent(self.text, entry_value.entry_key)
-        if indent is None:
+        place = line_place(self.text, entry_value.entry_key.start)
+        if place is None:
             return self.root_replacement()
-        return self.value_replacement(entry_value.entry_key, entry_value, loaded, desired, indent)
+        return self.value_replacement(entry_value.entry_key, entry_value, loaded, desired, place.indent)
 
 
 def applied_edits(text: str, edits: list[Edit]) -> str:
