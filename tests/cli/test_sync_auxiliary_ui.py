@@ -57,6 +57,8 @@ async def auxiliary_table_interaction():
             assert table.row_count == 2
             assert str(table.get_row_at(0)[1]) == "r:p.check"
             assert str(table.get_row_at(1)[1]) == "r:p (pull-hooks)"
+            # Auxiliary work never has a Proposal, so there is no side to name.
+            assert [str(table.get_row_at(index)[4]) for index in range(2)] == ["", ""]
             app.action_resolution()
             await pilot.press("down", "enter")
             await pilot.pause()

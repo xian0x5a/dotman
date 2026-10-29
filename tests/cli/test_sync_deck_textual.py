@@ -356,6 +356,79 @@ def test_workset_resolution_names_a_reconciliation_conflict_by_its_intent(tmp_pa
         run(interact())
 
 
+def writes_cells(app):
+    table = app.query_one(WorksetTable)
+    return [str(table.get_row_at(index)[4]) for index in range(table.row_count)]
+
+
+def test_writes_are_predicted_from_the_resolution_until_a_proposal_exists(tmp_path, monkeypatch):
+    from dataclasses import replace
+    from dotman.sync_deck import render_row_writes
+    from dotman.sync_session import Diagnostic
+
+    engine = make_engine(tmp_path, monkeypatch, [
+        ("push", "push-only", b"repo", b"live", ""),
+        ("pull", "pull-only", b"repo", b"live", ""),
+    ])
+    with engine.open_sync_session(engine.resolve_sync_scope([]), preview=True) as session:
+        app = SyncDeckApp(CommandDeck(session, use_color=False))
+
+        async def interact():
+            async with app.run_test(size=(110, 24)):
+                assert writes_cells(app) == ["live", "repo"]
+        run(interact())
+        # The prediction is dimmed, unlike an exact value.
+        assert render_row_writes(session.view.rows[0], use_color=True) != "live"
+        # A failed Proposal leaves the side unknown even when the intent alone would name it.
+        failed = replace(session.view.rows[0], diagnostics=(Diagnostic("materialization-failed", "boom"),))
+        assert render_row_writes(failed, use_color=False) == "?"
+
+
+@pytest.mark.parametrize("repo,live,expected", [
+    (b"repository\nmiddle\nlast\n", b"first\nmiddle\nlive\n", "both"),
+    (b"repository\nmiddle\nlast\n", b"first\nmiddle\nlast\n", "live"),
+    (b"first\nmiddle\nlast\n", b"first\nmiddle\nlive\n", "repo"),
+])
+def test_writes_become_exact_once_the_merge_proposal_is_built(tmp_path, monkeypatch, repo, live, expected):
+    from tests.engine.test_sync_both_convergence import established
+
+    engine = established(tmp_path, monkeypatch)
+    (tmp_path / "repo/packages/app/unit").write_bytes(repo)
+    (tmp_path / "live/unit").write_bytes(live)
+    with engine.open_sync_session(engine.resolve_sync_scope([]), preview=True) as session:
+        app = SyncDeckApp(CommandDeck(session, use_color=False))
+
+        async def interact():
+            async with app.run_test(size=(110, 24)) as pilot:
+                # Merge depends on content, so nothing is predicted before the Proposal exists.
+                assert session.view.rows[0].intent == "merge" and session.view.rows[0].proposal is None
+                assert writes_cells(app) == ["?"]
+                await pilot.press("space")
+                await wait_until_idle(app, pilot)
+                assert session.view.rows[0].proposal is not None
+                assert writes_cells(app) == [expected]
+        run(interact())
+
+
+def test_writes_stay_unknown_for_a_conflicted_merge(tmp_path, monkeypatch):
+    from tests.engine.test_sync_both_convergence import established
+
+    engine = established(tmp_path, monkeypatch)
+    (tmp_path / "live/unit").write_bytes(b"conflict\nmiddle\nlast\n")
+    with engine.open_sync_session(engine.resolve_sync_scope([]), preview=True) as session:
+        app = SyncDeckApp(CommandDeck(session, use_color=False))
+
+        async def interact():
+            async with app.run_test(size=(110, 24)) as pilot:
+                await pilot.press("enter")
+                await wait_until_idle(app, pilot)
+                await pilot.press("escape")
+                await wait_until_idle(app, pilot)
+                assert session.view.rows[0].diagnostics
+                assert writes_cells(app) == ["?"]
+        run(interact())
+
+
 def test_fixed_resolution_is_recessive_and_offers_no_intent_key(tmp_path, monkeypatch):
     from dotman.cli_style import render_sync_term
     from dotman.sync_deck import render_row_resolution

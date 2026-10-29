@@ -78,6 +78,7 @@ def test_table_tracks_canonical_source_rows_added_and_removed():
             assert table.row_count == 1
             assert str(table.get_row_at(0)[1]) == "r:shared"
             assert "Additional Source Change" in str(table.get_row_at(0)[3])
+            assert str(table.get_row_at(0)[4]) == "repo"
             session.view.rows = ()
             app.update_workset()
             assert table.row_count == 0
