@@ -12,6 +12,7 @@ import copy
 import datetime
 import functools
 import io
+import re
 import warnings
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -74,6 +75,8 @@ _STANDARD_TAG_PREFIX = "tag:yaml.org,2002:"
 _MAX_SPLICE_ROUNDS = 16
 # Pairing changed sequence items compares every old item with every new one.
 _MAX_PAIRED_ITEM_CELLS = 10_000
+# Leading whitespace and the anchors and tags written before a node.
+_NODE_PROPERTIES = re.compile(r"\s*(?:[&!]\S*\s+)*")
 # Values are rendered as this key's value, then cut after its colon.
 _RENDERED_VALUE_KEY = "dotman_rendered_value"
 
@@ -570,6 +573,11 @@ def removal_end(text: str, start: int, end: int) -> int:
     return end
 
 
+def after_removals(position: int, edits: list[Edit]) -> int:
+    """position, or the end of the removal it falls inside, which removal_end can move past it."""
+    return next((edit.end for edit in edits if edit.start < position < edit.end), position)
+
+
 def entry_end(text: str, key: TextNode, value: TextNode, indent: int) -> int:
     """The end of the entry's last line, including comments deeper than its key."""
     return after_deeper_comments(text, next_line_start(text, max(key.end, value.end)), indent)
@@ -588,69 +596,149 @@ def copy_presentation(source: Any, copied: CommentedMap | CommentedSeq, *, comme
     for attribute in (Comment.attrib, Format.attrib, Tag.attrib):
         if hasattr(source, attribute) and (comments or attribute != Comment.attrib):
             setattr(copied, attribute, copy.deepcopy(getattr(source, attribute)))
-    if comments:
-        cut_comments_after(copied)
 
 
-def cut_comments_after(collection: CommentedMap | CommentedSeq) -> None:
-    """Drop the comment lines ruamel files with a collection that follow its last entry's line.
+def is_anchored(value: Any) -> bool:
+    return getattr(getattr(value, "anchor", None), "value", None) is not None
 
-    ruamel files the comment lines after an entry under that entry, and
-    after the last entry, or the end of a flow collection, those introduce
-    whatever follows the collection in its source.
+
+def cut_comments_after(collection: CommentedMap | CommentedSeq | CommentedSet) -> None:
+    """Drop the comment lines ruamel files with a collection that follow its last line.
+
+    Those introduce whatever follows the collection in its source. ruamel
+    files them under the last entry, after its end-of-line comment, or on a
+    flow collection itself.
     """
     collection.ca.end = []
+    if collection.fa.flow_style() and collection.ca.comment:
+        keep_end_of_line_comment(collection.ca.comment, 0)
     if not collection:
         return
-    last_entry = next(reversed(collection)) if isinstance(collection, Mapping) else len(collection) - 1
-    tokens = collection.ca.items.get(last_entry, [])
-    for slot, token in enumerate(tokens):
-        if isinstance(token, CommentToken):
-            # The token's text starts on the entry's line: `# eol\n# next\n` or `\n# next\n`.
-            end_of_line_comment, _, _ = token.value.partition("\n")
-            if end_of_line_comment:
-                token.value = end_of_line_comment + "\n"
-            else:
-                tokens[slot] = None
+    if isinstance(collection, CommentedSeq):
+        cut_comments_after_entry(collection, len(collection) - 1)
+    else:
+        cut_comments_after_entry(collection, list(collection)[-1])
 
 
-def render_copy(value: Any, written: Any = None, *, comments: bool = True, in_flow: bool = False) -> Any:
+def cut_comments_after_entry(collection: CommentedMap | CommentedSeq | CommentedSet, entry: Any) -> None:
+    """Keep only the end-of-line comment of the comments ruamel files under an entry."""
+    tokens = collection.ca.items.get(entry, [])
+    value = None if isinstance(collection, CommentedSet) else collection[entry]
+    for slot in range(len(tokens)):
+        if isinstance(value, (LiteralScalarString, FoldedScalarString)):
+            # A block scalar's end-of-line comment sits on its header line, so these all follow it.
+            tokens[slot] = None
+        else:
+            keep_end_of_line_comment(tokens, slot)
+
+
+def keep_end_of_line_comment(tokens: list[Any], slot: int) -> None:
+    token = tokens[slot]
+    if not isinstance(token, CommentToken):
+        return
+    # The token's text starts on the entry's line: `# eol\n# next\n` or `\n# next\n`.
+    end_of_line_comment = token.value.partition("\n")[0]
+    if end_of_line_comment:
+        token.value = end_of_line_comment + "\n"
+    else:
+        tokens[slot] = None
+
+
+_LAST = object()
+
+
+def render_copy(
+    value: Any,
+    written: Any = None,
+    *,
+    comments: bool = True,
+    in_flow: bool = False,
+    followed_as_in_source: bool = False,
+) -> Any:
     """A copy of value to render, sharing nothing: aliases become copies, `<<` merges own keys, anchors go.
 
     It keeps tags, flow style and comments: value's own, or, for a mapping
     that selection or merge rebuilt as a plain dict, those of written, the
     mapping at the same place in the target. ruamel files comments by key
     and position, so written's comments only carry over when the keys are
-    the same. Rendering a copy cannot define an anchor that redirects
-    another place's alias.
+    the same. ruamel also files the comment lines that follow a collection
+    with it; they stay only where the copy is followed by what followed it
+    in its source (followed_as_in_source). Rendering a copy cannot define an
+    anchor that redirects another place's alias.
     """
     if isinstance(value, Mapping) and not isinstance(value, (CommentedKeyMap, CommentedSet)):
         presentation = value if isinstance(value, CommentedMap) else written if isinstance(written, CommentedMap) else None
         # An `!!omap` stays ordered.
         copied_mapping = CommentedMap() if presentation is None else type(presentation)()
         written_children = {strict_key(key): child for key, child in written.items()} if isinstance(written, Mapping) else {}
+        keys = [strict_key(key) for key in value]
+        copies_comments = (
+            comments
+            and presentation is not None
+            and (presentation is value or list(written_children) == keys)
+        )
+        # The key after each key written in the source text, by its position
+        # there; `<<` merged keys come from elsewhere, and a deep copy makes
+        # them look like own keys.
+        source_next: dict[Any, Any] = {}
+        if copies_comments:
+            assert presentation is not None
+            positions = presentation.lc.data or {}
+            written_keys = [strict_key(key) for key in sorted(positions, key=lambda key: tuple(positions[key][:2]))]
+            source_next = dict(zip(written_keys, [*written_keys[1:], _LAST]))
         child_in_flow = in_flow or (presentation is not None and bool(presentation.fa.flow_style()))
-        for key, child in value.items():
+        unfollowed_keys = []
+        for index, (key, child) in enumerate(value.items()):
+            next_key = keys[index + 1] if index + 1 < len(keys) else _LAST
+            written_child = written_children.get(keys[index])
+            entry_followed = source_next.get(keys[index]) == next_key and (next_key is not _LAST or followed_as_in_source)
+            if not entry_followed:
+                unfollowed_keys.append(key)
+            # An anchored value may be copied from an alias elsewhere, followed by other text.
+            child_followed = entry_followed and not is_anchored(child) and not is_anchored(written_child)
             copied_mapping[render_copy(key)] = render_copy(
-                child, written_children.get(strict_key(key)), comments=comments, in_flow=child_in_flow
+                child,
+                written_child,
+                comments=comments,
+                in_flow=child_in_flow,
+                followed_as_in_source=child_followed,
             )
         if presentation is not None:
-            same_keys = presentation is value or list(written_children) == [strict_key(key) for key in value]
-            copy_presentation(presentation, copied_mapping, comments=comments and same_keys)
+            copy_presentation(presentation, copied_mapping, comments=copies_comments)
+        if copies_comments:
+            if not followed_as_in_source:
+                cut_comments_after(copied_mapping)
+            for key in unfollowed_keys:
+                cut_comments_after_entry(copied_mapping, key)
         return copied_mapping
     if isinstance(value, list):
         written_items = written if isinstance(written, list) and len(written) == len(value) else [None] * len(value)
         child_in_flow = in_flow or (isinstance(value, CommentedSeq) and bool(value.fa.flow_style()))
         copied_sequence = CommentedSeq(
-            render_copy(item, written_item, comments=comments, in_flow=child_in_flow)
-            for item, written_item in zip(value, written_items)
+            render_copy(
+                item,
+                written_item,
+                comments=comments,
+                in_flow=child_in_flow,
+                followed_as_in_source=not is_anchored(item) and (index + 1 < len(value) or followed_as_in_source),
+            )
+            for index, (item, written_item) in enumerate(zip(value, written_items))
         )
         copy_presentation(value, copied_sequence, comments=comments)
+        if comments and not followed_as_in_source:
+            cut_comments_after(copied_sequence)
         return copied_sequence
+    if isinstance(value, CommentedSet):
+        copied_set = copy.deepcopy(value)
+        if not comments:
+            setattr(copied_set, Comment.attrib, Comment())
+        elif not followed_as_in_source:
+            cut_comments_after(copied_set)
+        return copied_set
     if in_flow and isinstance(value, (LiteralScalarString, FoldedScalarString)):
         # A block scalar cannot sit inside a flow collection.
         return str(value)
-    if getattr(getattr(value, "anchor", None), "value", None) is not None:
+    if is_anchored(value):
         copied_scalar = copy.deepcopy(value)
         copied_scalar.anchor.value = None
         return copied_scalar
@@ -678,18 +766,19 @@ def rendered_fragment(data: Mapping[Any, Any], layout: YamlLayout, written: Any)
     dropped then.
     """
 
-    def rendered(comments: bool) -> str:
+    def rendered(copied: Any) -> str:
         # ruamel ends a document whose last scalar keeps its trailing
         # newlines (`|+`) with `...`, which would end the spliced document.
-        return yaml_text(render_copy(data, written, comments=comments), layout).removesuffix("...\n")
+        return yaml_text(copied, layout).removesuffix("...\n")
 
+    with_comments = render_copy(data, written)
     try:
-        with_comments = rendered(comments=True)
-        if values_strictly_equal(plain_value(parse_yaml_text(with_comments)), plain_value(data)):
-            return with_comments
+        text = rendered(with_comments)
+        if values_strictly_equal(plain_value(parse_yaml_text(text)), plain_value(data)):
+            return text
     except Exception:  # Any emitter failure here comes from copied comments.
         pass
-    return rendered(comments=False)
+    return rendered(render_copy(data, written, comments=False))
 
 
 def rendered_entry(key: Any, value: Any, layout: YamlLayout, indent: int, written: Any = None) -> str:
@@ -739,15 +828,11 @@ def rendered_document(desired: Mapping[Any, Any], layout: YamlLayout, written: A
 # Splicing.
 
 
-def shared_entry_count(old: Any, new: Any) -> int:
-    if not (isinstance(old, Mapping) and isinstance(new, Mapping)):
-        return 0
-    new_by_key = {strict_key(key): value for key, value in new.items()}
-    return sum(
-        1
-        for key, value in old.items()
-        if strict_key(key) in new_by_key and same_value(value, new_by_key[strict_key(key)])
-    )
+def item_entries(item: Any) -> frozenset[tuple[Any, str]] | None:
+    """A mapping item's entries, comparable across items, or None for other items."""
+    if not isinstance(item, Mapping):
+        return None
+    return frozenset((strict_key(key), repr(plain_value(value))) for key, value in item.items())
 
 
 def similar_item_pairs(old_items: list[Any], new_items: list[Any]) -> list[tuple[int, int]]:
@@ -758,7 +843,11 @@ def similar_item_pairs(old_items: list[Any], new_items: list[Any]) -> list[tuple
     """
     if len(old_items) * len(new_items) > _MAX_PAIRED_ITEM_CELLS:
         return []
-    weights = [[shared_entry_count(old, new) for new in new_items] for old in old_items]
+    old_entries = [item_entries(item) for item in old_items]
+    new_entries = [item_entries(item) for item in new_items]
+    weights = [
+        [0 if old is None or new is None else len(old & new) for new in new_entries] for old in old_entries
+    ]
     # best[i][j]: the most shared entries pairing old_items[:i] with new_items[:j].
     best = [[0] * (len(new_items) + 1) for _ in range(len(old_items) + 1)]
     for i, row in enumerate(weights, 1):
@@ -885,7 +974,7 @@ class DocumentSplicer:
             first_place = line_place(self.text, node.entries[0][0].start)
             if first_place is None:
                 return None
-            position = entry_end(self.text, last_key, last_value, first_place.indent)
+            position = after_removals(entry_end(self.text, last_key, last_value, first_place.indent), edits)
             rendered = "".join(
                 rendered_entry(key, value, self.layout, first_place.indent, merged_values.get(strict_key(key)))
                 for key, value in appended
@@ -956,6 +1045,7 @@ class DocumentSplicer:
             for old_index, new_index in [*pairs, (old_end, new_end)]:
                 if new_index > next_new:
                     position = item_start(old_index) if old_index < len(node.items) else item_end(len(node.items) - 1)
+                    position = after_removals(position, edits)
                     rendered = rendered_items(desired[next_new:new_index], self.layout, indent)
                     edits.append(Edit(position, position, rendered, node))
                 # Matching by plain value misses a changed mapping tag.
@@ -1000,8 +1090,9 @@ class DocumentSplicer:
         if value_end > start_line_end:
             start_line_rest = self.text[start:start_line_end]
             # The value's anchor or tag may come before the comment. A quoted
-            # value that starts on the line can hold ` #`, so look before quotes.
-            searched = start_line_rest.split('"', 1)[0].split("'", 1)[0]
+            # value that starts on the line can hold ` #`, so look before its quote.
+            properties = len(_NODE_PROPERTIES.match(start_line_rest)[0])
+            searched = start_line_rest[:properties] + start_line_rest[properties:].split('"', 1)[0].split("'", 1)[0]
             comment_start = 0 if searched.lstrip().startswith("#") else searched.find(" #")
             if comment_start >= 0:
                 rendered = first_line + start_line_rest[comment_start:] + newline + block
