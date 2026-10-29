@@ -67,6 +67,17 @@ async def auxiliary_table_interaction():
             app.action_retry()
 
 
+def test_directory_root_work_writes_live_while_hook_and_probe_work_stay_blank():
+    async def interact():
+        root = AuxiliaryRow("root:r:p.tree", "directory-root", False, "r:p.tree", ("push",))
+        with SyncSession((), preview=True, auxiliary=(root, *auxiliary_session().view.rows)) as session:
+            app = SyncDeckApp(CommandDeck(session, use_color=False))
+            async with app.run_test():
+                table = app.query_one(WorksetTable)
+                assert [str(table.get_row_at(index)[4]) for index in range(table.row_count)] == ["live", "", ""]
+    asyncio.run(asyncio.wait_for(interact(), timeout=5))
+
+
 def test_no_confirm_selects_auxiliary_and_forwards_run_noop(capsys):
     from dotman.models import UiConfig
     from dotman.sync_deck_command import SyncDeckCommandRunner

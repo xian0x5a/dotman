@@ -870,33 +870,47 @@ def render_row_resolution(row, *, use_color: bool, mark_guess: bool = False) -> 
     return render_resolution(label, guessed=guessed, fixed=fixed, use_color=use_color)
 
 
-# Intents whose written side follows from direction alone; Merge and Edited depend on content.
-PREDICTED_WRITES = {"use-repository": "live", "use-live": "repo"}
-
-
 def proposal_writes(proposal) -> str:
     repository = proposal.primary_source_change is not None
     live = bool(proposal.publication_effects)
     return {(True, True): "both", (True, False): "repo", (False, True): "live"}.get((repository, live), "—")
 
 
-def render_row_writes(row, *, use_color: bool) -> str:
-    """The sides a row writes: exact once its Proposal exists, else predicted from the intent.
+def predicted_writes(row: SessionRow) -> str | None:
+    """The only side an unbuilt Proposal can write, when direction alone bounds it.
 
-    Proposals materialize lazily (Capture may run commands), so an unbuilt one is
-    only predicted, dimmed; `?` marks a side that is unknown until the row is
-    materialized or its conflict or failure is resolved.
+    Use repository never changes the repository source. Pull-only Use live never
+    publishes, but both-policy Use live re-renders live and applies chmod, and
+    Merge or Edited depend on content.
+    """
+    if row.diagnostics:
+        return None
+    if row.intent == "use-repository":
+        return "live"
+    if row.intent == "use-live" and row.observation.effective_policy == "pull-only":
+        return "repo"
+    return None
+
+
+def render_row_writes(row, *, use_color: bool) -> str:
+    """The sides a row writes: exact once its Proposal exists, else predicted or `?`.
+
+    Proposals materialize lazily (Capture may run commands). Like a guessed
+    Resolution, a prediction carries a trailing `?` so it reads without color;
+    a bare `?` stays unknown until the row is materialized or its conflict or
+    failure is resolved.
     """
     if isinstance(row, AuxiliaryRow):
-        return ""
+        # Root work always chmods the live root; hook and probe effects are not known ahead.
+        return "live" if row.kind == "directory-root" else ""
     if isinstance(row, AdditionalRow):
         return "repo"
     if row.proposal is not None:
         return proposal_writes(row.proposal)
     if "prepare-proposal-review" not in row.allowed_commands:
         return ""
-    predicted = None if row.diagnostics else PREDICTED_WRITES.get(row.intent)
-    return style_text(predicted or "?", *MENU_HINT_STYLE) if use_color else predicted or "?"
+    label = f"{predicted_writes(row) or ''}?"
+    return style_text(label, *SYNC_TERM_STYLE_BY_NAME["predicted"]) if use_color else label
 
 
 def elide_middle(label: Text, width: int) -> Text:

@@ -218,8 +218,9 @@ not directly agreeing units. Its aligned table uses canonical target identities
 and a **Selection** column. Selection authorizes Proposals and canonical Additional Source Changes through
 independent Approval and directly includes auxiliary work. Unsupported resolution capability is labeled separately
 from Observation and Proposal failures. A **Writes** column names the sides
-each row changes (`repo`, `live`, `both`); it is exact once the Proposal exists and
-predicted from the Resolution before, since Proposals materialize lazily. A ringed detail panel below the table
+each row changes (`repo`, `live`, `both`); it is exact once the Proposal exists. Since
+Proposals materialize lazily, before that it shows `?`, or a `?`-marked prediction
+where the Resolution's direction alone bounds the side. A ringed detail panel below the table
 describes the focused row: its full canonical identity, diagnostics, and for units
 the full live and repository paths, Observation state, Sync Base status and any
 differing configured policy. A unit, Probe or hook row that only a package input's

@@ -363,25 +363,35 @@ def writes_cells(app):
 
 def test_writes_are_predicted_from_the_resolution_until_a_proposal_exists(tmp_path, monkeypatch):
     from dataclasses import replace
+    from dotman.cli_style import SYNC_TERM_STYLE_BY_NAME, style_text
     from dotman.sync_deck import render_row_writes
     from dotman.sync_session import Diagnostic
 
     engine = make_engine(tmp_path, monkeypatch, [
         ("push", "push-only", b"repo", b"live", ""),
         ("pull", "pull-only", b"repo", b"live", ""),
+        ("both", "both", b"repo", b"live", ""),
     ])
     with engine.open_sync_session(engine.resolve_sync_scope([]), preview=True) as session:
         app = SyncDeckApp(CommandDeck(session, use_color=False))
 
         async def interact():
             async with app.run_test(size=(110, 24)):
-                assert writes_cells(app) == ["live", "repo"]
+                # The trailing ? marks a prediction without color, like a guessed Resolution.
+                assert writes_cells(app) == ["live?", "repo?", "live?"]
         run(interact())
+        push, pull, both = session.view.rows
+        failed = (Diagnostic("materialization-failed", "boom"),)
+        for row, expected in [
+            (replace(both, intent="use-live"), "?"),  # both-policy Use live may also re-render or chmod live
+            (replace(both, intent="merge"), "?"),
+            (replace(both, intent="edited"), "?"),
+            (replace(push, diagnostics=failed), "?"),  # a failed Proposal leaves the side unknown
+            (replace(pull, diagnostics=failed), "?"),
+        ]:
+            assert render_row_writes(row, use_color=False) == expected, (row.row_id, row.intent)
         # The prediction is dimmed, unlike an exact value.
-        assert render_row_writes(session.view.rows[0], use_color=True) != "live"
-        # A failed Proposal leaves the side unknown even when the intent alone would name it.
-        failed = replace(session.view.rows[0], diagnostics=(Diagnostic("materialization-failed", "boom"),))
-        assert render_row_writes(failed, use_color=False) == "?"
+        assert render_row_writes(push, use_color=True) == style_text("live?", *SYNC_TERM_STYLE_BY_NAME["predicted"])
 
 
 @pytest.mark.parametrize("repo,live,expected", [
@@ -839,7 +849,7 @@ def test_resolution_key_toggles_between_two_intents_without_menu(tmp_path, monke
                 assert session.view.rows[0].intent == 'use-live'
                 assert not session.view.rows[0].approved
                 # A chosen side is no longer a guess.
-                assert 'Use live' in table.render_line(1).text and '?' not in table.render_line(1).text
+                assert 'Use live' in table.render_line(1).text and '?' not in str(table.get_row_at(0)[3])
                 await pilot.press('r')
                 await pilot.pause()
                 assert session.view.rows[0].intent == 'use-repository'
