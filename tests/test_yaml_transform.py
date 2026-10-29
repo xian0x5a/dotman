@@ -2017,3 +2017,73 @@ def test_anchor_containing_a_plus_before_a_clip_block_scalar_is_not_keep_chompin
     output = run_yaml_merge(tmp_path, "k: &a+b |\n  c\n\nz: 1\n", "k: [1, 2]\n", *remove_keys("k"))
 
     assert output == "k: [1, 2]\n\nz: 1\n"
+
+
+# Text splicing regressions, third review --------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("base", "overlay", "removed", "expected"),
+    [
+        pytest.param("a: 1\n\nb: 2\n\n", "c: 3\n", "b", "a: 1\n\nc: 3\n", id="top-level-last-entry"),
+        pytest.param(
+            "outer:\n  a: 1\n\n  b: 2\n\ntop: 1\n", "outer:\n  c: 3\n", "outer.b",
+            "outer:\n  a: 1\n\n  c: 3\ntop: 1\n", id="nested-last-entry",
+        ),
+    ],
+)
+def test_adding_after_a_removed_last_entry_set_off_by_blank_lines_does_not_crash(
+    tmp_path: Path, base: str, overlay: str, removed: str, expected: str,
+) -> None:
+    assert run_yaml_merge(tmp_path, base, overlay, *remove_keys(removed)) == expected
+
+
+def test_replacing_a_sequence_around_blank_lines_keeps_the_blank_line_after_a_kept_item(tmp_path: Path) -> None:
+    output = run_yaml_merge(
+        tmp_path, "list:\n  - a\n\n  - b\n\nother: 1\n", "list:\n  - a\n  - c\n  - d\n",
+    )
+
+    assert "  - a\n\n" in output
+    assert read_yaml(output) == {"list": ["a", "c", "d"], "other": 1}
+
+
+def test_comment_between_entries_inside_an_added_value_is_kept(tmp_path: Path) -> None:
+    overlay = "new:\n  sub:\n    x: 1\n  # about y\n  y: 2\n"
+
+    output = run_yaml_merge(tmp_path, "keep: 1\n", overlay)
+
+    assert "  # about y\n  y: 2" in output
+    assert read_yaml(output) == {"keep": 1, "new": {"sub": {"x": 1}, "y": 2}}
+
+
+@pytest.mark.parametrize(
+    ("added", "kept_comment", "expected_new"),
+    [
+        pytest.param("new:\n  s: |\n    t\n", None, {"s": "t\n"}, id="block-scalar-last"),
+        pytest.param("new: {a: 1}  # eol\n", "# eol", {"a": 1}, id="flow-mapping"),
+        pytest.param("new:\n  s: !!set\n    ? t\n", None, None, id="set"),
+        pytest.param("new:\n  <<: {m: 1}\n  a: 1  # eol a\n", "# eol a", {"m": 1, "a": 1}, id="merge-key"),
+    ],
+)
+def test_overlay_comment_introducing_the_next_key_is_not_written_after_an_added_value(
+    tmp_path: Path, added: str, kept_comment: str | None, expected_new: dict | None,
+) -> None:
+    output = run_yaml_merge(tmp_path, "other: 1\n", added + "# about other\nother: 1\n")
+
+    assert "# about other" not in output
+    if kept_comment is not None:
+        assert kept_comment in output
+    if expected_new is not None:
+        assert read_yaml(output) == {"other": 1, "new": expected_new}
+    else:
+        assert "new:" in output
+
+
+def test_eol_comment_after_an_anchor_containing_a_quote_stays_when_the_value_is_replaced(tmp_path: Path) -> None:
+    output = run_yaml_merge(
+        tmp_path, "key: &a'b # keep me\n  x: 1\n  y: 2\nz: 1\n", "key: [1, 2]\n", *remove_keys("key"),
+    )
+
+    assert output.splitlines()[0].startswith("key:")
+    assert "# keep me" in output.splitlines()[0]
+    assert read_yaml(output) == {"key": [1, 2], "z": 1}
