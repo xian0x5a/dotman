@@ -140,7 +140,13 @@ otherwise **Use repository** is the visible fallback and Merge is unavailable.
 - Interactive Sync opens a persistent Command Deck with Approval initially off. When nothing needs review
   (every target in sync, no warnings, hooks or probes; Guard skips alone do not count), it skips the Deck and
   logs directly, printing any Guard skips above the summary.
-  Its Textual table aligns Selection (headed `✓`), Target, Policy, and Resolution columns.
+  Its Textual table aligns Selection (headed `✓`), Target, Policy, Resolution, and Writes columns.
+  **Writes** names the sides a row changes: `repo`, `live`, `both`, or `—` when its
+  Proposal writes nothing (any live effect counts, including delete, chmod and reapply).
+  Proposals are built lazily, so until a row is reviewed or selected the value is
+  predicted from its Resolution and dimmed (Use repository writes `live`, Use live
+  writes `repo`); Merge and Edited show `?`, as do rows whose Proposal conflicted or
+  failed. An Additional Source Change writes `repo`; auxiliary work leaves it blank.
   `x` toggles Selection (`Space` also works but goes unhinted), `a` selects eligible rows, and `u` clears Selection.
   Selection means independent Proposal or Additional Source Change Approval,
   or direct auxiliary inclusion. Batch actions establish all final states before
