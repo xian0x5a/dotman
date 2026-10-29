@@ -46,6 +46,7 @@ from ruamel.yaml.representer import RoundTripRepresenter
 from ruamel.yaml.scalarbool import ScalarBoolean
 from ruamel.yaml.scalarstring import FoldedScalarString, LiteralScalarString
 from ruamel.yaml.tag import Tag
+from ruamel.yaml.tokens import CommentToken
 
 from dotman.transforms.framework import (
     MappingTransformEngine,
@@ -71,6 +72,8 @@ _STANDARD_TAG_PREFIX = "tag:yaml.org,2002:"
 # Each splice round fixes the places an earlier round changed through an
 # anchor or merge; nesting of shared values bounds how many rounds that takes.
 _MAX_SPLICE_ROUNDS = 16
+# Pairing changed sequence items compares every old item with every new one.
+_MAX_PAIRED_ITEM_CELLS = 10_000
 # Values are rendered as this key's value, then cut after its colon.
 _RENDERED_VALUE_KEY = "dotman_rendered_value"
 
@@ -100,14 +103,14 @@ class TaggedValue:
 
 
 class YamlRepresenter(RoundTripRepresenter):
+    representing_set = False
+
     def insert_underscore(self, prefix: str, digits: str, underscore: Any, anchor: Any = None) -> ScalarNode:
         # ruamel writes a negative hex, octal or binary int after its prefix
         # (`0x-1F`), which no longer reads as an int; keep the sign in front.
         if prefix and digits.startswith("-"):
             return super().insert_underscore("-" + prefix, digits[1:], underscore, anchor=anchor)
         return super().insert_underscore(prefix, digits, underscore, anchor=anchor)
-
-    representing_set = False
 
     def represent_none(self, data: None) -> ScalarNode:
         # ruamel leaves null values empty (`key:`, a bare `-`); write `null`
@@ -205,10 +208,10 @@ def strict_key(key: Any) -> tuple[type, Any]:
 
 
 def mapping_tags_match(current: Any, desired: Any) -> bool:
-    """Whether every mapping desired carries from a document has current's tag.
+    """Whether desired's ruamel mappings carry the same tags as current's.
 
     A plain dict is a mapping that selection or merge rebuilt; it keeps the
-    tag written in the target.
+    tag written in the target, so it always matches.
     """
     if isinstance(desired, Mapping) and isinstance(current, Mapping):
         if isinstance(desired, CommentedMap) and collection_tag(desired) != collection_tag(current):
@@ -412,8 +415,9 @@ def after_indicator(text: str, position: int, indicator: str) -> int | None:
 def is_keep_chomped(text: str, event: ScalarEvent) -> bool:
     if event.style not in ("|", ">"):
         return False
-    header = text[event.start_mark.index : line_end(text, event.start_mark.index)]
-    return "+" in header.partition("#")[0]
+    # The line holds any anchor and tag, then the block header (`|+2`), then any comment.
+    header_line = text[event.start_mark.index : line_end(text, event.start_mark.index)]
+    return "+" in header_line.partition(" #")[0].split()[-1]
 
 
 def text_tree(text: str) -> TextTree:
@@ -537,7 +541,7 @@ def after_deeper_comments(text: str, position: int, indent: int) -> int:
         line = text[scan : line_end(text, scan)]
         if line.strip() and not (is_comment_line(line) and indentation(line) > indent):
             break
-        scan = next_line_start(text, scan) if line_end(text, scan) < len(text) else len(text)
+        scan = next_line_start(text, scan)
         if line.strip():
             end = scan
     return end
@@ -553,6 +557,17 @@ def head_comment_start(text: str, position: int, indent: int) -> int:
             break
         start = previous_start
     return start
+
+
+def removal_end(text: str, start: int, end: int) -> int:
+    """end, moved past one blank line when a blank line or the document start comes before start.
+
+    Removing lines set off by blank lines on both sides would otherwise leave two.
+    """
+    after_blank_line = start == 0 or not text[line_start(text, start - 1) : start].strip()
+    if after_blank_line and end < len(text) and not text[end : line_end(text, end)].strip():
+        return next_line_start(text, end)
+    return end
 
 
 def entry_end(text: str, key: TextNode, value: TextNode, indent: int) -> int:
@@ -573,6 +588,30 @@ def copy_presentation(source: Any, copied: CommentedMap | CommentedSeq, *, comme
     for attribute in (Comment.attrib, Format.attrib, Tag.attrib):
         if hasattr(source, attribute) and (comments or attribute != Comment.attrib):
             setattr(copied, attribute, copy.deepcopy(getattr(source, attribute)))
+    if comments:
+        cut_comments_after(copied)
+
+
+def cut_comments_after(collection: CommentedMap | CommentedSeq) -> None:
+    """Drop the comment lines ruamel files with a collection that follow its last entry's line.
+
+    ruamel files the comment lines after an entry under that entry, and
+    after the last entry, or the end of a flow collection, those introduce
+    whatever follows the collection in its source.
+    """
+    collection.ca.end = []
+    if not collection:
+        return
+    last_entry = next(reversed(collection)) if isinstance(collection, Mapping) else len(collection) - 1
+    tokens = collection.ca.items.get(last_entry, [])
+    for slot, token in enumerate(tokens):
+        if isinstance(token, CommentToken):
+            # The token's text starts on the entry's line: `# eol\n# next\n` or `\n# next\n`.
+            end_of_line_comment, _, _ = token.value.partition("\n")
+            if end_of_line_comment:
+                token.value = end_of_line_comment + "\n"
+            else:
+                tokens[slot] = None
 
 
 def render_copy(value: Any, written: Any = None, *, comments: bool = True, in_flow: bool = False) -> Any:
@@ -624,22 +663,6 @@ def yaml_text(document: Any, layout: YamlLayout) -> str:
     return stream.getvalue()
 
 
-def without_trailing_comments(rendered: str) -> str:
-    """rendered without its trailing comment lines.
-
-    A rendered value carries the comment lines its source document wrote
-    after it, which introduce that document's next key. A block scalar's
-    content can look like a comment, so the cut must leave the data alone.
-    """
-    lines = rendered.splitlines(keepends=True)
-    while lines and (not lines[-1].strip() or is_comment_line(lines[-1])):
-        lines.pop()
-    candidate = "".join(lines)
-    if candidate != rendered and reads_as(candidate, rendered):
-        return candidate
-    return rendered
-
-
 def reads_as(text: str, expected_text: str) -> bool:
     try:
         return values_strictly_equal(plain_value(parse_yaml_text(text)), plain_value(parse_yaml_text(expected_text)))
@@ -648,27 +671,25 @@ def reads_as(text: str, expected_text: str) -> bool:
 
 
 def rendered_fragment(data: Mapping[Any, Any], layout: YamlLayout, written: Any) -> str:
-    """data rendered as a document, without trailing comments or a document end marker.
+    """data rendered as a document, without a document end marker.
 
     ruamel's emitter can crash on, or write unreadable YAML for, comments
     copied to a value written at another place or indentation; those are
     dropped then.
     """
-    plain_data = plain_value(data)
-    for comments in (True, False):
-        copied = render_copy(data, written, comments=comments)
-        try:
-            # ruamel ends a document whose last scalar keeps its trailing
-            # newlines (`|+`) with `...`, which would end the spliced document.
-            rendered = without_trailing_comments(yaml_text(copied, layout).removesuffix("...\n"))
-            if comments and not values_strictly_equal(plain_value(parse_yaml_text(rendered)), plain_data):
-                continue
-        except Exception:
-            if not comments:
-                raise
-            continue
-        return rendered
-    raise AssertionError("unreachable")
+
+    def rendered(comments: bool) -> str:
+        # ruamel ends a document whose last scalar keeps its trailing
+        # newlines (`|+`) with `...`, which would end the spliced document.
+        return yaml_text(render_copy(data, written, comments=comments), layout).removesuffix("...\n")
+
+    try:
+        with_comments = rendered(comments=True)
+        if values_strictly_equal(plain_value(parse_yaml_text(with_comments)), plain_value(data)):
+            return with_comments
+    except Exception:  # Any emitter failure here comes from copied comments.
+        pass
+    return rendered(comments=False)
 
 
 def rendered_entry(key: Any, value: Any, layout: YamlLayout, indent: int, written: Any = None) -> str:
@@ -716,6 +737,46 @@ def rendered_document(desired: Mapping[Any, Any], layout: YamlLayout, written: A
 
 
 # Splicing.
+
+
+def shared_entry_count(old: Any, new: Any) -> int:
+    if not (isinstance(old, Mapping) and isinstance(new, Mapping)):
+        return 0
+    new_by_key = {strict_key(key): value for key, value in new.items()}
+    return sum(
+        1
+        for key, value in old.items()
+        if strict_key(key) in new_by_key and same_value(value, new_by_key[strict_key(key)])
+    )
+
+
+def similar_item_pairs(old_items: list[Any], new_items: list[Any]) -> list[tuple[int, int]]:
+    """In-order pairs of old and new mapping items that share the most entries.
+
+    An edited item, such as a workflow step with a bumped version, then
+    keeps its lines and comments while items around it come or go.
+    """
+    if len(old_items) * len(new_items) > _MAX_PAIRED_ITEM_CELLS:
+        return []
+    weights = [[shared_entry_count(old, new) for new in new_items] for old in old_items]
+    # best[i][j]: the most shared entries pairing old_items[:i] with new_items[:j].
+    best = [[0] * (len(new_items) + 1) for _ in range(len(old_items) + 1)]
+    for i, row in enumerate(weights, 1):
+        for j, weight in enumerate(row, 1):
+            paired = best[i - 1][j - 1] + weight if weight else 0
+            best[i][j] = max(best[i - 1][j], best[i][j - 1], paired)
+    pairs: list[tuple[int, int]] = []
+    i, j = len(old_items), len(new_items)
+    while i and j:
+        weight = weights[i - 1][j - 1]
+        if weight and best[i][j] == best[i - 1][j - 1] + weight:
+            pairs.append((i - 1, j - 1))
+            i, j = i - 1, j - 1
+        elif best[i][j] == best[i - 1][j]:
+            i -= 1
+        else:
+            j -= 1
+    return pairs[::-1]
 
 
 @dataclass(frozen=True)
@@ -803,7 +864,8 @@ class DocumentSplicer:
                 if not place.owns_line:
                     return None
                 start = head_comment_start(self.text, line_start(self.text, key_node.start), place.indent)
-                edits.append(Edit(start, entry_end(self.text, key_node, value_node, place.indent), "", value_node))
+                end = removal_end(self.text, start, entry_end(self.text, key_node, value_node, place.indent))
+                edits.append(Edit(start, end, "", value_node))
                 continue
             kept_entries += 1
             desired_value = desired_item[1]
@@ -878,17 +940,28 @@ class DocumentSplicer:
         )
         edits: list[Edit] = []
         for operation, old_start, old_end, new_start, new_end in matcher.get_opcodes():
-            if operation in ("equal", "replace") and old_end - old_start == new_end - new_start:
+            if operation == "equal" or old_end - old_start == new_end - new_start:
+                pairs = list(zip(range(old_start, old_end), range(new_start, new_end)))
+            else:
+                pairs = [
+                    (old_start + old_offset, new_start + new_offset)
+                    for old_offset, new_offset in similar_item_pairs(loaded[old_start:old_end], desired[new_start:new_end])
+                ]
+            paired = {old_index for old_index, _ in pairs}
+            for index in range(old_start, old_end):
+                if index not in paired:
+                    start = item_start(index)
+                    edits.append(Edit(start, removal_end(self.text, start, item_end(index)), "", node.items[index]))
+            next_new = new_start
+            for old_index, new_index in [*pairs, (old_end, new_end)]:
+                if new_index > next_new:
+                    position = item_start(old_index) if old_index < len(node.items) else item_end(len(node.items) - 1)
+                    rendered = rendered_items(desired[next_new:new_index], self.layout, indent)
+                    edits.append(Edit(position, position, rendered, node))
                 # Matching by plain value misses a changed mapping tag.
-                for offset in range(old_end - old_start):
-                    index = old_start + offset
-                    if not same_value(loaded[index], desired[new_start + offset]):
-                        edits.extend(self.item_edits(node.items[index], loaded[index], desired[new_start + offset], indent))
-                continue
-            edits.extend(Edit(item_start(index), item_end(index), "", node.items[index]) for index in range(old_start, old_end))
-            if new_end > new_start:
-                position = item_start(old_end) if old_end < len(node.items) else item_end(len(node.items) - 1)
-                edits.append(Edit(position, position, rendered_items(desired[new_start:new_end], self.layout, indent), node))
+                if old_index < old_end and not same_value(loaded[old_index], desired[new_index]):
+                    edits.extend(self.item_edits(node.items[old_index], loaded[old_index], desired[new_index], indent))
+                next_new = new_index + 1
         return edits
 
     def item_dash(self, item: TextNode) -> int | None:
@@ -926,8 +999,10 @@ class DocumentSplicer:
         start_line_end = line_end(self.text, start)
         if value_end > start_line_end:
             start_line_rest = self.text[start:start_line_end]
-            # The value's anchor or tag may come before the comment.
-            comment_start = 0 if start_line_rest.lstrip().startswith("#") else start_line_rest.find(" #")
+            # The value's anchor or tag may come before the comment. A quoted
+            # value that starts on the line can hold ` #`, so look before quotes.
+            searched = start_line_rest.split('"', 1)[0].split("'", 1)[0]
+            comment_start = 0 if searched.lstrip().startswith("#") else searched.find(" #")
             if comment_start >= 0:
                 rendered = first_line + start_line_rest[comment_start:] + newline + block
             end = after_deeper_comments(self.text, next_line_start(self.text, value_end), indent)
@@ -1033,7 +1108,10 @@ def spliced_yaml_text(text: str, desired: Mapping[Any, Any], layout: YamlLayout)
             if values_strictly_equal(plain_value(loaded), expected) and mapping_tags_match(loaded, desired):
                 if not text.strip() and not desired:
                     return "{}\n"
-                return text.removesuffix("\n") if added_line_break else text
+                if added_line_break and reads_as(text.removesuffix("\n"), text):
+                    return text.removesuffix("\n")
+                # A block scalar ending the document holds the line break.
+                return text
             break
         edited_text = applied_edits(text, edits)
         if edited_text == text:
