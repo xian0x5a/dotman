@@ -1354,3 +1354,368 @@ def test_crlf_document_keeps_crlf_line_endings_after_an_edit(tmp_path: Path) -> 
     output = output_path.read_bytes()
     assert read_yaml(output) == {"a": 1, "b": 2}
     assert output.count(b"\n") == output.count(b"\r\n") > 0
+
+
+# --- Text splicing --------------------------------------------------------------------------------
+
+
+def run_yaml_cleanup_with_compare(tmp_path: Path, source: str, compare: str, *arguments: str) -> str:
+    compare_path = tmp_path / "compare.yaml"
+    compare_path.write_text(compare, encoding="utf-8")
+    return run_yaml_cleanup(tmp_path, source, "--compare-file", str(compare_path), *arguments)
+
+
+def remove_keys(*keys: str) -> tuple[str, ...]:
+    return ("--selector-type", "remove", "--selectors", *keys)
+
+
+@pytest.mark.parametrize(
+    ("source", "key", "expected"),
+    [
+        pytest.param(
+            "a: 1\n# deep comment\nb:\n  x: 1\n  # inside b\n  y: 2\n    # deeper than b\n# about c\nc: 3\n",
+            "b",
+            "a: 1\n# about c\nc: 3\n",
+            id="comment-lines-indented-deeper-than-the-key-leave-with-it",
+        ),
+        pytest.param(
+            "outer:\n  a: 1\n  b:\n    x: 1\n    # after x\n  # about c\n  c: 3\n",
+            "outer.b",
+            "outer:\n  a: 1\n  # about c\n  c: 3\n",
+            id="nested-comment-at-the-keys-own-indent-belongs-to-the-next-key",
+        ),
+        pytest.param(
+            "a: 1\n\n# stands alone\n\nb: 2  # eol\nc: 3\n",
+            "b",
+            "a: 1\n\n# stands alone\n\nc: 3\n",
+            id="blank-line-separated-comment-block-stays",
+        ),
+        pytest.param(
+            "a: 1  # eol a\nb: 2\n",
+            "a",
+            "b: 2\n",
+            id="end-of-line-comment-leaves-with-its-key",
+        ),
+    ],
+)
+def test_comment_ownership_when_a_key_is_removed(tmp_path: Path, source: str, key: str, expected: str) -> None:
+    assert run_yaml_cleanup(tmp_path, source, *remove_keys(key)) == expected
+
+
+def test_untouched_spellings_survive_an_edit_elsewhere(tmp_path: Path) -> None:
+    source = (
+        "nothing: ~\n"
+        "flag: TRUE\n"
+        "hex: 0x1F\n"
+        "single: 'quoted'\n"
+        "double: \"quoted\"\n"
+        "\n"
+        "flow: {a: 1,   b: [x,y]}\n"
+        "gone: 1\n"
+    )
+
+    output = run_yaml_cleanup(tmp_path, source, *remove_keys("gone"))
+
+    assert output == source.removesuffix("gone: 1\n")
+
+
+def test_yaml_directive_survives_an_edit_elsewhere(tmp_path: Path) -> None:
+    source = "%YAML 1.1\n---\na: 1\nb: 2\n"
+
+    assert run_yaml_cleanup(tmp_path, source, *remove_keys("b")) == "%YAML 1.1\n---\na: 1\n"
+
+
+@pytest.mark.parametrize(
+    ("base", "overlay", "expected"),
+    [
+        pytest.param(
+            "a: 1\n# trailing about a\nb: 2\n",
+            "c: 3\n",
+            "a: 1\n# trailing about a\nb: 2\nc: 3\n",
+            id="top-level-after-last-key",
+        ),
+        pytest.param(
+            "a: 1\nb:\n  x: 1\n  y:\n    z: 1\n    # deeper trailing comment\nnext: 2\n",
+            "b: {w: 5}\n",
+            None,
+            id="nested-after-last-keys-deeper-trailing-comment",
+        ),
+        pytest.param(
+            "a: 1\nb: 2",
+            "c: 3\n",
+            # The document keeps ending without a line break.
+            "a: 1\nb: 2\nc: 3",
+            id="document-without-trailing-newline",
+        ),
+    ],
+)
+def test_added_keys_go_after_the_mappings_last_key(
+    tmp_path: Path, base: str, overlay: str, expected: str | None
+) -> None:
+    output = run_yaml_merge(tmp_path, base, overlay, *remove_keys("zzz"))
+
+    if expected is not None:
+        assert output == expected
+        return
+    assert read_yaml(output)["b"]["w"] == 5
+    lines = output.splitlines()
+    assert lines.index("    # deeper trailing comment") < lines.index("  w: 5")
+    assert lines.index("  w: 5") < lines.index("next: 2")
+
+
+def test_added_key_in_a_nested_mapping_lands_after_its_last_key(tmp_path: Path) -> None:
+    base = "m:\n  a: 1  # eol\n  b: 2\nafter: 3\n"
+
+    output = run_yaml_merge(tmp_path, base, "m: {c: 9}\n", *remove_keys("zzz"))
+
+    assert output == "m:\n  a: 1  # eol\n  b: 2\n  c: 9\nafter: 3\n"
+
+
+@pytest.mark.parametrize(
+    ("base", "overlay", "present", "absent"),
+    [
+        pytest.param(
+            "k: 1  # stays\nz: 0\n",
+            "k: 2\n",
+            ["k: 2  # stays"],
+            [],
+            id="comment-on-the-keys-line-stays",
+        ),
+        pytest.param(
+            "k:\n  - a  # inside\n  # inside too\n  - b\nz: 0\n",
+            "k: x\n",
+            ["k: x", "z: 0"],
+            ["# inside", "# inside too"],
+            id="comments-inside-the-old-block-value-go",
+        ),
+        pytest.param(
+            "k: 1  # eol\nz: 0\n",
+            "k:\n  m: 1\n",
+            ["# eol", "  m: 1"],
+            [],
+            id="one-line-value-becoming-a-block-keeps-its-eol-comment",
+        ),
+    ],
+)
+def test_changed_value_comment_handling(
+    tmp_path: Path, base: str, overlay: str, present: list[str], absent: list[str]
+) -> None:
+    output = run_yaml_merge(tmp_path, base, overlay)
+
+    assert read_yaml(output)["z"] == 0
+    for text in present:
+        assert text in output
+    for text in absent:
+        assert text not in output
+
+
+@pytest.mark.parametrize(
+    ("base", "overlay", "expected"),
+    [
+        pytest.param(
+            "k:\n  - a  # ca\n  - b  # cb\n  - c  # cc\n",
+            "k: [a, c]\n",
+            "k:\n  - a  # ca\n  - c  # cc\n",
+            id="removed-item-takes-its-line",
+        ),
+        pytest.param(
+            "k:\n  # about a\n  - a\n  # about b\n  - b\n  # about c\n  - c\n",
+            "k: [a, c]\n",
+            "k:\n  # about a\n  - a\n  # about c\n  - c\n",
+            id="removed-item-takes-the-comment-lines-above-it",
+        ),
+        pytest.param(
+            "k:\n  - a  # ca\n  - c  # cc\n",
+            "k: [a, b, c]\n",
+            "k:\n  - a  # ca\n  - b\n  - c  # cc\n",
+            id="item-inserted-in-the-middle",
+        ),
+        pytest.param(
+            "k:\n  - a  # ca\n  - b\n# after\nz: 0\n",
+            "k: [a, b, c]\n",
+            "k:\n  - a  # ca\n  - b\n  - c\n# after\nz: 0\n",
+            id="item-appended-at-the-end",
+        ),
+        pytest.param(
+            "k:\n  - a  # ca\n  - b  # cb\n  - c  # cc\n",
+            "k: [a, X, c]\n",
+            "k:\n  - a  # ca\n  - X  # cb\n  - c  # cc\n",
+            id="replaced-item-keeps-the-comment-on-its-line",
+        ),
+        pytest.param(
+            "k:\n- a\n- b  # cb\n",
+            "k: [b]\n",
+            "k:\n- b  # cb\n",
+            id="indentless-sequence",
+        ),
+    ],
+)
+def test_block_sequences_are_edited_item_by_item(tmp_path: Path, base: str, overlay: str, expected: str) -> None:
+    assert run_yaml_merge(tmp_path, base, overlay) == expected
+
+
+def test_mapping_item_of_a_sequence_is_edited_in_place(tmp_path: Path) -> None:
+    base = "k:\n  - name: a  # first\n    size: 1\n  - name: b\n    # about size\n    size: 2\n"
+
+    output = run_yaml_merge(tmp_path, base, "k:\n  - {name: a, size: 1}\n  - {name: b, size: 5}\n")
+
+    assert read_yaml(output) == {"k": [{"name": "a", "size": 1}, {"name": "b", "size": 5}]}
+    assert output.startswith("k:\n  - name: a  # first\n    size: 1\n  - name: b\n")
+    assert "# about size" in output
+
+
+def test_sequence_and_mapping_left_empty_are_written_as_flow_empties(tmp_path: Path) -> None:
+    base = "seq:\n  - a\n  - b\nmap:\n  x: 1\nkeep: 1\n"
+
+    output = run_yaml_merge(tmp_path, base, "seq: []\nmap: {}\n")
+
+    assert output == "seq: []\nmap: {}\nkeep: 1\n"
+
+
+def test_removing_a_block_sequence_key_in_cleanup_leaves_other_text(tmp_path: Path) -> None:
+    source = "a: 1  # one\nk:\n  - x\nb: 2  # two\n"
+
+    output = run_yaml_cleanup(tmp_path, source, *remove_keys("k"))
+
+    assert output == "a: 1  # one\nb: 2  # two\n"
+
+
+@pytest.mark.parametrize(
+    ("source", "overlay", "expected"),
+    [
+        pytest.param(
+            "base: &b {x: 1}\nuse: *b\n",
+            "base: {x: 2}\n",
+            {"base": {"x": 2}, "use": {"x": 1}},
+            id="anchored-value-changed-alias-keeps-old-value",
+        ),
+        pytest.param(
+            "base: &b {x: 1}\nuse: *b\n",
+            "base: {x: 2}\nuse: {x: 2}\n",
+            {"base": {"x": 2}, "use": {"x": 2}},
+            id="anchored-value-and-alias-changed-together",
+        ),
+        pytest.param(
+            "base: &b {x: 1}\nchild:\n  <<: *b\n  y: 2\n",
+            "base: {x: 2}\n",
+            {"base": {"x": 2}, "child": {"x": 1, "y": 2}},
+            id="merged-key-keeps-old-value-in-the-merging-mapping",
+        ),
+        pytest.param(
+            "base: &b {x: 1}\na:\n  <<: *b\nb:\n  <<: *b\n",
+            "a: {x: 5}\n",
+            {"base": {"x": 1}, "a": {"x": 5}, "b": {"x": 1}},
+            id="merged-key-changed-in-one-receiver-only",
+        ),
+    ],
+)
+def test_anchored_value_edits_keep_every_other_place_correct(
+    tmp_path: Path, source: str, overlay: str, expected: dict
+) -> None:
+    output = run_yaml_merge(tmp_path, source, overlay)
+
+    assert read_yaml(output) == expected
+
+
+@pytest.mark.parametrize(
+    ("source", "removed", "expected"),
+    [
+        pytest.param(
+            "base: &b {x: 1}\nuse: *b\n",
+            "base",
+            {"use": {"x": 1}},
+            id="alias-of-the-removed-anchor",
+        ),
+        pytest.param(
+            "base: &b {x: 1}\nchild:\n  <<: *b\n  y: 2\n",
+            "base",
+            {"child": {"x": 1, "y": 2}},
+            id="alias-used-as-a-merge-source",
+        ),
+        pytest.param(
+            "item: &i one\nlist:\n  - *i\n  - two\n",
+            "item",
+            {"list": ["one", "two"]},
+            id="alias-inside-a-sequence",
+        ),
+    ],
+)
+def test_removing_an_anchored_key_writes_out_the_remaining_aliases(
+    tmp_path: Path, source: str, removed: str, expected: dict
+) -> None:
+    output = run_yaml_cleanup(tmp_path, source, *remove_keys(removed))
+
+    assert read_yaml(output) == expected
+    assert "&" not in output
+
+
+def test_untouched_anchors_aliases_and_merges_keep_their_bytes_when_another_key_changes(tmp_path: Path) -> None:
+    source = "base: &b {x: 1}\nchild:\n  <<: *b\n  y: 2\nlist: [&i 1, *i]\nother: 0\n"
+
+    output = run_yaml_merge(tmp_path, source, "other: 9\n")
+
+    assert output == source.replace("other: 0", "other: 9")
+
+
+@pytest.mark.parametrize(
+    "compare",
+    [
+        pytest.param("a: [unclosed\n", id="invalid-yaml"),
+        pytest.param("- a\n- b\n", id="not-a-mapping"),
+    ],
+)
+def test_unusable_compare_file_is_ignored(tmp_path: Path, compare: str) -> None:
+    output = run_yaml_cleanup_with_compare(
+        tmp_path, "# mine\na: 1\nb: 2\n", compare, *remove_keys("b")
+    )
+
+    assert output == "# mine\na: 1\n"
+
+
+def test_capture_style_cleanup_edits_the_compare_files_text(tmp_path: Path) -> None:
+    live = "a: 10\nb: 2\nvolatile: 99\nnew: 7\n"
+    repo_copy = "# Repo header\n\n# about a\na: 1  # repo eol\n# about b\nb: 2\nvolatile: 5  # drop me\n"
+
+    output = run_yaml_cleanup_with_compare(tmp_path, live, repo_copy, *remove_keys("volatile"))
+
+    assert read_yaml(output) == {"a": 10, "b": 2, "new": 7}
+    assert output.startswith("# Repo header\n\n# about a\na: 10  # repo eol\n# about b\nb: 2\n")
+    assert "volatile" not in output and "drop me" not in output
+
+
+def test_yaml_11_directive_fails_rather_than_write_a_value_that_reads_differently(
+    tmp_path: Path,
+) -> None:
+    base_path = tmp_path / "base.yaml"
+    overlay_path = tmp_path / "overlay.yaml"
+    output_path = tmp_path / "out.yaml"
+    base_path.write_text("%YAML 1.1\n---\nanswer: 'x'\nkeep: 1\n", encoding="utf-8")
+    overlay_path.write_text("answer: yes\n", encoding="utf-8")
+
+    try:
+        exit_code = cli.main([
+            "transform", "yaml", str(base_path), str(output_path),
+            "--mode", "merge", "--overlay-file", str(overlay_path),
+        ])
+    except SystemExit as error:
+        exit_code = error.code
+
+    assert exit_code not in (0, None)
+    assert not output_path.exists()
+
+
+def test_crlf_document_stays_crlf_when_keys_are_added_and_values_changed(tmp_path: Path) -> None:
+    base_path = tmp_path / "base.yaml"
+    overlay_path = tmp_path / "overlay.yaml"
+    output_path = tmp_path / "out.yaml"
+    base_path.write_bytes(b"a: 1 # c\r\nk:\r\n  - x\r\n  - y\r\nb: 2\r\n")
+    overlay_path.write_text("k: [x, z]\nnew: {n: 1}\n", encoding="utf-8")
+
+    assert cli.main([
+        "transform", "yaml", str(base_path), str(output_path),
+        "--mode", "merge", "--overlay-file", str(overlay_path),
+    ]) == 0
+
+    output = output_path.read_bytes()
+    assert read_yaml(output) == {"a": 1, "k": ["x", "z"], "b": 2, "new": {"n": 1}}
+    assert output.count(b"\n") == output.count(b"\r\n") > 0
