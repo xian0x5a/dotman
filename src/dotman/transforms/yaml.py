@@ -8,10 +8,12 @@ YAML 1.2.
 """
 from __future__ import annotations
 
+import bisect
 import copy
 import datetime
 import functools
 import io
+import itertools
 import re
 import warnings
 from collections.abc import Iterator
@@ -75,6 +77,7 @@ _STANDARD_TAG_PREFIX = "tag:yaml.org,2002:"
 _MAX_SPLICE_ROUNDS = 16
 # Pairing changed sequence items compares every old item with every new one.
 _MAX_PAIRED_ITEM_CELLS = 10_000
+_TRAILING_BLANK_LINES = re.compile(r"(?<=\n)(?:[ \t]*\n)+\Z")
 # Leading whitespace and the anchors and tags written before a node.
 _NODE_PROPERTIES = re.compile(r"\s*(?:[&!]\S*\s+)*")
 # Values are rendered as this key's value, then cut after its colon.
@@ -163,17 +166,31 @@ def parsed_document(text: str) -> Any:
     return parse_yaml_text(text)
 
 
+class TaggedMapping(dict):
+    """A mapping that selection or merge rebuilt, with the tag of the mapping it came from."""
+
+    def __init__(self, items: Mapping[Any, Any], tag: str) -> None:
+        super().__init__(items)
+        self.tag = tag
+
+
 def collection_tag(value: Any) -> str | None:
+    if isinstance(value, TaggedMapping):
+        return value.tag
     tag = getattr(value, "tag", None) if isinstance(value, (CommentedMap, CommentedSeq)) else None
     return None if tag is None else tag.value
+
+
+def custom_tag(value: Any) -> str | None:
+    tag = collection_tag(value)
+    return None if tag is None or tag.startswith(_STANDARD_TAG_PREFIX) else tag
 
 
 def plain_value(value: Any) -> Any:
     """The value with ruamel's spelling-preserving types replaced by plain Python ones.
 
-    A custom tag on a scalar or sequence is part of its value. Mapping tags
-    are compared by `mapping_tags_match`, since selection and merge rebuild
-    mappings as plain dicts that inherit the written tag.
+    A custom tag is part of its value. A plain dict is untagged; one that
+    selection or merge rebuilt from a tagged mapping is a `TaggedMapping`.
     """
     if isinstance(value, TaggedScalar):
         tag = value.tag.value
@@ -184,12 +201,14 @@ def plain_value(value: Any) -> Any:
     if isinstance(value, CommentedSet):
         # Typed members, so `{1}` and `{true}` differ.
         return frozenset(strict_key(member) for member in value)
-    if isinstance(value, Mapping):
-        return {plain_value(key): plain_value(child) for key, child in value.items()}
-    if isinstance(value, list):
-        items = [plain_value(child) for child in value]
-        tag = collection_tag(value)
-        return items if tag is None or tag.startswith(_STANDARD_TAG_PREFIX) else TaggedValue(tag, items)
+    if isinstance(value, (Mapping, list)):
+        children = (
+            {plain_value(key): plain_value(child) for key, child in value.items()}
+            if isinstance(value, Mapping)
+            else [plain_value(child) for child in value]
+        )
+        tag = custom_tag(value)
+        return children if tag is None else TaggedValue(tag, children)
     if isinstance(value, tuple):
         return tuple(plain_value(child) for child in value)
     if isinstance(value, ScalarBoolean):
@@ -210,24 +229,8 @@ def strict_key(key: Any) -> tuple[type, Any]:
     return type(plain_key), plain_key
 
 
-def mapping_tags_match(current: Any, desired: Any) -> bool:
-    """Whether desired's ruamel mappings carry the same tags as current's.
-
-    A plain dict is a mapping that selection or merge rebuilt; it keeps the
-    tag written in the target, so it always matches.
-    """
-    if isinstance(desired, Mapping) and isinstance(current, Mapping):
-        if isinstance(desired, CommentedMap) and collection_tag(desired) != collection_tag(current):
-            return False
-        current_by_key = {strict_key(key): child for key, child in current.items()}
-        return all(mapping_tags_match(current_by_key.get(strict_key(key)), child) for key, child in desired.items())
-    if isinstance(desired, list) and isinstance(current, list):
-        return all(mapping_tags_match(current_item, desired_item) for current_item, desired_item in zip(current, desired))
-    return True
-
-
 def same_value(current: Any, desired: Any) -> bool:
-    return values_strictly_equal(plain_value(current), plain_value(desired)) and mapping_tags_match(current, desired)
+    return values_strictly_equal(plain_value(current), plain_value(desired))
 
 
 def yaml_key_text(key: Any) -> str:
@@ -658,8 +661,8 @@ def render_copy(
     """A copy of value to render, sharing nothing: aliases become copies, `<<` merges own keys, anchors go.
 
     It keeps tags, flow style and comments: value's own, or, for a mapping
-    that selection or merge rebuilt as a plain dict, those of written, the
-    mapping at the same place in the target. ruamel files comments by key
+    that selection or merge rebuilt as a plain dict, the flow style and
+    comments of written, the mapping at the same place in the target. ruamel files comments by key
     and position, so written's comments only carry over when the keys are
     the same. ruamel also files the comment lines that follow a collection
     with it; they stay only where the copy is followed by what followed it
@@ -705,6 +708,9 @@ def render_copy(
             )
         if presentation is not None:
             copy_presentation(presentation, copied_mapping, comments=copies_comments)
+        if presentation is not value:
+            tag = custom_tag(value)
+            setattr(copied_mapping, Tag.attrib, Tag(suffix=tag) if tag is not None else Tag())
         if copies_comments:
             if not followed_as_in_source:
                 cut_comments_after(copied_mapping)
@@ -769,7 +775,7 @@ def rendered_fragment(data: Mapping[Any, Any], layout: YamlLayout, written: Any)
     def rendered(copied: Any) -> str:
         # ruamel ends a document whose last scalar keeps its trailing
         # newlines (`|+`) with `...`, which would end the spliced document.
-        return yaml_text(copied, layout).removesuffix("...\n")
+        return with_compact_nested_sequences(yaml_text(copied, layout).removesuffix("...\n"), layout)
 
     with_comments = render_copy(data, written)
     try:
@@ -779,6 +785,50 @@ def rendered_fragment(data: Mapping[Any, Any], layout: YamlLayout, written: Any)
     except Exception:  # Any emitter failure here comes from copied comments.
         pass
     return rendered(render_copy(data, written, comments=False))
+
+
+def with_compact_nested_sequences(text: str, layout: YamlLayout) -> str:
+    """ruamel's text with each block sequence written on its parent item's dash line moved left by the dash offset.
+
+    ruamel offsets the dashes of every nesting level (`-   - x`), while a
+    file with indented dashes writes a nested sequence right after its
+    parent's dash (`- - x`), at the column the parent's content takes.
+    """
+    if layout.offset == 0 or layout.sequence - layout.offset < 2 or "-" + " " * (layout.sequence - 1) + "-" not in text:
+        return text
+    lines = text.splitlines(keepends=True)
+    line_starts = list(itertools.accumulate((len(line) for line in lines[:-1]), initial=0))
+    cuts_by_line: dict[int, list[int]] = {}
+    shifts = [0] * len(lines)
+    for node in compact_nested_sequences(text_tree(text).root, text):
+        first_line = bisect.bisect_right(line_starts, node.start) - 1
+        last_line = bisect.bisect_right(line_starts, node.end - 1) - 1
+        cuts_by_line.setdefault(first_line, []).append(node.start - line_starts[first_line])
+        for index in range(first_line + 1, last_line + 1):
+            shifts[index] += layout.offset
+
+    def moved(index: int, line: str) -> str:
+        for column in sorted(cuts_by_line.get(index, []), reverse=True):
+            line = line[: column - layout.offset] + line[column:]
+        return line[min(shifts[index], indentation(line)) :]
+
+    return "".join(moved(index, line) for index, line in enumerate(lines))
+
+
+def compact_nested_sequences(node: TextNode | None, text: str) -> Iterator[TextNode]:
+    """The block sequences under node that start on their parent block sequence item's dash line."""
+    if node is None:
+        return
+    for child in [*itertools.chain.from_iterable(node.entries), *node.items]:
+        if (
+            child.kind is NodeKind.SEQUENCE
+            and not child.flow
+            and node.kind is NodeKind.SEQUENCE
+            and not node.flow
+            and text[line_start(text, child.start) : child.start].strip()
+        ):
+            yield child
+        yield from compact_nested_sequences(child, text)
 
 
 def rendered_entry(key: Any, value: Any, layout: YamlLayout, indent: int, written: Any = None) -> str:
@@ -929,7 +979,7 @@ class DocumentSplicer:
         """Line edits that make a block mapping hold desired, or None when the mapping must be rendered whole."""
         if node.kind is not NodeKind.MAPPING or node.flow or type(loaded) is not CommentedMap:
             return None
-        if isinstance(desired, CommentedMap) and collection_tag(desired) != collection_tag(loaded):
+        if custom_tag(desired) != custom_tag(loaded):
             return None
         own_entries = node.own_entries()
         own_items = list(loaded.non_merged_items())
@@ -1007,7 +1057,7 @@ class DocumentSplicer:
         """
         if node.kind is not NodeKind.SEQUENCE or node.flow or type(loaded) is not CommentedSeq or not desired:
             return None
-        if isinstance(desired, CommentedSeq) and collection_tag(desired) != collection_tag(loaded):
+        if custom_tag(desired) != custom_tag(loaded):
             return None
         dashes = [self.item_dash(item) for item in node.items]
         places = [None if dash is None else line_place(self.text, dash) for dash in dashes]
@@ -1101,6 +1151,10 @@ class DocumentSplicer:
         trailing = self.text[value_end:start_line_end]
         if newline and trailing.lstrip().startswith("#"):
             return Edit(start, start_line_end, first_line + trailing + newline + block, value)
+        spacing = self.text[start : max(start, value.start)]
+        if not newline and len(spacing) > 1 and not spacing.strip(" ") and rendered.startswith(" "):
+            # Values aligned in a column stay aligned.
+            rendered = spacing + rendered.lstrip(" ")
         return Edit(start, value_end, rendered, value)
 
     def with_aliases_written_out(self, edits: list[Edit], planned: list[Edit]) -> list[Edit]:
@@ -1184,6 +1238,7 @@ def spliced_yaml_text(text: str, desired: Mapping[Any, Any], layout: YamlLayout)
     writes them out, or overrides the merged key.
     """
     expected = plain_value(desired)
+    ended_in_blank_lines = without_trailing_blank_lines(text) != text
     # Splice a text ending in a line break, and give back the one added.
     added_line_break = bool(text) and not text.endswith("\n")
     if added_line_break:
@@ -1196,9 +1251,12 @@ def spliced_yaml_text(text: str, desired: Mapping[Any, Any], layout: YamlLayout)
         edits = splicer.edits()
         if not edits:
             loaded = {} if splicer.loaded is None else splicer.loaded
-            if values_strictly_equal(plain_value(loaded), expected) and mapping_tags_match(loaded, desired):
+            if values_strictly_equal(plain_value(loaded), expected):
                 if not text.strip() and not desired:
                     return "{}\n"
+                if not ended_in_blank_lines and reads_as(without_trailing_blank_lines(text), text):
+                    # Removing a document's last lines leaves the blank line above them.
+                    text = without_trailing_blank_lines(text)
                 if added_line_break and reads_as(text.removesuffix("\n"), text):
                     return text.removesuffix("\n")
                 # A block scalar ending the document holds the line break.
@@ -1211,6 +1269,10 @@ def spliced_yaml_text(text: str, desired: Mapping[Any, Any], layout: YamlLayout)
     raise ValueError("cannot write the transformed YAML without changing its data")
 
 
+def without_trailing_blank_lines(text: str) -> str:
+    return _TRAILING_BLANK_LINES.sub("", text)
+
+
 def target_line_ending(text: str | None) -> str:
     return "\r\n" if text is not None and "\r\n" in text else "\n"
 
@@ -1218,6 +1280,21 @@ def target_line_ending(text: str | None) -> str:
 def with_line_ending(text: str, line_ending: str) -> str:
     lf_text = text.replace("\r\n", "\n")
     return lf_text if line_ending == "\n" else lf_text.replace("\n", line_ending)
+
+
+def with_source_tags(value: Any, sources: list[Any]) -> Any:
+    """value with each mapping that selection or merge rebuilt tagged like the first source mapping at its place.
+
+    The framework rebuilds mappings as plain dicts; a document's own mappings keep their tag.
+    """
+    if not isinstance(value, dict) or isinstance(value, CommentedMap):
+        return value
+    source_mappings = [source for source in sources if isinstance(source, Mapping)]
+    children = {
+        key: with_source_tags(child, [source.get(key) for source in source_mappings]) for key, child in value.items()
+    }
+    tag = next((custom_tag(source) for source in source_mappings), None)
+    return children if tag is None else TaggedMapping(children, tag)
 
 
 def holds_yaml_mapping(text: str | None) -> bool:
@@ -1268,6 +1345,9 @@ class YamlTransformEngine(MappingTransformEngine):
     def build_output(self, data: YamlDict, request: TransformRequest) -> TransformOutput:
         compare_path = request.engine_option("compare_path")
         stdin_bytes = request.engine_option("stdin_bytes")
+        # A merged mapping takes the overlay's tag where the overlay has it.
+        source_paths = [request.overlay_path, request.base_path] if request.mode == TransformMode.MERGE else [request.base_path]
+        data = with_source_tags(data, [load_yaml_document(path, stdin_bytes=stdin_bytes) for path in source_paths])
         reused_output = semantically_unchanged_compare_output(
             compare_path,
             plain_value(data),
