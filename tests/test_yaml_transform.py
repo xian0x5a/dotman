@@ -1884,3 +1884,136 @@ def test_anchored_sequence_with_an_empty_first_item_and_a_comment_above_it(tmp_p
     )
 
     assert read_yaml(output) == {"b": [{"d": None}, None, 1], "c": [None, True]}
+
+
+# Text splicing regressions, second review ------------------------------------------------------
+
+
+def run_yaml_merge_with_compare(
+    tmp_path: Path, base: str, overlay: str, compare: str, *arguments: str,
+) -> str:
+    (tmp_path / "compare.yaml").write_text(compare, encoding="utf-8")
+    return run_yaml_merge(tmp_path, base, overlay, "--compare-file", str(tmp_path / "compare.yaml"), *arguments)
+
+
+def test_render_into_a_live_file_without_a_final_line_break_keeps_all_data(tmp_path: Path) -> None:
+    output = run_yaml_merge_with_compare(
+        tmp_path, "a: 1", "script: |\n  echo hi\n", "a: 1", *remove_keys("script"),
+    )
+
+    assert read_yaml(output) == {"a": 1, "script": "echo hi\n"}
+
+
+def test_capture_from_a_repo_file_ending_in_a_block_scalar_without_a_line_break(tmp_path: Path) -> None:
+    output = run_yaml_cleanup_with_compare(tmp_path, "b: 2\na: |\n  x\n", "b: 1\na: |\n  x")
+
+    assert read_yaml(output) == {"b": 2, "a": "x\n"}
+
+
+def test_capture_into_a_repo_file_without_a_final_line_break_stays_without_one(tmp_path: Path) -> None:
+    output = run_yaml_cleanup_with_compare(tmp_path, "a: 1\nb: 3\n", "a: 1\nb: 2")
+
+    assert output == "a: 1\nb: 3"
+
+
+SEQUENCE_REPO = (
+    "steps:\n"
+    "  - uses: actions/checkout@v4\n"
+    "  # pin until upstream fixes caching\n"
+    "  - uses: actions/setup-python@v5  # keep in sync with ci.yml\n"
+    "    with:\n"
+    "      python-version: \"3.12\"\n"
+    "      cache: pip   # speeds up CI\n"
+    "  - run: make test\n"
+)
+
+
+@pytest.mark.parametrize(
+    ("live", "expected"),
+    [
+        pytest.param(
+            "steps:\n  - uses: actions/checkout@v4\n  - uses: actions/setup-python@v5\n"
+            "    with:\n      python-version: \"3.13\"\n      cache: pip\n  - run: make lint\n  - run: make test\n",
+            SEQUENCE_REPO.replace('"3.12"', '"3.13"').replace("  - run: make test\n", "  - run: make lint\n  - run: make test\n"),
+            id="changed-item-and-an-added-item",
+        ),
+        pytest.param(
+            "steps:\n  - uses: actions/setup-python@v5\n"
+            "    with:\n      python-version: \"3.13\"\n      cache: pip\n  - run: make test\n",
+            SEQUENCE_REPO.replace('"3.12"', '"3.13"').replace(
+                "  - uses: actions/checkout@v4\n", "",
+            ),
+            id="changed-item-and-a-removed-item",
+        ),
+    ],
+)
+def test_changed_sequence_item_keeps_its_lines_and_comments_next_to_an_insertion_or_removal(
+    tmp_path: Path, live: str, expected: str,
+) -> None:
+    output = run_yaml_cleanup_with_compare(tmp_path, live, SEQUENCE_REPO)
+
+    assert output == expected
+
+
+def test_comments_introducing_a_section_do_not_leak_into_rendered_values(tmp_path: Path) -> None:
+    source = (
+        "x-common: &common\n  restart: unless-stopped\n  environment: &env\n    TZ: UTC\n\n"
+        "# ---------- services ----------\n"
+        "services:\n  a:\n    <<: *common\n    image: a:1\n    environment: *env\n    ports:\n      - 80:80\n"
+    )
+
+    output = run_yaml_cleanup(tmp_path, source, "--selector-type", "retain", "--selectors", "services")
+
+    assert output.count("# ---------- services ----------") == 1
+    assert output.index("# ----------") < output.index("services:")
+    assert read_yaml(output) == {"services": {"a": {
+        "restart": "unless-stopped", "image": "a:1", "environment": {"TZ": "UTC"}, "ports": ["80:80"],
+    }}}
+
+
+def test_comment_above_a_removed_key_does_not_survive_in_the_output(tmp_path: Path) -> None:
+    source = (
+        "services:\n  a:\n    image: a:1\n    ports:\n      - 80:80\n"
+        "    # host-specific bind mount, do not sync\n"
+        "    volumes:\n      - /home/me:/data\n    restart: always\n"
+    )
+
+    output = run_yaml_cleanup_with_compare(
+        tmp_path, source, "services:\n  z: {image: z}\n", *remove_keys("services.a.volumes", "services.z"),
+    )
+
+    assert "host-specific" not in output
+    assert read_yaml(output) == {"services": {"a": {"image": "a:1", "ports": ["80:80"], "restart": "always"}}}
+
+
+@pytest.mark.parametrize(
+    ("source", "removed", "expected"),
+    [
+        pytest.param("a: 1\n\nb:\n  x: 1\n\nc: 3\n", ("b",), "a: 1\n\nc: 3\n", id="between-blank-lines"),
+        pytest.param("a: 1\n\nb:\n  x: 1\n\nc: 3\n", ("a",), "b:\n  x: 1\n\nc: 3\n", id="at-document-start"),
+        pytest.param("# head\n\na: 1\n\nb: 2\n\nc: 3\n", ("a", "b"), "# head\n\nc: 3\n", id="after-a-header"),
+    ],
+)
+def test_removing_a_key_set_off_by_blank_lines_takes_one_blank_line_with_it(
+    tmp_path: Path, source: str, removed: tuple[str, ...], expected: str,
+) -> None:
+    assert run_yaml_cleanup(tmp_path, source, *remove_keys(*removed)) == expected
+
+
+def test_removing_a_sequence_item_set_off_by_blank_lines_takes_one_blank_line_with_it(tmp_path: Path) -> None:
+    output = run_yaml_merge(tmp_path, "l:\n  - 1\n\n  - 2\n\n  - 3\n", "l: [1, 3]\n")
+
+    assert output == "l:\n  - 1\n\n  - 3\n"
+
+
+def test_hash_inside_a_multi_line_quoted_value_is_not_a_comment(tmp_path: Path) -> None:
+    output = run_yaml_merge(tmp_path, 'k: "a # b\n  c"\nz: 1\n', "k: [1, 2]\n", *remove_keys("k"))
+
+    assert "# b" not in output
+    assert read_yaml(output) == {"k": [1, 2], "z": 1}
+
+
+def test_anchor_containing_a_plus_before_a_clip_block_scalar_is_not_keep_chomping(tmp_path: Path) -> None:
+    output = run_yaml_merge(tmp_path, "k: &a+b |\n  c\n\nz: 1\n", "k: [1, 2]\n", *remove_keys("k"))
+
+    assert output == "k: [1, 2]\n\nz: 1\n"
