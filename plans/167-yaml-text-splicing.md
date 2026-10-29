@@ -1,5 +1,5 @@
 ---
-status: open
+status: done
 ---
 
 # YAML output by text splicing (#167)
@@ -81,6 +81,12 @@ every dump renormalised untouched values (`~`, `TRUE`, `%YAML 1.1`).
 - 2026-10-28: splicer for mappings, anchors and merges (6a12b38); block
   sequences item by item (b19b81f); docs and skill note updated. Existing
   164 YAML/mapping tests pass. Next: independent tests and review.
+- 2026-10-28: three independent review rounds plus fuzzing (about 16k random
+  edits over realistic and synthetic documents). Fixes: strict equality in
+  tagged collections, `|+` spans, anchors after `---`, alias write-out,
+  final line break handling, comments ruamel files after a collection's last
+  entry, pairing changed items inside sequence edits, blank lines around
+  removed blocks. Independent regression tests cover each fix.
 
 ## Surprises & Discoveries
 
@@ -98,6 +104,14 @@ every dump renormalised untouched values (`~`, `TRUE`, `%YAML 1.1`).
   plain values; a non-match only costs a less minimal edit.
 - Whole-document loads are cached by text (ruamel's `<<` handling is
   quadratic); nothing mutates a loaded document.
+- Where sequence items change while others come or go, mapping items are
+  paired by most shared entries (in-order dynamic programming, capped at
+  10k item comparisons); unpaired items are removed or inserted whole.
+- ruamel files the comment lines after an entry under that entry. A
+  rendered copy keeps them only where the entry is followed by the same key
+  as in its source text (ordered by ruamel's line data, since a deep copy
+  makes `<<` merged keys look like own keys); anchored values never keep
+  them, as they may be copied from an alias elsewhere.
 
 - Text splicing over patching the ruamel graph: weighted 3.95 vs 2.75
   (fidelity 35, robustness 25, cost 20, maintainability 20).
@@ -109,4 +123,15 @@ every dump renormalised untouched values (`~`, `TRUE`, `%YAML 1.1`).
 
 ## Outcomes & Retrospective
 
-(pending)
+Shipped as designed: output edits the target text, so untouched keys keep
+their bytes and comments, anchors and merges survive. The spec lives in
+`docs/cli.md` (`dotman transform yaml`). Patching the ruamel graph failed
+review three times; the text splicer converged after three review rounds,
+mostly on ruamel span quirks (recorded above) and comment placement.
+Lesson: a broad `except` around the comment retry hid a copy bug that
+silently dropped comments; the retry now guards only ruamel's emitter.
+
+Known limits, filed as follow-up issues: a mapping tag change is not
+captured (the framework rebuilds mappings as plain dicts), spacing after a
+colon is not kept, removing the last key leaves the blank line above it,
+and a nested sequence item renders with ruamel's offset (`-   - a`).
