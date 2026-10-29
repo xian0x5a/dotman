@@ -326,6 +326,36 @@ def test_guess_color_yields_to_a_choice_and_to_a_failed_proposal(tmp_path, monke
         assert render_row_resolution(failed, use_color=True) == render_sync_term("Proposal failed", use_color=True)
 
 
+@pytest.mark.parametrize("editor_run, label", [
+    (None, "Merge conflict"),
+    # The Editor keeps the conflict blocks, so the saved outcome is still conflicted.
+    ('printf kept >> \\"$DOTMAN_SOURCE\\"', "Edited conflict"),
+])
+def test_workset_resolution_names_a_reconciliation_conflict_by_its_intent(tmp_path, monkeypatch, editor_run, label):
+    from dotman.sync_deck import edit_proposal
+    from tests.engine.test_sync_both_convergence import established
+
+    engine = established(tmp_path, monkeypatch,
+        f'editor = {{ run = "{editor_run}", io = "pipe" }}' if editor_run else "")
+    (tmp_path / "live/unit").write_bytes(b"conflict\nmiddle\nlast\n")
+    with engine.open_sync_session(engine.resolve_sync_scope([]), preview=True) as session:
+        row_id = session.view.rows[0].row_id
+        if editor_run:
+            edit_proposal(session, row_id)
+        app = SyncDeckApp(CommandDeck(session, use_color=False))
+
+        async def interact():
+            async with app.run_test(size=(110, 24)) as pilot:
+                if not editor_run:
+                    # Approving a Merge materializes it, which is where the conflict surfaces.
+                    await pilot.press("space")
+                    await pilot.pause()
+                assert session.view.rows[0].diagnostics[0].code == "reconciliation-conflict"
+                line = app.query_one(DataTable).render_line(1).text
+                assert label in line and "Proposal failed" not in line
+        run(interact())
+
+
 def test_fixed_resolution_is_recessive_and_offers_no_intent_key(tmp_path, monkeypatch):
     from dotman.cli_style import render_sync_term
     from dotman.sync_deck import render_row_resolution

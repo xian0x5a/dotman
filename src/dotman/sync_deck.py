@@ -832,6 +832,10 @@ def row_resolution(row) -> str:
         return "Additional Source Change"
     if any(item.severity == "error" for item in row.observation.diagnostics) or row.observation.state == "observation-failed":
         return "Observation failed"
+    if conflict_diagnostic(row):
+        # A conflict (from Merge, or an Edited outcome that kept its blocks) awaits a decision,
+        # not a fix, so the label keeps the intent that `r` or `e` would change.
+        return f"{resolution_label(row.intent)} conflict"
     if row.diagnostics:
         return "Proposal failed"
     if row.proposal is not None and row.proposal.noop:

@@ -536,6 +536,8 @@ SYNC_TERM_STYLE_BY_NAME: dict[str, tuple[str, ...]] = {
     "noop": ("2", "32"),
     "Observation failed": ("1", "31"),
     "Proposal failed": ("1", "31"),
+    "Merge conflict": ("1", "31"),
+    "Edited conflict": ("1", "31"),
     "failed": ("1", "31"),
     "pending": ("33",),
     "would-converge": ("36",),
