@@ -304,7 +304,8 @@ otherwise **Use repository** is the visible fallback and Merge is unavailable.
   selects and materializes all eligible work using policy defaults, reports frozen
   effects without confirmation, and fails if any blocker makes it unexecutable.
 - Active Probe Work has no Proposal, Approval, Base or Converged result. Its
-  selection activates only Guard-surviving hook families. Hook-only rows show
+  selection activates only Guard-surviving hook families. When `additional_triggers`
+  activated it, its detail panel names the entries with work under `Triggered by:`. Hook-only rows show
   canonical scope with `(pull-hooks)` or `(push-hooks)`, never a file identity
   invented for hooks. `--run-noop` retains otherwise inactive pre/post hooks
   without restoring a Guard-removed capability.
@@ -331,7 +332,9 @@ otherwise **Use repository** is the visible fallback and Merge is unavailable.
   Directory children expose the same Observation, Approval, Proposal and result
   fields as file targets; Primary Source write summaries also include `executable`.
   `probe_work`, `directory_root_work` and `hook_work` contain canonical `identity`, `selected`,
-  `directions` and `diagnostics`, without file/Proposal/Base fields.
+  `directions` and `diagnostics`, without file/Proposal/Base fields. `probe_work` entries
+  also carry `triggered_by`: the `additional_triggers` entries with work, such as
+  `main:agents.d_agents`, empty when the probe alone activated the target.
   `summary.selected_auxiliary` counts directly selected auxiliary rows.
   `commit_work` lists each offered repo with `repo`, `branch` (null when detached),
   `selected`, `result` (`committed`, `no-changes`, `skipped`, `failed`,

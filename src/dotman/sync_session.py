@@ -708,6 +708,7 @@ class ProposalSession:
                     resolved_inputs[0], observed.directional,
                     {"pull": retain_directional_hooks(repository_metadata, observed.hook_scopes["pull"]),
                      "push": publication_metadata},
+                    drifted=tuple(unit.identity for unit in observations if unit.state == "drifted"),
                     dir_symlink_mode=context.config.dir_symlink_mode,
                     command_runtime=context.projection.command_runtime, run_noop=run_noop, sink=sink,
                 ) + guard_skip_rows(observed.guard_skips)

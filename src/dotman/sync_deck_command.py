@@ -520,6 +520,11 @@ def sync_document(args, session, result, *, diagnostic=None) -> dict:
     def auxiliary_work(kind):
         return [{"identity": row.scope, "selected": row.included,
                  "directions": list(row.directions),
+                 **({"triggered_by": [
+                     render_package_label(repo_name=repo, package_id=package_id, target_name=target_name,
+                                          use_color=False)
+                     for repo, package_id, target_name in row.triggered_by
+                 ]} if kind == "probe" else {}),
                  "diagnostics": [{"code": item.code, "message": item.message} for item in row.diagnostics]}
                 for row in auxiliary if row.kind == kind]
     outcomes = {unit.identity: unit for unit in result.units} if result else {}

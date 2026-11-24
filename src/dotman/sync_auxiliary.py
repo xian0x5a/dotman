@@ -10,10 +10,10 @@ import stat
 from dotman.command_runtime import CommandRuntime, run_ordered
 from dotman.models import GuardSkip, ResolvedPackageIdentity, ResolvedSyncTarget
 from dotman.planning import PackagePlanningInput
-from dotman.projection import run_probe_command
+from dotman.projection import TargetMetadata, run_probe_command
 from dotman.progress import ProgressSink
 from dotman.sync_observation import Diagnostic, _ResolvedInputs, _identity
-from dotman.sync_publication import PublicationMetadata
+from dotman.sync_publication import PublicationMetadata, stage_target_order
 
 
 @dataclass(frozen=True)
@@ -28,6 +28,9 @@ class AuxiliaryRow:
     guard_skip: GuardSkip | None = None
     # Package inputs whose dependency closure brought this scope in; empty when requested.
     included_via: tuple[ResolvedPackageIdentity, ...] = ()
+    # Probe Work only: the additional_triggers entries with work in this run, as
+    # (repo, package, target or None); empty when the probe alone activated it.
+    triggered_by: tuple[tuple[str, str, str | None], ...] = ()
 
 
 def guard_skip_rows(skips: tuple[tuple[str, GuardSkip], ...]) -> tuple[AuxiliaryRow, ...]:
@@ -69,11 +72,35 @@ def retain_directional_hooks(
     )
 
 
+# Work identity for trigger matching: repo, package and target (None for package scope).
+_WorkKey = tuple[str, str, str | None]
+
+
+def _work_key(identity: ResolvedSyncTarget) -> _WorkKey:
+    return identity.repo, identity.package_id, identity.target_name
+
+
+def _triggers_with_work(target: TargetMetadata, work: set[_WorkKey]) -> tuple[_WorkKey, ...]:
+    """The target's additional_triggers entries that have work in this run.
+
+    Package instances are not told apart: any instance's work counts, which at
+    worst runs an idempotent hook that had nothing to do.
+    """
+    entries = []
+    for entry in target.target.additional_triggers or ():
+        package_id, _, target_name = entry.partition(".")
+        if any(key[0] == target.repo_name and key[1] == package_id and (not target_name or key[2] == target_name)
+               for key in work):
+            entries.append((target.repo_name, package_id, target_name or None))
+    return tuple(entries)
+
+
 def plan_auxiliary(
     inputs: _ResolvedInputs,
     directional: dict[str, list[PackagePlanningInput]],
     metadata: dict[str, PublicationMetadata],
     *,
+    drifted: tuple[ResolvedSyncTarget, ...] = (),
     command_runtime: CommandRuntime,
     run_noop: bool,
     dir_symlink_mode: str = "fail",
@@ -102,15 +129,15 @@ def plan_auxiliary(
         if sink is not None:
             sink.update(1)
 
-    rows = []
-    for identity, (_item, target) in inputs.items():
+    root_work = {
+        identity for identity, (_item, target) in inputs.items()
         if (target.target.target_type == "directory" and "push" in directions[identity] and target.chmod is not None
-                and target.live_path.is_dir() and (not target.live_path.is_symlink() or dir_symlink_mode == "follow")
-                and stat.S_IMODE(target.live_path.stat().st_mode) != int(target.chmod, 8)):
-            rows.append(AuxiliaryRow(identity.canonical, "directory-root", False, identity.canonical, ("push",)))
-        if identity in probed_present:
-            rows.append(AuxiliaryRow(identity.canonical, "probe", False, identity.canonical, directions[identity]))
+            and target.live_path.is_dir() and (not target.live_path.is_symlink() or dir_symlink_mode == "follow")
+            and stat.S_IMODE(target.live_path.stat().st_mode) != int(target.chmod, 8))
+    }
 
+    hook_rows = []
+    hook_work: set[_WorkKey] = set()
     for direction, frozen in metadata.items():
         scopes = {}
         for repo, hooks in frozen.repo_hooks:
@@ -122,14 +149,36 @@ def plan_auxiliary(
                 for hook in hooks:
                     if not (run_noop or hook.run_noop):
                         continue
+                    hook_work.add((package.repo_name, package.package_id,
+                                   hook.target_name if hook.scope_kind == "target" else None))
                     scope = (
                         ResolvedSyncTarget(package.repo_name, package.package_id, hook.target_name,
                                            bound_profile=package.bound_profile).canonical
                         if hook.scope_kind == "target" else package_scope
                     )
                     scopes[scope] = None
-        rows.extend(
+        hook_rows.extend(
             AuxiliaryRow(f"{scope} ({direction}-hooks)", "hook", False, scope, (direction,))
             for scope in scopes
         )
-    return tuple(rows)
+
+    # Triggers name direct dependencies, which run first, so deciding in stage order
+    # lets a target activated by its triggers count as work for a later one.
+    work = hook_work | {_work_key(identity) for identity in (*drifted, *probed_present, *root_work)}
+    stage_position = {identity: index for index, identity in enumerate(stage_target_order(metadata["push"]))}
+    triggered_by = {}
+    for identity, target in sorted(probe_targets, key=lambda pair: stage_position[pair[0]]):
+        entries = _triggers_with_work(target, work) if directions[identity] else ()
+        if entries:
+            triggered_by[identity] = entries
+            probed_present.add(identity)
+            work.add(_work_key(identity))
+
+    rows = []
+    for identity in inputs:
+        if identity in root_work:
+            rows.append(AuxiliaryRow(identity.canonical, "directory-root", False, identity.canonical, ("push",)))
+        if identity in probed_present:
+            rows.append(AuxiliaryRow(identity.canonical, "probe", False, identity.canonical, directions[identity],
+                                     triggered_by=triggered_by.get(identity, ())))
+    return tuple(rows) + tuple(hook_rows)
