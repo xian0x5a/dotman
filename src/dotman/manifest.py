@@ -22,7 +22,7 @@ VALID_TARGET_TYPE_VALUES = ("file", "directory")
 FORCED_COMMAND_PREFIX = "__dotman_command__:"
 PACKAGE_MANIFEST_FILE_NAME = "package.toml"
 TARGET_MANIFEST_KEYS = frozenset(
-    {"capture", "chmod", "compare", "disabled", "editor", "hooks", "ignore", "on_demand",
+    {"additional_triggers", "capture", "chmod", "compare", "disabled", "editor", "hooks", "ignore", "on_demand",
      "path", "path_rules", "preset", "probe", "render", "source", "sync_policy", "type"}
 )
 
@@ -694,6 +694,7 @@ def build_target_spec(
         if text is not None:
             validate_printable(text, kind=key, context=target_context)
     probe = normalize_target_command(value("probe"), field_name="probe", manifest_path=manifest_path, target_name=target_name)
+    additional_triggers = normalize_additional_triggers(value("additional_triggers"), context=target_context)
     target_type = normalize_target_type(value("type"), context=target_context)
     sync_policy = normalize_sync_policy(value("sync_policy"), context=target_context)
     def boolean_value(field_name: str) -> bool:
@@ -748,6 +749,7 @@ def build_target_spec(
         inherited_capture=capture, inherited_compare_repo=compare_repo, inherited_compare_live=compare_live,
         inherited_editor=editor, inherited_sync_policy=sync_policy)
     return TargetSpec(name=target_name, declared_in=manifest_path.parent, source=source, path=path, probe=probe,
+                      additional_triggers=additional_triggers,
                       target_type=target_type, sync_policy=sync_policy, chmod=chmod, render=render, capture=capture,
                       editor=editor, compare_repo=compare_repo, compare_live=compare_live,
                       additional_sources=editor.additional_sources,
@@ -933,6 +935,9 @@ def merge_target_specs(base: TargetSpec, override: TargetSpec) -> TargetSpec:
         source=override.source if override.source is not None else base.source,
         path=override.path if override.path is not None else base.path,
         probe=override.probe if override.probe is not None else base.probe,
+        additional_triggers=(
+            override.additional_triggers if override.additional_triggers is not None else base.additional_triggers
+        ),
         target_type=override.target_type if override.target_type is not None else base.target_type,
         sync_policy=override.sync_policy if override.sync_policy is not None else base.sync_policy,
         chmod=override.chmod if override.chmod is not None else base.chmod,
@@ -1003,10 +1008,25 @@ def validate_patch_capture(owner: str, *, render: str, capture: str, compare_rep
         raise UsageError(f'{owner} capture = "patch" requires compare.repo = "render" and compare.live = "raw"')
 
 
+def normalize_additional_triggers(value: Any, *, context: str) -> tuple[str, ...] | None:
+    """Entries are `package` or `package.target`; `.` only separates the two."""
+    entries = normalize_string_list(value, context=context, key="additional_triggers")
+    if entries == ():
+        raise UsageError(f"{context} additional_triggers must name at least one entry; remove it instead")
+    for entry in entries or ():
+        validate_printable(entry, kind="additional_triggers entry", context=context)
+        if not all(entry.split(".")) or entry.count(".") > 1:
+            raise UsageError(f"{context} additional_triggers entry '{entry}' must be 'package' or 'package.target'")
+    return entries
+
+
 def validate_probe_target_config(*, repo_name: str, package: PackageSpec, target: TargetSpec) -> None:
-    if target.probe is None:
-        return
     target_label = repo_qualified_target_text(repo_name=repo_name, package_id=package.id, target_name=target.name)
+    if target.probe is None:
+        if target.additional_triggers is not None:
+            # A pure trigger target is `probe = "exit 100"` for now.
+            raise UsageError(f"target '{target_label}' uses additional_triggers and must define probe")
+        return
     if resolve_sync_policy(package=package, target=target) == "push-only-delete":
         raise UsageError(f"target '{target_label}' uses probe and cannot use push-only-delete; use push-only")
     forbidden_probe_fields = {

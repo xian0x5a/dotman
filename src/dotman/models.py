@@ -230,6 +230,9 @@ class TargetSpec:
     # Planned only when selected by exact target selector.
     on_demand: bool = False
     probe: str | None = None
+    # `package` or `package.target` entries from direct `depends` whose work in a run
+    # also activates this probe target, whatever its probe reports.
+    additional_triggers: tuple[str, ...] | None = None
 
 
 HookCommandIO = Literal["pipe", "tty"]

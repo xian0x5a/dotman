@@ -182,6 +182,14 @@ Resolution Intent, Editor, Proposal, Approval, Base or Converged result. Selecti
 activates normal hooks only in its surviving families: pull hooks during
 Repository Apply, then push hooks during Live Publication.
 
+A probe target with `additional_triggers` ([repository configuration](repository.md#targets))
+is also Probe Work when an entry it names has a drifted unit, Probe Work,
+Directory Root Work or Hook Work, whatever its probe reported. Planning decides
+these targets in execution order after the other rows, so one activated by its
+triggers counts as work for a later one that names it. Nothing runs again at
+execution: within each stage, the dependency-first order puts the entries' work
+before its hooks.
+
 Independently noop-eligible hooks remain selectable **Hook Work**, identified
 only by canonical repository, package-instance or target scope plus
 `(pull-hooks)` or `(push-hooks)`. The operation's noop option makes both surviving families noop-eligible,

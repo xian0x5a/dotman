@@ -87,6 +87,7 @@ MANIFEST_FIELDS: dict[type, ManifestTable] = {
         "source": _field("source"),
         "path": _field("path"),
         "probe": _field("probe"),
+        "additional_triggers": _field("additional_triggers", append="strings"),
         "type": _field("target_type"),
         "sync_policy": _field("sync_policy"),
         "chmod": _field("chmod"),

@@ -116,7 +116,7 @@ under `examples/repo/`.
 - `append` should mirror the object shape it targets, for example:
   - `[append.hooks]`
   - `pre_push = ["{{ INSTALL }} extra-tool"]`
-- Appendable lists: `depends`, `reserved_paths`, `ignore.patterns` (package or target), `editor.additional_sources`, hook commands, and list-valued `vars`.
+- Appendable lists: `depends`, `reserved_paths`, `ignore.patterns` (package or target), `editor.additional_sources`, `additional_triggers`, hook commands, and list-valued `vars`.
 - `append` should fail if the targeted inherited field is not a list. Path rules are a keyed table: to add one, declare it in the child.
 - Appending to an appendable list that no parent sets starts from an empty list. Appending to a hook or `vars` entry that doesn't exist fails.
 - `remove` and `append` errors name the child's `package.toml`.
@@ -201,6 +201,33 @@ preset = "jinja-patch"
   - `100`: inactive/noop; the target stays out of normal selection and hooks run only if explicitly noop-eligible.
   - any other non-zero status: hard planning failure.
 - Planning runs probes concurrently, up to eight at a time (fewer on machines with fewer cores), so a probe must not depend on another probe or share scratch files with it.
+- A probe target may set `additional_triggers`, a non-empty list of `package` or
+  `package.target` entries. The target is active when its probe exits `0` or any entry has
+  work in the run: a drifted file, Probe Work (including a target its own triggers
+  activated), Directory Root Work or Hook Work, in any package instance. Its hooks then run
+  at its normal position, after the entries' work in the same stage, so push hooks see what
+  the entries wrote during push (pull hooks run earlier, in Repository Apply); the probe
+  is not run again. Use it when a probe reads what a dependency writes in the same run,
+  which planning probes before that write:
+  ```toml
+  [targets.claude_skills_link]
+  sync_policy = "push-only"
+  probe = 'sh "$DOTMAN_REPO_ROOT/scripts/manage_child_symlinks.sh" probe "~/.claude/skills" "~/.agents/skills"'
+  additional_triggers = ["agents.d_agents", "agents.managed_skills_reconciled"]
+  ```
+  - Each entry names a package that the target's package lists in `depends`, or one of its
+    targets; a group in `depends` names its member packages. A package reached only
+    through another dependency, the target's own package, and a dependency that depends
+    back on the target's package are rejected, as is an entry naming no enabled target.
+    Dotman checks entries when it plans the package.
+  - The target acts only when it is in the run's scope: `dotman push agents` alone does not
+    run `claude_skills_link`'s hooks. Trigger activation is ordinary activation, so the
+    target's package and repo hooks activate as for any active probe target.
+  - The hooks run whenever an entry has work, even when there turns out to be nothing to
+    do, so they should be idempotent.
+  - Setting `additional_triggers` without `probe`, or to `[]`, is an error. A target that
+    should act only on its triggers uses `probe = "exit 100"`. Entries append under
+    `extends` like `depends`.
 - Probe targets do not claim repo/live paths, do not participate in target ownership conflicts, do not create snapshots, and never execute file push/pull steps.
 - Use `sync_policy = "push-only"` for install/update probes that should run only before push-style setup.
 - Probes reject effective `push-only-delete`, including inherited package policy:

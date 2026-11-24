@@ -776,6 +776,15 @@ def included_via_fact(row: SessionRow | AuxiliaryRow, *, use_color: bool) -> lis
     return [("Included via", ", ".join(labels))]
 
 
+def triggered_by_fact(row: AuxiliaryRow, *, use_color: bool) -> list[tuple[str, str]]:
+    if not row.triggered_by:
+        return []
+    labels = (render_package_label(repo_name=repo, package_id=package_id, target_name=target_name,
+                                   use_color=use_color)
+              for repo, package_id, target_name in row.triggered_by)
+    return [("Triggered by", ", ".join(labels))]
+
+
 def row_selected(row) -> bool:
     return row.included if selection_uses_inclusion(row) else row.approved
 
@@ -1512,6 +1521,7 @@ class SyncDeckApp(App[bool]):
             if row.guard_skip is not None:
                 facts.append((render_sync_term('Guard skipped', use_color=use_color), guard_skip_explanation(row)))
             facts += included_via_fact(row, use_color=use_color)
+            facts += triggered_by_fact(row, use_color=use_color)
         else:
             identity = unit_label(row, use_color=use_color)
             facts += included_via_fact(row, use_color=use_color)

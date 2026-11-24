@@ -39,6 +39,7 @@ from dotman.models import (
     repo_qualified_target_text,
     target_path_rule_matches,
 )
+from dotman.package_resolution import resolve_package_ids
 from dotman.repository import Repository
 from dotman.templates import render_template_file, render_template_string
 
@@ -111,6 +112,39 @@ def _projection_command(value: str) -> str:
     return value[len(FORCED_COMMAND_PREFIX):] if value.startswith(FORCED_COMMAND_PREFIX) else value
 
 
+def validate_additional_triggers(*, repo: Repository, package: PackageSpec, target: TargetSpec) -> None:
+    """Each entry must run before the target: a package its `depends` names directly.
+
+    A group in `depends` names its member packages. A dependency that also depends
+    back on the package is rejected: in a cycle either may run first.
+    """
+    target_label = repo_qualified_target_text(
+        repo_name=repo.config.name, package_id=package.id, target_name=target.name,
+    )
+    direct = {
+        package_id
+        for dependency in package.depends or ()
+        for package_id in (repo.expand_group(dependency) if dependency in repo.groups else (dependency,))
+    }
+    for entry in target.additional_triggers or ():
+        package_id, _, target_name = entry.partition(".")
+        if package_id not in direct:
+            raise UsageError(
+                f"target '{target_label}' additional_triggers entry '{entry}' must name a package "
+                f"that '{package.id}' depends on directly"
+            )
+        if package.id in resolve_package_ids(repo, package_id, "package"):
+            raise UsageError(
+                f"target '{target_label}' additional_triggers entry '{entry}' names a package that depends "
+                f"back on '{package.id}', so it may run after it"
+            )
+        if not target_name:
+            continue
+        entry_target = (repo.resolve_package(package_id).targets or {}).get(target_name)
+        if entry_target is None or entry_target.disabled:
+            raise UsageError(f"target '{target_label}' additional_triggers entry '{entry}' names no target")
+
+
 def build_target_metadata(
     *,
     repo: Repository,
@@ -139,6 +173,8 @@ def build_target_metadata(
             if not sync_policy_allows_operation(sync_policy, operation=operation):
                 continue
             if target.probe is not None:
+                if target.additional_triggers is not None:
+                    validate_additional_triggers(repo=repo, package=package, target=target)
                 probe_command = render_template_string(
                     target.probe,
                     context,
