@@ -11,6 +11,8 @@ from dotman.models import (
     ResolvedPackageSelection,
     ResolvedSyncScope,
     ResolvedSyncTarget,
+    resolved_package_identity_key,
+    resolved_package_selection_key,
     target_separator_index,
 )
 from dotman.package_resolution import parse_package_ref_text
@@ -240,6 +242,58 @@ def _scope_closure(
         ) in selected_keys
     ]
 
+
+def _dependency_first(
+    context,
+    selections: list[ResolvedPackageSelection],
+    all_selections: list[ResolvedPackageSelection],
+) -> list[ResolvedPackageSelection]:
+    """Move each selection after the selected packages it depends on.
+
+    Input order decides only between unrelated packages. Without this, an exact
+    target or `--no-deps` input listed before its dependency runs first.
+    """
+    pending = {resolved_package_selection_key(selection): selection for selection in selections}
+    closures = {
+        key: {resolved_package_selection_key(dependency) for dependency in _scope_closure(context, all_selections, selection)}
+        for key, selection in pending.items()
+    }
+    # A package in a `depends` cycle with this one may run on either side of it,
+    # so only one-way dependencies move a selection; cycles keep selector order.
+    waits_for = {
+        key: {other for other in closures[key] if other != key and other in pending and key not in closures[other]}
+        for key in pending
+    }
+    ordered: dict[tuple[str, str, str | None, str], ResolvedPackageSelection] = {}
+    while pending:
+        key = next(key for key in pending if waits_for[key].issubset(ordered))
+        ordered[key] = pending.pop(key)
+    return list(ordered.values())
+
+
+def _declaration_order(
+    context,
+    selections: list[ResolvedPackageSelection],
+    targets: list[ResolvedSyncTarget],
+) -> list[ResolvedSyncTarget]:
+    """Order targets by package order, then declaration order within a package.
+
+    The stable sort keeps a target's child-path selections in selector order.
+    """
+    package_position: dict[tuple[str, str, str | None], int] = {}
+    for index, selection in enumerate(selections):
+        package_position.setdefault(resolved_package_identity_key(selection.identity), index)
+
+    def position(target: ResolvedSyncTarget) -> tuple[int, int]:
+        package = context.repositories[target.repo].resolve_package(target.package_id)
+        return (
+            package_position[(target.repo, target.package_id, target.bound_profile)],
+            list(package.targets or {}).index(target.target_name),
+        )
+
+    return sorted(targets, key=position)
+
+
 def _target_exists(context, selection: ResolvedPackageSelection, target_name: str) -> bool:
     repo = context.repositories[selection.identity.repo]
     package = repo.resolve_package(selection.identity.package_id)
@@ -293,6 +347,10 @@ def resolve_sync_scope(
                 if key not in selected_keys:
                     selected_keys.add(key)
                     selected_selections.append(selection)
+
+    # Tracked order is not dependency-first either: a dependency tracked under its own
+    # profile replaces the implicit instance and lands after its dependent.
+    selected_selections = _dependency_first(context, selected_selections, all_selections)
 
     # Static ownership and collision resolution runs against the full tracked graph
     # before narrowing to the requested identities.
@@ -442,7 +500,7 @@ def resolve_sync_scope(
     return ResolvedSyncScope(
         selectors=normalized_selectors,
         package_selections=public_selections,
-        targets=tuple(selected_targets),
+        targets=tuple(_declaration_order(context, selected_selections, selected_targets)),
         # A scope any input names directly is not there because of a dependency.
         included_via={
             scope_label: tuple(roots) for scope_label, roots in dependency_roots.items()
