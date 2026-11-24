@@ -27,8 +27,9 @@ stay quiet and nothing runs "always on" (`run_noop` was rejected for that reason
 - Order: within its package a `probe_after` target runs after the normal targets;
   packages already run dependency-first.
 - Chaining (added after the user's "go"): planning decides `probe_after` targets
-  after the other probes, one at a time in execution order, so an earlier
-  conditional or active one counts as work for a later one that names it.
+  after the other probes, each after the earlier `probe_after` targets it names,
+  so an earlier conditional or active one counts as work for a later one that
+  names it. Unchained ones probe concurrently, in waves.
 - Planning: normal probes run first. A `probe_after` target is **conditional**
   when any listed entry has work in this run (a drifted unit row, Probe Work,
   Directory Root Work or Hook Work), matched by repo + package (+ target),
@@ -111,7 +112,7 @@ stay quiet and nothing runs "always on" (`run_noop` was rejected for that reason
   `docs/repository.md`, `docs/sync.md`, `docs/cli.md` and `GLOSSARY.md`.
 - The issue repro passes in an isolated clone of the dotfiles repo.
 - Chaining was first rejected as needing sequential planning; the loop turned out
-  small because only `probe_after` targets need ordering, and the other probes
-  still run concurrently.
+  small because only `probe_after` targets need ordering. The first version probed
+  them one at a time; waves restore concurrency for targets that do not chain.
 - The first design gated every hook and promised checks that never ran; asking "what
   does this step gate?" for each stage would have caught both earlier.

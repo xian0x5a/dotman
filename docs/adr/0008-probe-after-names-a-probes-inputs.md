@@ -4,7 +4,7 @@ Probes run during planning, before any write, so a probe that reads what the sam
 
 Entries must already run before the target: its own package (whose normal targets it follows) or its `depends` closure, without a cycle back. The target activates only its own hooks, because its package's and repo's pre hooks have run by its turn.
 
-`probe_after` targets may wait for each other. Planning decides them after the other probes, one at a time in execution order, so each sees every row that runs before it, an earlier conditional row included, and none after it. Within a package they run in declaration order, so an entry naming one declared later is rejected. Without this, a chain needs a workaround that names the earlier target's own inputs instead, which goes stale when those inputs change.
+`probe_after` targets may wait for each other. Planning decides them after the other probes, each after the earlier `probe_after` targets it names, so it sees an earlier conditional row and none that runs after it. Targets that name none of each other probe concurrently, in waves. Within a package they run in declaration order, so an entry naming one declared later is rejected. Without this, a chain needs a workaround that names the earlier target's own inputs instead, which goes stale when those inputs change.
 
 Rejected:
 

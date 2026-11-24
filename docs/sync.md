@@ -183,9 +183,8 @@ activates normal hooks only in its surviving families: pull hooks during
 Repository Apply, then push hooks during Live Publication.
 
 A Probe with `probe_after` ([repository configuration](repository.md#targets))
-is decided after the rest of the workset, one at a time in execution order, so
-an earlier one's Probe Work, conditional or not, counts for a later one that
-names it. When an entry it names has a drifted
+is decided after the rest of the workset and after the earlier ones it names,
+so their Probe Work, conditional or not, counts for it. When an entry it names has a drifted
 unit, Probe Work, Directory Root Work or Hook Work, and a hook of the target
 is not noop-eligible, its probe does not run at planning: it becomes
 **conditional Probe Work**, a row whose outcome waits for those writes. Execution runs the probe as a `probe` step right before the

@@ -218,8 +218,9 @@ preset = "jinja-patch"
     inheriting package, so a parent's own-package entries follow its children.
   - Within its package the target runs after the normal targets, and `probe_after` targets run
     in declaration order; packages already run dependency-first. Planning decides these targets
-    after the other probes, one at a time in that order, so a conditional or active one counts
-    as work for any later one that names it.
+    after the other probes, each after the earlier `probe_after` targets it names, so a
+    conditional or active one counts as work for a later one that names it. Targets that name
+    none of each other probe concurrently.
   - When an entry has work in the run (a drifted file, Probe Work, Directory Root Work or Hook
     Work, in any package instance) and one of the target's hooks would wait for the probe (one
     that is not noop-eligible, below), planning skips the probe and shows the target as

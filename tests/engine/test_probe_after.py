@@ -558,3 +558,45 @@ probe_after = ["app.first"]
     engine = DotmanEngine.from_config_path(config)
     with pytest.raises(UsageError, match="itself"):
         engine.open_sync_session(engine.resolve_sync_scope(), preview=True)
+
+
+def test_unchained_probe_after_targets_probe_concurrently_at_planning(tmp_path, monkeypatch, capsys):
+    # Each probe leaves a marker and waits for the other's; a serial planner times the first one out.
+    markers = tmp_path / "markers"
+    markers.mkdir()
+
+    def target(name, other):
+        wait = (f"touch {markers / name}; for i in $(seq 100); do "
+                f"[ -f {markers / other} ] && exit 0; sleep 0.05; done; exit 100")
+        return f'''[targets.{name}]
+sync_policy = "push-only"
+probe = "{wait}"
+probe_after = ["base.conf"]
+[targets.{name}.hooks]
+post_push = "echo {name} >> {tmp_path / 'log'}"
+'''
+    app = 'depends = ["base"]\n' + target("one", "two") + target("two", "one")
+    config = build(tmp_path, monkeypatch, app, base_files=IN_SYNC)
+    _code, preview = run_cli(config, capsys, "push", "--dry-run")
+    assert {probe_row(preview, f"main:app.{name}")["conditional"] for name in ("one", "two")} == {False}
+
+
+def test_probe_after_target_does_not_wait_for_one_declared_after_it(tmp_path, monkeypatch, capsys):
+    # `second` is conditional (drifted base.conf, a hook waits), but it runs after `first`,
+    # so `first`'s whole-package entry must not see it. Both need hooks: without one,
+    # no row is ever conditional and the guard could not fail.
+    hook = f'[targets.{{name}}.hooks]\npost_push = "echo {{name}} >> {tmp_path / 'log'}"\n'
+    app = '''depends = ["base"]
+[targets.first]
+sync_policy = "push-only"
+probe = "true"
+probe_after = ["app"]
+''' + hook.format(name="first") + '''[targets.second]
+sync_policy = "push-only"
+probe = "true"
+probe_after = ["base.conf"]
+''' + hook.format(name="second")
+    config = build(tmp_path, monkeypatch, app)
+    _code, preview = run_cli(config, capsys, "push", "--dry-run")
+    assert probe_row(preview, "main:app.second")["conditional"] is True
+    assert probe_row(preview, "main:app.first")["conditional"] is False

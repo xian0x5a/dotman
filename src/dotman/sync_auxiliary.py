@@ -182,30 +182,46 @@ def plan_auxiliary(
             for hooks in package.hooks.values() for hook in hooks
         )
 
-    # probe_after targets read what earlier work writes, so they are decided last,
-    # one at a time in execution order: each sees every row that runs before it,
-    # earlier probe_after rows included, and none that runs after it.
+    # probe_after targets read what earlier work writes, so they are decided after
+    # the other probes. Each also waits for the earlier probe_after targets its
+    # entries name, never for one that runs after it; the ones whose waits are
+    # decided form a wave and probe concurrently.
+    def work_key(identity: ResolvedSyncTarget) -> _WorkKey:
+        return identity.repo, identity.package_id, identity.target_name
+
     late_targets = {identity: target for identity, target in probe_targets if target.target.probe_after is not None}
-    late_keys = {(identity.repo, identity.package_id, identity.target_name) for identity in late_targets}
-    work = (hook_work - late_keys) | {
-        (identity.repo, identity.package_id, identity.target_name)
-        for identity in (*drifted, *probed_present, *root_work)
+    work = (hook_work - {work_key(identity) for identity in late_targets}) | {
+        work_key(identity) for identity in (*drifted, *probed_present, *root_work)
     }
     stage_position = {identity: index for index, identity in enumerate(stage_target_order(metadata["push"]))}
+    pending = sorted(late_targets, key=stage_position.__getitem__)
+    waits_on = {
+        identity: [earlier for earlier in pending[:index] if _checked_after(late_targets[identity], {work_key(earlier)})]
+        for index, identity in enumerate(pending)
+    }
     checked_after = {}
-    for identity in sorted(late_targets, key=stage_position.__getitem__):
-        target = late_targets[identity]
-        after = _checked_after(target, work) if waits_for_probe(identity) else ()
-        if after:
-            checked_after[identity] = after
-            if sink is not None:
-                sink.update(1)
-        else:
-            # Without work before it, planning already sees the state its turn would.
-            probed_present |= run_probes([(identity, target)])
-        key = (identity.repo, identity.package_id, identity.target_name)
-        if identity in checked_after or identity in probed_present or key in hook_work:
-            work.add(key)
+    has_work: dict[ResolvedSyncTarget, bool] = {}
+    while pending:
+        # The first pending target waits only on decided ones, so a wave is never empty.
+        wave = [identity for identity in pending if all(earlier in has_work for earlier in waits_on[identity])]
+        to_probe = []
+        for identity in wave:
+            target = late_targets[identity]
+            seen = work | {work_key(earlier) for earlier in waits_on[identity] if has_work[earlier]}
+            after = _checked_after(target, seen) if waits_for_probe(identity) else ()
+            if after:
+                checked_after[identity] = after
+                if sink is not None:
+                    sink.update(1)
+            else:
+                # Without work before it, planning already sees the state its turn would.
+                to_probe.append((identity, target))
+        probed_present |= run_probes(to_probe)
+        for identity in wave:
+            has_work[identity] = (
+                identity in checked_after or identity in probed_present or work_key(identity) in hook_work
+            )
+        pending = [identity for identity in pending if identity not in has_work]
 
     rows = []
     for identity in inputs:
