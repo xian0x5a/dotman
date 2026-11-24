@@ -116,7 +116,7 @@ under `examples/repo/`.
 - `append` should mirror the object shape it targets, for example:
   - `[append.hooks]`
   - `pre_push = ["{{ INSTALL }} extra-tool"]`
-- Appendable lists: `depends`, `reserved_paths`, `ignore.patterns` (package or target), `editor.additional_sources`, hook commands, and list-valued `vars`.
+- Appendable lists: `depends`, `reserved_paths`, `ignore.patterns` (package or target), `editor.additional_sources`, `additional_triggers`, hook commands, and list-valued `vars`.
 - `append` should fail if the targeted inherited field is not a list. Path rules are a keyed table: to add one, declare it in the child.
 - Appending to an appendable list that no parent sets starts from an empty list. Appending to a hook or `vars` entry that doesn't exist fails.
 - `remove` and `append` errors name the child's `package.toml`.
@@ -205,7 +205,8 @@ preset = "jinja-patch"
   `package.target` entries. The target is active when its probe exits `0` or any entry has
   work in the run: a drifted file, Probe Work (including a target its own triggers
   activated), Directory Root Work or Hook Work, in any package instance. Its hooks then run
-  at its normal position, after the entries, so they see what the entries wrote; the probe
+  at its normal position, after the entries' work in the same stage, so push hooks see what
+  the entries wrote during push (pull hooks run earlier, in Repository Apply); the probe
   is not run again. Use it when a probe reads what a dependency writes in the same run,
   which planning probes before that write:
   ```toml

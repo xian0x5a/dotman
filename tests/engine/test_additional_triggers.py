@@ -1,6 +1,7 @@
 """`additional_triggers`: a probe target that is also active when listed inputs have work in the run."""
 
 import json
+import re
 
 import pytest
 
@@ -186,32 +187,37 @@ type = "file"
 '''
 
 
-def assert_rejected_as_additional_triggers(config):
-    """Loading, resolving or planning rejects it; an unsupported-key error is not a rejection of the value."""
+def assert_rejected_as_additional_triggers(config, reason):
+    """Loading, resolving or planning rejects it for `reason`, not as an unsupported key."""
     with pytest.raises(UsageError, match="additional_triggers") as caught:
         engine = DotmanEngine.from_config_path(config)
         engine.open_sync_session(engine.resolve_sync_scope(), preview=True)
     assert "unsupported keys" not in str(caught.value)
+    assert re.search(reason, str(caught.value)), str(caught.value)
 
 
-@pytest.mark.parametrize("app_toml, kwargs", [
+SHAPE = "must be 'package' or 'package.target'"
+DIRECT = "depends on directly"
+
+
+@pytest.mark.parametrize("app_toml, kwargs, reason", [
     # shape
-    (lambda p: consumer(p, triggers="[]"), {}),
-    (lambda p: consumer(p, triggers="[1]"), {}),
-    (lambda p: consumer(p, triggers='["a.b.c"]'), {}),
-    (lambda p: consumer(p, triggers='[".x"]'), {}),
-    (lambda p: 'depends = ["base"]\n' + FILE_TARGET, {}),
-    (lambda p: 'depends = ["base"]\n[targets.t]\nadditional_triggers = ["base"]\n', {}),
+    (lambda p: consumer(p, triggers="[]"), {}, "at least one entry"),
+    (lambda p: consumer(p, triggers="[1]"), {}, "must be a string"),
+    (lambda p: consumer(p, triggers='["a.b.c"]'), {}, SHAPE),
+    (lambda p: consumer(p, triggers='[".x"]'), {}, SHAPE),
+    (lambda p: 'depends = ["base"]\n' + FILE_TARGET, {}, "must define probe"),
+    (lambda p: 'depends = ["base"]\n[targets.t]\nadditional_triggers = ["base"]\n', {}, "must define probe"),
     # graph
-    (lambda p: consumer(p, triggers='["app"]'), {}),
-    (lambda p: consumer(p, triggers='["unknown"]'), {}),
-    (lambda p: consumer(p, triggers='["base"]', depends='["mid"]'), {"extra_packages": {"mid": 'depends = ["base"]\n'}}),
-    (lambda p: consumer(p, triggers='["base.conf"]'), {"cyclic": True}),
-    (lambda p: consumer(p, triggers='["base.missing"]'), {"cyclic_free_targets": True}),
-    (lambda p: consumer(p, triggers='["base.off"]'), {"cyclic_free_targets": True}),
+    (lambda p: consumer(p, triggers='["app"]'), {}, DIRECT),
+    (lambda p: consumer(p, triggers='["unknown"]'), {}, DIRECT),
+    (lambda p: consumer(p, triggers='["base"]', depends='["mid"]'), {"extra_packages": {"mid": 'depends = ["base"]\n'}}, DIRECT),
+    (lambda p: consumer(p, triggers='["base.conf"]'), {"cyclic": True}, "depends\\s+back"),
+    (lambda p: consumer(p, triggers='["base.missing"]'), {"cyclic_free_targets": True}, "names no target"),
+    (lambda p: consumer(p, triggers='["base.off"]'), {"cyclic_free_targets": True}, "names no target"),
 ], ids=["empty", "non-string", "three-parts", "empty-package", "file-target", "no-probe",
         "own-package", "unknown-package", "transitive-only", "cycle", "missing-target", "disabled-target"])
-def test_invalid_additional_triggers_are_usage_errors(tmp_path, monkeypatch, app_toml, kwargs):
+def test_invalid_additional_triggers_are_usage_errors(tmp_path, monkeypatch, app_toml, kwargs, reason):
     kwargs = dict(kwargs)
     base_toml = None
     if kwargs.pop("cyclic", False):
@@ -219,7 +225,7 @@ def test_invalid_additional_triggers_are_usage_errors(tmp_path, monkeypatch, app
     if kwargs.pop("cyclic_free_targets", False):
         base_toml = (CYCLIC_BASE % {"root": tmp_path}).replace('depends = ["app"]\n', "")
     config = build(tmp_path, monkeypatch, app_toml(tmp_path), base_toml=base_toml, **kwargs)
-    assert_rejected_as_additional_triggers(config)
+    assert_rejected_as_additional_triggers(config, reason)
 
 
 @pytest.mark.parametrize("triggers", ['["base"]', '["base.conf"]', '["base", "base.conf"]'])
@@ -254,4 +260,29 @@ def test_inherited_triggers_are_validated_against_the_childs_depends(tmp_path, m
 def test_inherited_triggers_the_child_cannot_satisfy_are_rejected(tmp_path, monkeypatch):
     parent = PARENT % {"log": tmp_path / "log"}
     config = build(tmp_path, monkeypatch, 'extends = ["parent"]\n', extra_packages={"parent": parent})
-    assert_rejected_as_additional_triggers(config)
+    assert_rejected_as_additional_triggers(config, "depends on directly")
+
+
+@pytest.mark.parametrize("triggers", ['["base"]', '["base.conf"]'])
+def test_entries_may_name_a_member_of_a_group_in_depends(tmp_path, monkeypatch, capsys, triggers):
+    config = build(tmp_path, monkeypatch, consumer(tmp_path, triggers=triggers, depends='["bundle"]'))
+    (tmp_path / "repo/groups").mkdir()
+    (tmp_path / "repo/groups/bundle.toml").write_text('members = ["base"]\n')
+    _code, preview = run_cli(config, capsys, "push", "--dry-run")
+    assert probe_row(preview)["triggered_by"] == [f"main:{triggers[2:-2]}"]
+
+
+def test_child_appends_triggers_to_the_inherited_ones(tmp_path, monkeypatch, capsys):
+    other = f'''[targets.file]
+source = "file"
+path = "{tmp_path}/live/other-file"
+type = "file"
+sync_policy = "push-only"
+'''
+    parent = PARENT.replace('additional_triggers = ["base.conf"]', 'additional_triggers = ["base"]') % {
+        "log": tmp_path / "log"}
+    child = 'extends = ["parent"]\n[append]\ndepends = ["base", "other"]\n[append.targets.check]\nadditional_triggers = ["other"]\n'
+    config = build(tmp_path, monkeypatch, child, extra_packages={"parent": parent, "other": other})
+    (tmp_path / "repo/packages/other/file").write_bytes(b"x")
+    _code, preview = run_cli(config, capsys, "push", "--dry-run")
+    assert sorted(probe_row(preview)["triggered_by"]) == ["main:base", "main:other"]
