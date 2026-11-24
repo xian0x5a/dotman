@@ -70,7 +70,7 @@ def prepare_publication(
     repos = {}
     for item in inputs:
         context = item.package_context
-        targets = [
+        targets = execution_order([
             TargetPlan(
                 package_id=target.package_id, target_name=target.target_name,
                 repo_path=target.repo_path, live_path=target.live_path,
@@ -79,9 +79,10 @@ def prepare_publication(
                 # One static target may supply metadata to both Sync stages.
                 command_env={**target.command_env, "DOTMAN_OPERATION": "push"},
                 file_symlink_mode=file_symlink_mode, dir_symlink_mode=dir_symlink_mode,
+                probe_command=target.probe_command, probe_after=target.target.probe_after or (),
             )
             for target in item.target_metadata
-        ]
+        ])
         hooks = plan_hooks(
             item.repo, context.resolved_packages, context.context,
             selection=item.selection, operation="push", inferred_os=context.inferred_os,
@@ -102,12 +103,19 @@ def prepare_publication(
     return PublicationMetadata(tuple(packages), tuple(repos.items()))
 
 
+def execution_order(targets: list[TargetPlan]) -> list[TargetPlan]:
+    """A probe_after target runs after its package's normal targets, whose writes it may read."""
+    return sorted(targets, key=lambda target: bool(target.probe_after))
+
+
 @dataclass(frozen=True)
 class HookActivation:
     """Retained hook scope; a Probe activates normal hooks without a payload."""
 
     scope: str
     target: ResolvedSyncTarget | None = None
+    # Conditional Probe Work checks its probe again right before its own hooks.
+    recheck: bool = False
 
 
 def _package_scope(package: PackagePlan) -> str:
@@ -135,7 +143,11 @@ def _hook_scopes(
         for target in package.target_plans:
             identity = _target_identity(package, target)
             identities.add(identity)
-            ancestors[identity.canonical] = {identity.canonical, scope, package.repo_name}
+            # By a probe_after target's turn its package and repo pre hooks have
+            # already run or been skipped, so it activates only its own hooks.
+            ancestors[identity.canonical] = (
+                {identity.canonical} if target.probe_after else {identity.canonical, scope, package.repo_name}
+            )
     normal = set()
     noop = set()
     for identity in active_targets:
@@ -294,6 +306,7 @@ def ordered_stage_steps(
 ) -> tuple[ExecutionStep, ...]:
     """Freeze the nested stage order once; the same sequence drives IO and results."""
     normal, noop = _hook_scopes(metadata, auxiliary, active_targets)
+    rechecked = {activation.target for activation in auxiliary if activation.recheck}
     steps = []
     matched = set()
 
@@ -320,6 +333,12 @@ def ordered_stage_steps(
                 identity = _target_identity(package, target)
                 target_hooks = [hook for hook in values if hook.scope_kind == "target"
                                 and hook.target_name == target.target_name]
+                if identity in rechecked:
+                    # Gates the hooks below; execution skips them when it exits 100.
+                    steps.append(ExecutionStep(
+                        repo_name=repo, package_id=package.package_id, package_plan=package,
+                        target_plan=target, kind="probe", action="probe", scope_kind="target",
+                    ))
                 hooks(target_hooks, f"pre_{direction}", identity.canonical, package, target)
                 for unit_target in _topology_order(metadata, package, target, target_work):
                     unit_identity = _target_identity(package, unit_target)
@@ -345,6 +364,33 @@ def activates_hooks(metadata: PublicationMetadata, identity: ResolvedSyncTarget,
         metadata, {identity: ()}, direction=direction, active_targets=[identity]))
 
 
+ProbeRecheck = Callable[[ResolvedSyncTarget], bool]
+# Steps that run a command rather than consume a unit's frozen effects.
+COMMAND_STEP_KINDS = frozenset({"hook", "probe"})
+
+
+def run_command_step(
+    step: ExecutionStep, *, recheck_probe: ProbeRecheck | None, inactive: set[ResolvedSyncTarget],
+    stream_output: bool, no_confirm: bool,
+) -> ExecutionStepResult:
+    """Run a hook or probe step; a probe exiting 100 skips its target's later hooks.
+
+    A probe exit other than 0 or 100 raises, so the stage stops like a failed hook.
+    """
+    identity = (_target_identity(step.package_plan, step.target_plan)
+                if step.scope_kind == "target" and step.target_plan is not None else None)
+    if step.kind == "probe":
+        if recheck_probe is None:
+            raise ValueError("Probe step has no recheck")
+        if recheck_probe(identity):
+            return ExecutionStepResult(step, "ok")
+        inactive.add(identity)
+        return ExecutionStepResult(step, "skipped", skip_reason="probe-inactive")
+    if identity in inactive:
+        return ExecutionStepResult(step, "skipped", skip_reason="probe-inactive")
+    return _execute_step(step, stream_output=stream_output, no_confirm=no_confirm)
+
+
 def unattempted_steps(steps: Sequence[ExecutionStep]) -> tuple[ExecutionStepResult, ...]:
     return tuple(ExecutionStepResult(step, "unattempted", skip_reason="earlier-failure")
                  for step in steps)
@@ -361,6 +407,7 @@ def execute_publication(
     no_confirm: bool = False,
     auxiliary: Sequence[HookActivation] = (),
     run_noop: bool = False,
+    recheck_probe: ProbeRecheck | None = None,
     check_cancelled: Callable[[], None] | None = None,
     blocked: bool = False,
     observe: ExecutionObserver | None = None,
@@ -410,17 +457,19 @@ def execute_publication(
     steps, snapshot, error, interrupted = [], None, None, False
     snapshot_started = False
     effect_positions = {unit.row_id: 0 for unit in units}
+    inactive_probes = set()
     with interaction_scope(no_confirm=no_confirm), command_runtime_session(command_runtime or current_command_runtime()):
         reporter = StepReporter("live-publication", planned, observe)
         for index, step in enumerate(planned):
-            unit = None if step.kind == "hook" else by_identity[_target_identity(step.package_plan, step.target_plan)]
+            unit = None if step.kind in COMMAND_STEP_KINDS else by_identity[_target_identity(step.package_plan, step.target_plan)]
             reported_from = len(steps)
             reporter.started(index)
             try:
                 if check_cancelled is not None:
                     check_cancelled()
-                if step.kind == "hook":
-                    result = _execute_step(step, stream_output=stream_output, no_confirm=no_confirm)
+                if step.kind in COMMAND_STEP_KINDS:
+                    result = run_command_step(step, recheck_probe=recheck_probe, inactive=inactive_probes,
+                                              stream_output=stream_output, no_confirm=no_confirm)
                 elif step.kind == "unit-completion":
                     if complete is not None:
                         complete(unit)
@@ -474,7 +523,7 @@ def execute_publication(
                     result = ExecutionStepResult(step, "ok")
                 steps.append(result)
                 reporter.finished(index, steps[reported_from:])
-                if result.status != "ok":
+                if result.status not in ("ok", "skipped"):
                     raise _PublicationStopped(
                         result.error or f"{step.action} exited {result.exit_code}",
                         interrupted=result.status == "interrupted",

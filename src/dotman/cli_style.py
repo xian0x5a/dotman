@@ -501,6 +501,7 @@ SYNC_TERM_STYLE_BY_NAME: dict[str, tuple[str, ...]] = {
     # Auxiliary kinds share the Resolution column but are not decisions; keep
     # them recessive so actual Resolutions stand out.
     "Probe Work": ("2",),
+    "Probe Work?": ("2",),
     "Directory Root Work": ("2",),
     "Additional Source Change": ("2",),
     "Hook Work": ("2",),
@@ -544,6 +545,7 @@ SYNC_TERM_STYLE_BY_NAME: dict[str, tuple[str, ...]] = {
     "pending": ("33",),
     "would-converge": ("36",),
     "would-apply": ("36",),
+    "would-check": ("36",),
     "applied": ("1", "32"),
     "ok": ("1", "32"),
     "skipped": ("2",),

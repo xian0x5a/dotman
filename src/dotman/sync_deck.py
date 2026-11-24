@@ -862,6 +862,10 @@ def resolution_guess_shown(row) -> bool:
 
 def render_row_resolution(row, *, use_color: bool, mark_guess: bool = False) -> str:
     label = row_resolution(row)
+    if isinstance(row, AuxiliaryRow) and row.conditional:
+        # Its probe runs only at its turn, after upstream writes; like a predicted
+        # Writes side, the `?` reads without color.
+        return render_sync_term(f"{label}?", use_color=use_color)
     fixed = isinstance(row, SessionRow) and not resolution_choosable(row) and label in POLICY_DIRECTION_LABELS
     guessed = resolution_guess_shown(row)
     # The workset cell has no room for "(guessed)"; a "?" keeps the guess readable without color.
@@ -1511,6 +1515,8 @@ class SyncDeckApp(App[bool]):
             identity = auxiliary_row_label(row, use_color=use_color)
             if row.guard_skip is not None:
                 facts.append((render_sync_term('Guard skipped', use_color=use_color), guard_skip_explanation(row)))
+            if row.conditional:
+                facts.append(("Checked after", ", ".join(row.checked_after)))
             facts += included_via_fact(row, use_color=use_color)
         else:
             identity = unit_label(row, use_color=use_color)

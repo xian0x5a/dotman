@@ -21,8 +21,8 @@ from dotman.sync_observation import _identity
 from dotman.sync_auxiliary import AuxiliaryRow, guard_skip_rows, plan_auxiliary, retain_directional_hooks
 from dotman.sync_commit import CommitFailed, GitWorkTree, RepositoryCommit, commit_sources, committable_paths, probe_work_tree, render_commit_message
 from dotman.sync_reconciliation import reconcile, unresolved_conflict_blocks, ReconciliationConflict, ReconciliationFailed
-from dotman.projection import PlanningCommandError, project_file_view
-from dotman.models import GuardSkip, ResolvedPackageIdentity, ResolvedSyncScope, package_ref_text, repo_qualified_target_text
+from dotman.projection import PlanningCommandError, project_file_view, run_probe_command
+from dotman.models import GuardSkip, ResolvedPackageIdentity, ResolvedSyncScope, ResolvedSyncTarget, package_ref_text, repo_qualified_target_text
 from dotman.planning import PlanningContext
 from dotman.planning_guards import GuardPlanningError
 from dotman.progress import ProgressSink
@@ -708,6 +708,7 @@ class ProposalSession:
                     resolved_inputs[0], observed.directional,
                     {"pull": retain_directional_hooks(repository_metadata, observed.hook_scopes["pull"]),
                      "push": publication_metadata},
+                    drifted=tuple(unit.identity for unit in observations if unit.state == "drifted"),
                     dir_symlink_mode=context.config.dir_symlink_mode,
                     command_runtime=context.projection.command_runtime, run_noop=run_noop, sink=sink,
                 ) + guard_skip_rows(observed.guard_skips)
@@ -1633,7 +1634,8 @@ class ProposalSession:
         )
         auxiliary = {
             direction: tuple(
-                HookActivation(row.scope, self._resolved_inputs_identity(row.scope) if row.kind in ("probe", "directory-root") else None)
+                HookActivation(row.scope, self._resolved_inputs_identity(row.scope) if row.kind in ("probe", "directory-root") else None,
+                               recheck=row.conditional)
                 for row in self.view.rows
                 if isinstance(row, AuxiliaryRow) and row.included and direction in row.directions
             )
@@ -1658,7 +1660,7 @@ class ProposalSession:
             ) for row in selected),
             command_runtime=self._context.projection.command_runtime,
             complete=complete, auxiliary=auxiliary["pull"], run_noop=self._run_noop,
-            no_confirm=no_confirm_enabled(),
+            recheck_probe=self._recheck_probe, no_confirm=no_confirm_enabled(),
             check_cancelled=self.check_cancelled, blocked=bool(additional_diagnostics),
             stream_output=self._stream_output, observe=self._emit,
         )
@@ -1742,6 +1744,11 @@ class ProposalSession:
                 results.append(AdditionalSourceResult(row.row_id, row.repo, row.path, status, failures))
         return tuple(results), diagnostics, tuple(steps)
 
+    def _recheck_probe(self, identity: ResolvedSyncTarget) -> bool:
+        """Run a conditional probe at its turn, in the same environment planning would have."""
+        _item, metadata = self._root_inputs[identity]
+        return run_probe_command(self._context.projection.command_runtime, metadata)
+
     def _resolved_inputs_identity(self, scope: str):
         return next(identity for identity in (*self._resolved_inputs, *self._root_inputs) if identity.canonical == scope)
 
@@ -1776,7 +1783,7 @@ class ProposalSession:
             ) for row in selected) + self._selected_root_work(),
             complete=complete,
             snapshot_config=self._context.config.snapshots,
-            auxiliary=auxiliary, run_noop=self._run_noop,
+            auxiliary=auxiliary, run_noop=self._run_noop, recheck_probe=self._recheck_probe,
             no_confirm=no_confirm_enabled(),
             check_cancelled=self.check_cancelled, blocked=blocked,
             command_runtime=self._context.projection.command_runtime,

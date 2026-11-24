@@ -10,7 +10,7 @@ import stat
 from dotman.command_runtime import CommandRuntime, run_ordered
 from dotman.models import GuardSkip, ResolvedPackageIdentity, ResolvedSyncTarget
 from dotman.planning import PackagePlanningInput
-from dotman.projection import run_probe_command
+from dotman.projection import TargetMetadata, run_probe_command
 from dotman.progress import ProgressSink
 from dotman.sync_observation import Diagnostic, _ResolvedInputs, _identity
 from dotman.sync_publication import PublicationMetadata
@@ -28,6 +28,13 @@ class AuxiliaryRow:
     guard_skip: GuardSkip | None = None
     # Package inputs whose dependency closure brought this scope in; empty when requested.
     included_via: tuple[ResolvedPackageIdentity, ...] = ()
+    # Conditional Probe Work: the probe_after entries with work in this run. The
+    # probe was not run at planning and is checked right before its own hooks.
+    checked_after: tuple[str, ...] = ()
+
+    @property
+    def conditional(self) -> bool:
+        return bool(self.checked_after)
 
 
 def guard_skip_rows(skips: tuple[tuple[str, GuardSkip], ...]) -> tuple[AuxiliaryRow, ...]:
@@ -69,11 +76,32 @@ def retain_directional_hooks(
     )
 
 
+# Work identity for probe_after matching: repo, package and target (None for package scope).
+_WorkKey = tuple[str, str, str | None]
+
+
+def _checked_after(target: TargetMetadata, work: set[_WorkKey]) -> tuple[str, ...]:
+    """The probe_after entries with work in this run, as repo-qualified labels.
+
+    Package instances are not told apart: any instance's work counts, which at
+    worst re-checks a probe that did not need it.
+    """
+    own = (target.repo_name, target.package_id, target.target_name)
+    labels = []
+    for entry in target.target.probe_after or ():
+        package_id, _, target_name = entry.partition(".")
+        if any(key != own and key[0] == target.repo_name and key[1] == package_id
+               and (not target_name or key[2] == target_name) for key in work):
+            labels.append(f"{target.repo_name}:{entry}")
+    return tuple(labels)
+
+
 def plan_auxiliary(
     inputs: _ResolvedInputs,
     directional: dict[str, list[PackagePlanningInput]],
     metadata: dict[str, PublicationMetadata],
     *,
+    drifted: tuple[ResolvedSyncTarget, ...] = (),
     command_runtime: CommandRuntime,
     run_noop: bool,
     dir_symlink_mode: str = "fail",
@@ -87,30 +115,36 @@ def plan_auxiliary(
         identity: tuple(direction for direction in ("push", "pull") if identity in admitted[direction])
         for identity in inputs
     }
+
+    def run_probes(probe_targets) -> set:
+        # A probe with no surviving direction never runs, yet still counts as progress.
+        tasks = [
+            partial(run_probe_command, command_runtime, target) if directions[identity] else (lambda: False)
+            for identity, target in probe_targets
+        ]
+        present = set()
+        for (identity, _target), active in zip(probe_targets, run_ordered(tasks), strict=True):
+            if active:
+                present.add(identity)
+            if sink is not None:
+                sink.update(1)
+        return present
+
     probe_targets = [
         (identity, target) for identity, (_item, target) in inputs.items() if target.probe_command is not None
     ]
-    # A probe with no surviving direction never runs, yet still counts as progress.
-    probe_tasks = [
-        partial(run_probe_command, command_runtime, target) if directions[identity] else (lambda: False)
-        for identity, target in probe_targets
-    ]
-    probed_present = set()
-    for (identity, _target), present in zip(probe_targets, run_ordered(probe_tasks), strict=True):
-        if present:
-            probed_present.add(identity)
-        if sink is not None:
-            sink.update(1)
+    probed_present = run_probes([(identity, target) for identity, target in probe_targets
+                                 if target.target.probe_after is None])
 
-    rows = []
-    for identity, (_item, target) in inputs.items():
+    root_work = {
+        identity for identity, (_item, target) in inputs.items()
         if (target.target.target_type == "directory" and "push" in directions[identity] and target.chmod is not None
-                and target.live_path.is_dir() and (not target.live_path.is_symlink() or dir_symlink_mode == "follow")
-                and stat.S_IMODE(target.live_path.stat().st_mode) != int(target.chmod, 8)):
-            rows.append(AuxiliaryRow(identity.canonical, "directory-root", False, identity.canonical, ("push",)))
-        if identity in probed_present:
-            rows.append(AuxiliaryRow(identity.canonical, "probe", False, identity.canonical, directions[identity]))
+            and target.live_path.is_dir() and (not target.live_path.is_symlink() or dir_symlink_mode == "follow")
+            and stat.S_IMODE(target.live_path.stat().st_mode) != int(target.chmod, 8))
+    }
 
+    hook_rows = []
+    hook_work: set[_WorkKey] = set()
     for direction, frozen in metadata.items():
         scopes = {}
         for repo, hooks in frozen.repo_hooks:
@@ -122,14 +156,42 @@ def plan_auxiliary(
                 for hook in hooks:
                     if not (run_noop or hook.run_noop):
                         continue
+                    target_name = hook.target_name if hook.scope_kind == "target" else None
+                    hook_work.add((package.repo_name, package.package_id, target_name))
                     scope = (
                         ResolvedSyncTarget(package.repo_name, package.package_id, hook.target_name,
                                            bound_profile=package.bound_profile).canonical
                         if hook.scope_kind == "target" else package_scope
                     )
                     scopes[scope] = None
-        rows.extend(
+        hook_rows.extend(
             AuxiliaryRow(f"{scope} ({direction}-hooks)", "hook", False, scope, (direction,))
             for scope in scopes
         )
-    return tuple(rows)
+
+    # probe_after targets read what earlier work writes, so they are decided only
+    # once every other row of the run is known.
+    work = hook_work | {
+        (identity.repo, identity.package_id, identity.target_name)
+        for identity in (*drifted, *probed_present, *root_work)
+    }
+    checked_after = {
+        identity: after
+        for identity, target in probe_targets
+        if target.target.probe_after is not None and directions[identity]
+        and (after := _checked_after(target, work))
+    }
+    # Without work before it, planning already sees the state its turn would.
+    probed_present |= run_probes([(identity, target) for identity, target in probe_targets
+                                  if target.target.probe_after is not None and identity not in checked_after])
+    if sink is not None and checked_after:
+        sink.update(len(checked_after))
+
+    rows = []
+    for identity in inputs:
+        if identity in root_work:
+            rows.append(AuxiliaryRow(identity.canonical, "directory-root", False, identity.canonical, ("push",)))
+        if identity in probed_present or identity in checked_after:
+            rows.append(AuxiliaryRow(identity.canonical, "probe", False, identity.canonical, directions[identity],
+                                     checked_after=checked_after.get(identity, ())))
+    return tuple(rows) + tuple(hook_rows)

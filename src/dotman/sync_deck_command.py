@@ -367,7 +367,8 @@ class SyncDeckCommandRunner:
             for work in payload[key]:
                 outcome = auxiliary_outcome(work["identity"], payload["stages"], kind=kind, preview=args.dry_run,
                                             run_completed=payload["status"] == "completed",
-                                            diagnostics=work["diagnostics"])
+                                            diagnostics=work["diagnostics"],
+                                            conditional=work.get("conditional", False))
                 entry = visible_entry(work["selected"], outcome, work["diagnostics"])
                 if entry is None:
                     continue
@@ -417,6 +418,8 @@ ENTRY_OUTCOME_BY_STATUS = {
     "directly-in-sync": "ok",
     "would-apply": "would-apply",
     "would-converge": "would-apply",
+    # A conditional Probe's result needs the writes a preview never makes.
+    "would-check": "would-check",
     "execution-failed": "failed",
     "observation-failed": "failed",
     "not-converged": "failed",
@@ -435,7 +438,8 @@ def entry_outcome(status: str | None, diagnostics) -> str:
     return ENTRY_OUTCOME_BY_STATUS[status]
 
 
-def auxiliary_outcome(identity: str, stages, *, kind: str, preview: bool, run_completed: bool, diagnostics) -> str:
+def auxiliary_outcome(identity: str, stages, *, kind: str, preview: bool, run_completed: bool, diagnostics,
+                      conditional: bool = False) -> str:
     """Auxiliary Work has no unit result; derive its outcome from the steps run at its scope."""
     statuses = {stage["status"] for stage in stages if stage["scope_identity"] == identity}
     for status in ("failed", "interrupted"):
@@ -445,7 +449,7 @@ def auxiliary_outcome(identity: str, stages, *, kind: str, preview: bool, run_co
         return "ok"
     if statuses:
         return "skipped"
-    outcome = entry_outcome("would-apply" if preview else None, diagnostics)
+    outcome = entry_outcome(("would-check" if conditional else "would-apply") if preview else None, diagnostics)
     # A probe already ran during planning; when it has no hooks of its own, a
     # finished run leaves nothing at its scope, which is done rather than pending.
     # Hook and directory-root work without a step never ran, and errors stay failed.
@@ -520,6 +524,7 @@ def sync_document(args, session, result, *, diagnostic=None) -> dict:
     def auxiliary_work(kind):
         return [{"identity": row.scope, "selected": row.included,
                  "directions": list(row.directions),
+                 **({"conditional": row.conditional} if kind == "probe" else {}),
                  "diagnostics": [{"code": item.code, "message": item.message} for item in row.diagnostics]}
                 for row in auxiliary if row.kind == kind]
     outcomes = {unit.identity: unit for unit in result.units} if result else {}

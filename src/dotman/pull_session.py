@@ -47,7 +47,8 @@ class PullSession(ProposalSession):
                          if isinstance(row, SessionRow) and row.included
                          and row.approved and row.proposal is not None)
         auxiliary = tuple(
-            HookActivation(row.scope, self._resolved_inputs_identity(row.scope) if row.kind == "probe" else None)
+            HookActivation(row.scope, self._resolved_inputs_identity(row.scope) if row.kind == "probe" else None,
+                           recheck=row.conditional)
             for row in self.view.rows
             if isinstance(row, AuxiliaryRow) and row.included and "pull" in row.directions
         )
@@ -62,6 +63,7 @@ class PullSession(ProposalSession):
                                       requires_publication=False) for row in selected),
             command_runtime=self._context.projection.command_runtime,
             complete=lambda unit: self._acknowledge(by_id[unit.row_id], stores), auxiliary=auxiliary, run_noop=self._run_noop,
+            recheck_probe=self._recheck_probe,
             no_confirm=no_confirm_enabled(),
             check_cancelled=self.check_cancelled, blocked=bool(diagnostics),
             stream_output=self._stream_output, observe=self._emit,

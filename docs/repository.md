@@ -116,7 +116,7 @@ under `examples/repo/`.
 - `append` should mirror the object shape it targets, for example:
   - `[append.hooks]`
   - `pre_push = ["{{ INSTALL }} extra-tool"]`
-- Appendable lists: `depends`, `reserved_paths`, `ignore.patterns` (package or target), `editor.additional_sources`, hook commands, and list-valued `vars`.
+- Appendable lists: `depends`, `reserved_paths`, `ignore.patterns` (package or target), `probe_after`, `editor.additional_sources`, hook commands, and list-valued `vars`.
 - `append` should fail if the targeted inherited field is not a list. Path rules are a keyed table: to add one, declare it in the child.
 - Appending to an appendable list that no parent sets starts from an empty list. Appending to a hook or `vars` entry that doesn't exist fails.
 - `remove` and `append` errors name the child's `package.toml`.
@@ -201,6 +201,28 @@ preset = "jinja-patch"
   - `100`: inactive/noop; the target stays out of normal selection and hooks run only if explicitly noop-eligible.
   - any other non-zero status: hard planning failure.
 - Planning runs probes concurrently, up to eight at a time (fewer on machines with fewer cores), so a probe must not depend on another probe or share scratch files with it.
+- A probe that reads what other targets write in the same run sets `probe_after`, a list of
+  `package` or `package.target` entries naming those inputs. Without it, planning probes the
+  state from before those writes: a push that adds a file the probe looks for reports nothing
+  to do. `probe_after` changes only when the probe runs; its hooks still run only on exit `0`.
+  Setting `probe_after` without `probe` is an error, checked like the fields above.
+  - Each entry names the target's own package, a package in its `depends` closure, or one of
+    their targets, all of which run before it. A whole-package entry also covers targets added
+    to that package later; a target entry is narrower and must be kept in step. An entry must
+    not name a target that sets `probe_after` itself. Dotman checks entries when it plans the
+    package.
+  - Within its package the target runs after the normal targets; packages already run
+    dependency-first.
+  - When an entry has work in the run (a drifted file, Probe Work, Directory Root Work or Hook
+    Work, in any package instance), planning skips the probe and shows the target as
+    conditional Probe Work ([Sync](sync.md#auxiliary-work)). Execution then runs the probe once,
+    right before the target's own hooks: `0` runs them, `100` skips them, and any other exit
+    fails the stage. Otherwise nothing before it changes the probe's input, so planning probes
+    it once as usual.
+  - It activates only its own target hooks, never package or repo hooks: by its turn their
+    pre hooks have already run or been skipped.
+  - An input not named in `probe_after` is not waited for. If the probe reads a package outside
+    its `depends` closure, add the dependency first.
 - Probe targets do not claim repo/live paths, do not participate in target ownership conflicts, do not create snapshots, and never execute file push/pull steps.
 - Use `sync_policy = "push-only"` for install/update probes that should run only before push-style setup.
 - Probes reject effective `push-only-delete`, including inherited package policy:
@@ -504,6 +526,22 @@ installed="$(nvim --version 2>/dev/null | head -n 1 || true)"
 wanted="NVIM vX.Y.Z"
 [ "$installed" = "$wanted" ] && exit 100
 exit 0
+```
+
+Example probe that reads what a dependency writes in the same run:
+
+```toml
+# packages/claude/package.toml
+depends = ["agents"]
+
+[targets.claude_skills_link]
+sync_policy = "push-only"
+probe = 'sh "$DOTMAN_REPO_ROOT/scripts/link_skills.sh" probe'
+# agents.skills writes ~/.agents/skills; the hook installs more skills there.
+probe_after = ["agents.skills", "agents.managed_skills"]
+
+[targets.claude_skills_link.hooks]
+post_push = 'sh "$DOTMAN_REPO_ROOT/scripts/link_skills.sh" apply'
 ```
 
 ## Hooks And Commands

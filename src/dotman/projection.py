@@ -26,6 +26,7 @@ from dotman.manifest import (
     resolve_sync_policy,
     resolve_target_ignore,
     sync_policy_allows_operation,
+    validate_probe_after_entries,
 )
 from dotman.models import (
     AdditionalSource,
@@ -126,6 +127,8 @@ def build_target_metadata(
     validate_declaration_conflicts: bool = True,
 ) -> list[TargetMetadata]:
     metadata_targets: list[TargetMetadata] = []
+    # `packages` is the planned package's dependency closure, itself included.
+    closure = {package.id: package for package in packages}
 
     for package in packages:
         if package.id not in declaration_package_ids:
@@ -139,6 +142,7 @@ def build_target_metadata(
             if not sync_policy_allows_operation(sync_policy, operation=operation):
                 continue
             if target.probe is not None:
+                validate_probe_after_entries(repo_name=repo.config.name, package=package, target=target, closure=closure)
                 probe_command = render_template_string(
                     target.probe,
                     context,

@@ -230,6 +230,8 @@ class TargetSpec:
     # Planned only when selected by exact target selector.
     on_demand: bool = False
     probe: str | None = None
+    # Package or `package.target` entries whose work this run must precede the probe.
+    probe_after: tuple[str, ...] | None = None
 
 
 HookCommandIO = Literal["pipe", "tty"]
@@ -884,6 +886,9 @@ class TargetPlan:
     desired_bytes: bytes | None = field(default=None, repr=False)
     child_path: str | None = None
     probe_command: str | None = None
+    # Set on a probe target that runs after its package's normal targets and
+    # activates only its own hooks.
+    probe_after: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         is_probe = self.target_kind == "probe"

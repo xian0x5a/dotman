@@ -201,7 +201,7 @@ sync_policy = "pull-only"
     assert main(['--config', str(engine.config.config_path), '--json', '--no-confirm', 'sync', '--run-noop']) == 0
     document = json.loads(capsys.readouterr().out)
     assert document['sync_units'] == []
-    assert document['probe_work'] == [{'identity': 'main:app.check', 'selected': True, 'directions': ['pull'], 'diagnostics': []}]
+    assert document['probe_work'] == [{'identity': 'main:app.check', 'selected': True, 'directions': ['pull'], 'conditional': False, 'diagnostics': []}]
     assert document['hook_work'] == [{'identity': 'main:app', 'selected': True, 'directions': ['push'], 'diagnostics': []}]
     assert document['status'] == 'completed'
     assert document['summary']['selected_auxiliary'] == 2

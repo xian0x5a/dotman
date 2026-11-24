@@ -9,14 +9,14 @@ from typing import Callable, Sequence
 from dotman import file_access
 from dotman.command_runtime import CommandRuntime, command_runtime_session, current_command_runtime
 from dotman.interaction_policy import interaction_scope
-from dotman.execution import ExecutionObserver, ExecutionStepResult, StepReporter, _execute_step, directory_synced_file_mode
+from dotman.execution import ExecutionObserver, ExecutionStepResult, StepReporter, directory_synced_file_mode
 from dotman.atomic_files import default_created_file_mode
 from dotman.models import PackagePlan, ResolvedSyncTarget, TargetPlan
 from dotman.planning import PackagePlanningInput, plan_hooks, plan_repo_hooks
 from dotman.sync_base_store import FilePresent, Missing, DirectoryChildPresent, SyncBasePayload
 from dotman.sync_publication import (
-    HookActivation, PublicationMetadata, PublicationResult, PublicationUnitResult,
-    ordered_stage_steps, stage_target_order, unattempted_steps, _target_identity,
+    COMMAND_STEP_KINDS, HookActivation, ProbeRecheck, PublicationMetadata, PublicationResult, PublicationUnitResult,
+    execution_order, ordered_stage_steps, run_command_step, stage_target_order, unattempted_steps, _target_identity,
     _PublicationStopped, _failed_step, directory_root,
 )
 
@@ -37,7 +37,7 @@ def prepare_repository_apply(
     repos = {}
     for item in inputs:
         context = item.package_context
-        targets = [
+        targets = execution_order([
             TargetPlan(
                 package_id=target.package_id, target_name=target.target_name,
                 repo_path=target.repo_path, live_path=target.live_path,
@@ -45,9 +45,10 @@ def prepare_repository_apply(
                 command_cwd=target.command_cwd,
                 # One static target may supply metadata to both Sync stages.
                 command_env={**target.command_env, "DOTMAN_OPERATION": "pull"},
+                probe_command=target.probe_command, probe_after=target.target.probe_after or (),
             )
             for target in item.target_metadata
-        ]
+        ])
         hooks = plan_hooks(
             item.repo, context.resolved_packages, context.context,
             selection=item.selection, operation="pull", inferred_os=context.inferred_os,
@@ -79,6 +80,7 @@ def execute_repository_apply(
     no_confirm: bool = False,
     auxiliary: Sequence[HookActivation] = (),
     run_noop: bool = False,
+    recheck_probe: ProbeRecheck | None = None,
     check_cancelled: Callable[[], None] | None = None,
     blocked: bool = False,
     observe: ExecutionObserver | None = None,
@@ -106,17 +108,19 @@ def execute_repository_apply(
     if blocked:
         return PublicationResult(tuple(results.values()), steps=unattempted_steps(planned))
     steps, error, interrupted = [], None, False
+    inactive_probes = set()
     with interaction_scope(no_confirm=no_confirm), command_runtime_session(command_runtime or current_command_runtime()):
         reporter = StepReporter("repository-apply", planned, observe)
         for index, step in enumerate(planned):
-            unit = None if step.kind == "hook" else by_identity[_target_identity(step.package_plan, step.target_plan)]
+            unit = None if step.kind in COMMAND_STEP_KINDS else by_identity[_target_identity(step.package_plan, step.target_plan)]
             reported_from = len(steps)
             reporter.started(index)
             try:
                 if check_cancelled is not None:
                     check_cancelled()
-                if step.kind == "hook":
-                    result = _execute_step(step, stream_output=stream_output, no_confirm=no_confirm)
+                if step.kind in COMMAND_STEP_KINDS:
+                    result = run_command_step(step, recheck_probe=recheck_probe, inactive=inactive_probes,
+                                              stream_output=stream_output, no_confirm=no_confirm)
                 elif step.kind == "unit-completion":
                     complete(unit)
                     results[unit.row_id] = PublicationUnitResult(unit.row_id, "ok")
@@ -131,7 +135,7 @@ def execute_repository_apply(
                     result = ExecutionStepResult(step, "ok")
                 steps.append(result)
                 reporter.finished(index, steps[reported_from:])
-                if result.status != "ok":
+                if result.status not in ("ok", "skipped"):
                     raise _PublicationStopped(
                         result.error or f"{step.action} exited {result.exit_code}",
                         interrupted=result.status == "interrupted",

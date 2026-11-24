@@ -46,7 +46,7 @@ This file is an index. Read only the entries your task needs.
 | Need | Read |
 | --- | --- |
 | Adopt an existing live file into a package | `docs/cli.md` § Add |
-| Target fields: `path`, `type`, `chmod`, `sync_policy`, `on_demand`, `disabled`, `path_rules`; install/update `probe` targets | `docs/repository.md` § Targets |
+| Target fields: `path`, `type`, `chmod`, `sync_policy`, `on_demand`, `disabled`, `path_rules`; install/update `probe` targets, `probe_after` for probes that read what the same run writes | `docs/repository.md` § Targets |
 | Package instances and inheritance | `docs/repository.md` § Package Identity Modes, § Package Inheritance |
 | Skip files or subtrees in directory targets | `docs/repository.md` § Unified exclusions |
 | Sync only part of a JSON/YAML/TOML/plist/XML settings file | `references/noise-filtering.md` |

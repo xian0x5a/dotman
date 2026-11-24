@@ -37,7 +37,7 @@ def test_auxiliary_json_has_only_auxiliary_metadata():
         assert document["summary"]["selected_auxiliary"] == 2
         assert document["probe_work"] == [{
             "identity": "r:p.check", "selected": True,
-            "directions": ["push"], "diagnostics": [],
+            "directions": ["push"], "conditional": False, "diagnostics": [],
         }]
         assert document["hook_work"] == [{
             "identity": "r:p", "selected": True,

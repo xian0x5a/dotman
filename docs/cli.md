@@ -150,6 +150,9 @@ otherwise **Use repository** is the visible fallback and Merge is unavailable.
   content, and both-policy Use live may also rewrite or chmod live; so do rows whose
   Proposal conflicted or failed. An Additional Source Change writes `repo` and
   Directory Root Work `live`; Hook and Probe Work leave it blank.
+  Conditional Probe Work ([Sync lifecycle](sync.md#auxiliary-work)) shows Resolution
+  `Probe Work?`: its probe runs only after the writes it waits for. Its detail panel
+  lists them under `Checked after:`.
   `x` toggles Selection (`Space` also works but goes unhinted), `a` selects eligible rows, and `u` clears Selection.
   Selection means independent Proposal or Additional Source Change Approval,
   or direct auxiliary inclusion. Batch actions establish all final states before
@@ -297,6 +300,7 @@ otherwise **Use repository** is the visible fallback and Merge is unavailable.
   snapshots, Base acknowledgment or cleanup. Interactive preview uses the normal Command Deck. No-confirm preview
   selects and materializes all eligible work using policy defaults, reports frozen
   effects without confirmation, and fails if any blocker makes it unexecutable.
+  Selected conditional Probe Work reports `would-check` instead of `would-apply`.
 - Active Probe Work has no Proposal, Approval, Base or Converged result. Its
   selection activates only Guard-surviving hook families. Hook-only rows show
   canonical scope with `(pull-hooks)` or `(push-hooks)`, never a file identity
@@ -325,7 +329,10 @@ otherwise **Use repository** is the visible fallback and Merge is unavailable.
   Directory children expose the same Observation, Approval, Proposal and result
   fields as file targets; Primary Source write summaries also include `executable`.
   `probe_work`, `directory_root_work` and `hook_work` contain canonical `identity`, `selected`,
-  `directions` and `diagnostics`, without file/Proposal/Base fields.
+  `directions` and `diagnostics`, without file/Proposal/Base fields. `probe_work`
+  entries also carry `conditional`. Its execution-time check is a stage step of
+  kind `probe`, `ok` or `skipped` with `skip_reason: probe-inactive`; the target hooks
+  it skips report the same reason.
   `summary.selected_auxiliary` counts directly selected auxiliary rows.
   `commit_work` lists each offered repo with `repo`, `branch` (null when detached),
   `selected`, `result` (`committed`, `no-changes`, `skipped`, `failed`,

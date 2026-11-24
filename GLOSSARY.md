@@ -52,6 +52,10 @@ _Avoid_: Planned action, confirmed diff
 An active probe target presented by Sync as selectable auxiliary work that may activate applicable hooks. It has no repository/live payload, Resolution Intent, Proposal, Sync Base acknowledgment, or Converged result.
 _Avoid_: Sync Unit, Proposal
 
+**Conditional Probe Work**:
+Probe Work for a probe target with `probe_after` whose named inputs have work in the run. Its probe is not run at planning; execution runs it once, right before the target's own hooks, after the writes it reads.
+_Avoid_: Post target, deferred probe, reprobe
+
 **On-demand Target**:
 A target declared `on_demand = true` that enters Push, Pull or Sync scope only when selected by exact target selector. Package selectors and selector-less runs leave it out silently, because that is its declared intent rather than a skipped outcome. Ownership and collision validation still include it.
 _Avoid_: Explicit target, opt-in target, manual target

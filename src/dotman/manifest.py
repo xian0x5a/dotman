@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 import sys
-from collections.abc import Collection
+from collections.abc import Collection, Mapping
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -23,7 +23,7 @@ FORCED_COMMAND_PREFIX = "__dotman_command__:"
 PACKAGE_MANIFEST_FILE_NAME = "package.toml"
 TARGET_MANIFEST_KEYS = frozenset(
     {"capture", "chmod", "compare", "disabled", "editor", "hooks", "ignore", "on_demand",
-     "path", "path_rules", "preset", "probe", "render", "source", "sync_policy", "type"}
+     "path", "path_rules", "preset", "probe", "probe_after", "render", "source", "sync_policy", "type"}
 )
 
 TARGET_PATH_RULE_KEYS = frozenset(
@@ -694,6 +694,7 @@ def build_target_spec(
         if text is not None:
             validate_printable(text, kind=key, context=target_context)
     probe = normalize_target_command(value("probe"), field_name="probe", manifest_path=manifest_path, target_name=target_name)
+    probe_after = normalize_probe_after(value("probe_after"), context=target_context)
     target_type = normalize_target_type(value("type"), context=target_context)
     sync_policy = normalize_sync_policy(value("sync_policy"), context=target_context)
     def boolean_value(field_name: str) -> bool:
@@ -748,7 +749,7 @@ def build_target_spec(
         inherited_capture=capture, inherited_compare_repo=compare_repo, inherited_compare_live=compare_live,
         inherited_editor=editor, inherited_sync_policy=sync_policy)
     return TargetSpec(name=target_name, declared_in=manifest_path.parent, source=source, path=path, probe=probe,
-                      target_type=target_type, sync_policy=sync_policy, chmod=chmod, render=render, capture=capture,
+                      probe_after=probe_after, target_type=target_type, sync_policy=sync_policy, chmod=chmod, render=render, capture=capture,
                       editor=editor, compare_repo=compare_repo, compare_live=compare_live,
                       additional_sources=editor.additional_sources,
                       additional_source_entries=editor.source_entries(),
@@ -933,6 +934,7 @@ def merge_target_specs(base: TargetSpec, override: TargetSpec) -> TargetSpec:
         source=override.source if override.source is not None else base.source,
         path=override.path if override.path is not None else base.path,
         probe=override.probe if override.probe is not None else base.probe,
+        probe_after=override.probe_after if override.probe_after is not None else base.probe_after,
         target_type=override.target_type if override.target_type is not None else base.target_type,
         sync_policy=override.sync_policy if override.sync_policy is not None else base.sync_policy,
         chmod=override.chmod if override.chmod is not None else base.chmod,
@@ -1003,10 +1005,50 @@ def validate_patch_capture(owner: str, *, render: str, capture: str, compare_rep
         raise UsageError(f'{owner} capture = "patch" requires compare.repo = "render" and compare.live = "raw"')
 
 
-def validate_probe_target_config(*, repo_name: str, package: PackageSpec, target: TargetSpec) -> None:
-    if target.probe is None:
-        return
+def normalize_probe_after(value: Any, *, context: str) -> tuple[str, ...] | None:
+    """Entries are `package` or `package.target`; `.` only separates the two."""
+    entries = normalize_string_list(value, context=context, key="probe_after")
+    for entry in entries or ():
+        validate_printable(entry, kind="probe_after entry", context=context)
+        if not all(entry.split(".")) or entry.count(".") > 1:
+            raise UsageError(f"{context} probe_after entry '{entry}' must be 'package' or 'package.target'")
+    return entries
+
+
+def validate_probe_after_entries(
+    *, repo_name: str, package: PackageSpec, target: TargetSpec, closure: Mapping[str, PackageSpec],
+) -> None:
+    """Each entry must already run before the probe: its own package or the `depends` closure.
+
+    `closure` maps the package's dependency closure, itself included, by package ID.
+    """
     target_label = repo_qualified_target_text(repo_name=repo_name, package_id=package.id, target_name=target.name)
+    for entry in target.probe_after or ():
+        package_id, _, target_name = entry.partition(".")
+        entry_package = closure.get(package_id)
+        if entry_package is None:
+            raise UsageError(
+                f"target '{target_label}' probe_after entry '{entry}' must name '{package.id}' "
+                "or a package in its depends closure, which run before it"
+            )
+        if not target_name:
+            continue
+        entry_target = (entry_package.targets or {}).get(target_name)
+        if entry_target is None or entry_target.disabled:
+            raise UsageError(f"target '{target_label}' probe_after entry '{entry}' names no target")
+        if entry_target.probe_after is not None:
+            # Such targets run last in their package, so they cannot order or trigger another.
+            raise UsageError(
+                f"target '{target_label}' probe_after entry '{entry}' names a target that uses probe_after"
+            )
+
+
+def validate_probe_target_config(*, repo_name: str, package: PackageSpec, target: TargetSpec) -> None:
+    target_label = repo_qualified_target_text(repo_name=repo_name, package_id=package.id, target_name=target.name)
+    if target.probe is None:
+        if target.probe_after is not None:
+            raise UsageError(f"target '{target_label}' uses probe_after and must define probe")
+        return
     if resolve_sync_policy(package=package, target=target) == "push-only-delete":
         raise UsageError(f"target '{target_label}' uses probe and cannot use push-only-delete; use push-only")
     forbidden_probe_fields = {
