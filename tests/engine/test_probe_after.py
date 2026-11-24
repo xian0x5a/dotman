@@ -282,3 +282,126 @@ probe = "exit 0"
     assert probe_row(preview, "main:base.tool")["conditional"] is False
     assert probe_row(preview)["conditional"] is True
     assert log_lines(tmp_path) == []
+
+
+# --- regression tests for review findings ------------------------------------------
+
+def run_cli(config, capsys, *args, json_output=True):
+    code = main(["--config", str(config), *(["--json"] if json_output else []), "--no-confirm", *args])
+    output = capsys.readouterr().out
+    return code, json.loads(output) if json_output else output
+
+
+@pytest.mark.parametrize("variant", ["run-noop-flag", "manifest-run-noop"])
+def test_noop_eligible_hooks_run_without_waiting_for_the_recheck(tmp_path, monkeypatch, capsys, variant):
+    # Selected Hook Work runs them whatever the probe reports, so no probe step gates them.
+    log = tmp_path / "log"
+    command = probe_command(tmp_path, exit_when_present=100)
+    if variant == "manifest-run-noop":
+        hooks = f'post_push = {{run = "echo hook >> {log}", run_noop = true}}'
+        args = ("push",)
+    else:
+        hooks = None
+        args = ("push", "--run-noop")
+    config = build(tmp_path, monkeypatch, app_manifest(tmp_path, command=command, hooks=hooks))
+    code, document = run_cli(config, capsys, *args)
+    assert code == 0
+    assert log_lines(tmp_path) == ["hook"]
+    assert step_kinds(document) == [("hook", "post_push", "ok", None)]
+
+
+PARENT_MANIFEST = '''[targets.check]
+sync_policy = "push-only"
+probe = "%(probe)s"
+probe_after = ["parent.late"]
+[targets.check.hooks]
+post_push = "echo hook >> %(log)s"
+
+[targets.late]
+source = "late"
+path = "%(root)s/live/late"
+type = "file"
+sync_policy = "push-only"
+'''
+
+
+def test_inherited_probe_after_naming_the_parent_refers_to_the_inheriting_package(tmp_path, monkeypatch, capsys):
+    parent = PARENT_MANIFEST % dict(probe=probe_command(tmp_path, watched="late"), log=tmp_path / "log", root=tmp_path)
+    config = build(tmp_path, monkeypatch, 'extends = ["parent"]\n', base_files=(),
+                   extra_packages={"parent": parent})
+    (tmp_path / "repo/packages/app/late").write_bytes(b"late")
+    (tmp_path / "repo/packages/parent/late").write_bytes(b"late")
+    # Planning must not reject the inherited entry.
+    _code, preview = run_cli(config, capsys, "push", "--dry-run")
+    assert probe_row(preview)["conditional"] is True
+    code, document = run_cli(config, capsys, "push")
+    assert code == 0
+    assert log_lines(tmp_path) == ["probe", "hook"]
+    assert [(step["scope_identity"], step["action"]) for step in document["stages"]] == [
+        ("main:app.late", "write"), ("main:app.check", "probe"), ("main:app.check", "post_push")]
+
+
+@pytest.mark.parametrize("entry", ["base.conf", "base"])
+def test_probe_after_naming_a_package_that_depends_back_is_rejected(tmp_path, monkeypatch, capsys, entry):
+    base = f'''depends = ["app"]
+[targets.conf]
+source = "conf"
+path = "{tmp_path}/live/conf"
+type = "file"
+sync_policy = "push-only"
+'''
+    config = build(tmp_path, monkeypatch, app_manifest(tmp_path, probe_after=f'["{entry}"]'), base_toml=base)
+    engine = DotmanEngine.from_config_path(config)
+    with pytest.raises(UsageError, match="depends"):
+        engine.open_sync_session(engine.resolve_sync_scope(), preview=True)
+
+
+def test_sync_runs_the_probe_step_only_in_the_stage_that_gates_hooks(tmp_path, monkeypatch, capsys):
+    app = app_manifest(tmp_path).replace('sync_policy = "push-only"', 'sync_policy = "both"')
+    config = build(tmp_path, monkeypatch, app)
+    code, document = run_cli(config, capsys, "sync")
+    assert code == 0
+    assert [(step["stage"], step["status"]) for step in document["stages"] if step["kind"] == "probe"] == [
+        ("live-publication", "ok")]
+    assert log_lines(tmp_path) == ["probe", "hook"]
+
+
+def test_recheck_failure_keeps_exit_code_in_json_and_output_in_human_text(tmp_path, monkeypatch, capsys):
+    command = probe_command(tmp_path, exit_when_present=3).replace(
+        "exit 3", "echo 'probe exploded' >&2; exit 3")
+    config = build(tmp_path, monkeypatch, app_manifest(tmp_path, command=command))
+    code, document = run_cli(config, capsys, "push")
+    assert code != 0
+    step = next(step for step in document["stages"] if step["kind"] == "probe")
+    assert step["exit_code"] == 3
+    assert "probe exploded" not in (step["error"] or "")
+
+    (tmp_path / "live/conf").unlink()
+    code, output = run_cli(config, capsys, "push", json_output=False)
+    assert code != 0
+    assert "probe exploded" in output
+
+
+def test_empty_probe_after_is_rejected_at_package_resolution(tmp_path, monkeypatch):
+    config = build(tmp_path, monkeypatch, target_with("[]"))
+    with pytest.raises(UsageError, match="probe_after"):
+        DotmanEngine.from_config_path(config).resolve_sync_scope()
+
+
+def test_pull_recheck_probe_sees_the_repository_write_before_its_hook(tmp_path, monkeypatch, capsys):
+    # Coverage of existing behavior: Pull rechecks in `repository-apply`.
+    repo_file = tmp_path / "repo/packages/base/conf"
+    command = (f"echo probe >> {tmp_path / 'log'}; "
+               f"if grep -q live-new {repo_file}; then exit 0; else exit 100; fi")
+    app = app_manifest(tmp_path, command=command, hooks=f'post_pull = "echo hook >> {tmp_path / "log"}"'
+                       ).replace("push-only", "pull-only")
+    config = build(tmp_path, monkeypatch, app, base_files=[("conf", "pull-only", b"repo-old", b"live-new", "")])
+    _code, preview = run_cli(config, capsys, "pull", "--dry-run")
+    assert probe_row(preview)["conditional"] is True
+    assert log_lines(tmp_path) == []
+    code, document = run_cli(config, capsys, "pull")
+    assert code == 0
+    assert log_lines(tmp_path) == ["probe", "hook"]
+    assert [(step["stage"], step["kind"], step["status"]) for step in document["stages"]
+            if step["scope_identity"] == "main:app.check"] == [
+        ("repository-apply", "probe", "ok"), ("repository-apply", "hook", "ok")]

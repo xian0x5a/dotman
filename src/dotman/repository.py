@@ -14,6 +14,7 @@ from dotman.manifest import (
     discover_package_manifests,
     merge_package_specs,
     path_rules_following_targets,
+    probe_after_following_package,
     _validate_resolved_package,
     normalize_default_command_elevation,
     normalize_gitignore_enabled,
@@ -397,7 +398,9 @@ class Repository:
                 )
             # A parent may contribute only part of a keyed path rule. Defer
             # completeness checks until all parents and the child are merged.
-            parent_spec = self._resolve_package(parent_id, validate=False, extending=(*extending, package_id))
+            parent_spec = probe_after_following_package(
+                self._resolve_package(parent_id, validate=False, extending=(*extending, package_id)), package_id,
+            )
             merged = parent_spec if merged is None else merge_package_specs(merged, parent_spec)
         current = strip_package_extensions(loaded)
         merged = current if merged is None else merge_package_specs(merged, current)

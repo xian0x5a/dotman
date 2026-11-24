@@ -15,6 +15,7 @@ from dotman.interaction_policy import interaction_scope
 from dotman.execution import ExecutionObserver, ExecutionStep, ExecutionStepResult, StepReporter, _execute_step
 from dotman.models import HookPlan, PackagePlan, ResolvedSyncTarget, SnapshotConfig, TargetPlan, package_ref_text
 from dotman.planning import PackagePlanningInput, plan_hooks, plan_repo_hooks
+from dotman.projection import PlanningCommandError
 from dotman.snapshot import SnapshotRecord, create_push_snapshot, mark_snapshot_status, prune_snapshots
 
 
@@ -306,19 +307,26 @@ def ordered_stage_steps(
 ) -> tuple[ExecutionStep, ...]:
     """Freeze the nested stage order once; the same sequence drives IO and results."""
     normal, noop = _hook_scopes(metadata, auxiliary, active_targets)
-    rechecked = {activation.target for activation in auxiliary if activation.recheck}
+    rechecked = {activation.scope for activation in auxiliary if activation.recheck}
     steps = []
     matched = set()
 
+    def noop_eligible(hook, scope):
+        return scope in noop and (hook.run_noop or run_noop)
+
+    def probe_gated(hook, scope):
+        # A noop-eligible hook runs whatever a probe reports, so the recheck gates
+        # only hooks its activation alone brought in.
+        return scope in rechecked and not noop_eligible(hook, scope)
+
     def hooks(values, name, scope, package=None, target=None):
         for hook in values:
-            if hook.hook_name == name and (
-                scope in normal or scope in noop and (hook.run_noop or run_noop)
-            ):
+            if hook.hook_name == name and (scope in normal or noop_eligible(hook, scope)):
                 steps.append(ExecutionStep(
                     repo_name=hook.repo_name or "", package_id=hook.package_id,
                     package_plan=package, target_plan=target, kind="hook",
                     action=name, scope_kind=hook.scope_kind, hook_plan=hook,
+                    probe_gated=probe_gated(hook, scope),
                 ))
 
     for repo, repo_hooks in metadata.repo_hooks:
@@ -333,7 +341,8 @@ def ordered_stage_steps(
                 identity = _target_identity(package, target)
                 target_hooks = [hook for hook in values if hook.scope_kind == "target"
                                 and hook.target_name == target.target_name]
-                if identity in rechecked:
+                if any(hook.hook_name in (f"pre_{direction}", f"post_{direction}")
+                       and probe_gated(hook, identity.canonical) for hook in target_hooks):
                     # Gates the hooks below; execution skips them when it exits 100.
                     steps.append(ExecutionStep(
                         repo_name=repo, package_id=package.package_id, package_plan=package,
@@ -382,11 +391,17 @@ def run_command_step(
     if step.kind == "probe":
         if recheck_probe is None:
             raise ValueError("Probe step has no recheck")
-        if recheck_probe(identity):
+        try:
+            active = recheck_probe(identity)
+        except PlanningCommandError as exc:
+            # As at planning, the output line is for human output only.
+            return ExecutionStepResult(step, "failed", exit_code=exc.exit_code, error=str(exc),
+                                       output_line=exc.output_line)
+        if active:
             return ExecutionStepResult(step, "ok")
         inactive.add(identity)
         return ExecutionStepResult(step, "skipped", skip_reason="probe-inactive")
-    if identity in inactive:
+    if step.probe_gated and identity in inactive:
         return ExecutionStepResult(step, "skipped", skip_reason="probe-inactive")
     return _execute_step(step, stream_output=stream_output, no_confirm=no_confirm)
 

@@ -1516,7 +1516,10 @@ class SyncDeckApp(App[bool]):
             if row.guard_skip is not None:
                 facts.append((render_sync_term('Guard skipped', use_color=use_color), guard_skip_explanation(row)))
             if row.conditional:
-                facts.append(("Checked after", ", ".join(row.checked_after)))
+                facts.append(("Checked after", ", ".join(
+                    render_package_label(repo_name=repo, package_id=package_id, target_name=target_name,
+                                         use_color=use_color)
+                    for repo, package_id, target_name in row.checked_after)))
             facts += included_via_fact(row, use_color=use_color)
         else:
             identity = unit_label(row, use_color=use_color)

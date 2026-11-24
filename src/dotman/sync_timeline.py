@@ -54,6 +54,9 @@ class SyncTimelineRenderer:
             self.shown_errors.add(result.error)
             # Hook output was streamed live, so only the exit status is new.
             detail = f"exit {result.exit_code}" if step.kind == "hook" and result.exit_code is not None else result.error
+            if result.output_line:
+                # Captured, unlike streamed hook output, so its first line is shown here.
+                detail = f"{detail}: {result.output_line}"
             # A failure is free text and may span lines; its unprintable characters are still escaped.
             print(f"      {terminal_safe_text(detail)}")
         print(f"      {render_execution_status(result.status, use_color=self._use_color)}", flush=True)

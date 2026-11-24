@@ -332,7 +332,8 @@ otherwise **Use repository** is the visible fallback and Merge is unavailable.
   `directions` and `diagnostics`, without file/Proposal/Base fields. `probe_work`
   entries also carry `conditional`. Its execution-time check is a stage step of
   kind `probe`, `ok` or `skipped` with `skip_reason: probe-inactive`; the target hooks
-  it skips report the same reason.
+  it skips report the same reason. A failed check reports the probe's `exit_code`;
+  as at planning, its first output line appears only in human output.
   `summary.selected_auxiliary` counts directly selected auxiliary rows.
   `commit_work` lists each offered repo with `repo`, `branch` (null when detached),
   `selected`, `result` (`committed`, `no-changes`, `skipped`, `failed`,

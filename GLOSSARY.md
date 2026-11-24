@@ -53,7 +53,7 @@ An active probe target presented by Sync as selectable auxiliary work that may a
 _Avoid_: Sync Unit, Proposal
 
 **Conditional Probe Work**:
-Probe Work for a probe target with `probe_after` whose named inputs have work in the run. Its probe is not run at planning; execution runs it once, right before the target's own hooks, after the writes it reads.
+Probe Work for a probe target with `probe_after` whose named inputs have work in the run. Its probe is not run at planning; execution runs it right before the target's own hooks, after the writes it reads.
 _Avoid_: Post target, deferred probe, reprobe
 
 **On-demand Target**:

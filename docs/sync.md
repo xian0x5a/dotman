@@ -186,11 +186,13 @@ A Probe with `probe_after` ([repository configuration](repository.md#targets))
 is decided after the rest of the workset. When an entry it names has a drifted
 unit, Probe Work, Directory Root Work or Hook Work, its probe does not run at
 planning: it becomes **conditional Probe Work**, a row whose outcome waits for
-those writes. Execution runs the probe once per selected family, as a `probe`
-step right before the target's own hooks: exit 0 runs them, 100 skips the probe
-step and its hooks (`skip_reason: probe-inactive`), and any other exit fails the
-stage like a hook. Without such work, planning probes it once as usual. Either way
-it activates only its own target hooks, not its package's or repository's.
+those writes. Execution runs the probe as a `probe` step right before the
+target's own hooks, in each stage whose hooks wait for it: exit 0 runs them, 100
+skips the probe step and those hooks (`skip_reason: probe-inactive`), and any
+other exit fails the stage like a hook. Noop-eligible hooks selected as Hook Work
+do not wait: they run whatever the probe reports. Without such work, planning
+probes it once as usual. Either way it activates only its own target hooks, not
+its package's or repository's.
 
 Independently noop-eligible hooks remain selectable **Hook Work**, identified
 only by canonical repository, package-instance or target scope plus

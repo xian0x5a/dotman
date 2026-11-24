@@ -1008,6 +1008,8 @@ def validate_patch_capture(owner: str, *, render: str, capture: str, compare_rep
 def normalize_probe_after(value: Any, *, context: str) -> tuple[str, ...] | None:
     """Entries are `package` or `package.target`; `.` only separates the two."""
     entries = normalize_string_list(value, context=context, key="probe_after")
+    if entries == ():
+        raise UsageError(f"{context} probe_after must name at least one entry; remove it instead")
     for entry in entries or ():
         validate_printable(entry, kind="probe_after entry", context=context)
         if not all(entry.split(".")) or entry.count(".") > 1:
@@ -1015,12 +1017,32 @@ def normalize_probe_after(value: Any, *, context: str) -> tuple[str, ...] | None
     return entries
 
 
+def probe_after_following_package(package: PackageSpec, inheriting_id: str) -> PackageSpec:
+    """An inherited entry that names the declaring package means the inheriting one.
+
+    Entries name packages literally, so without this a parent's own-package entry
+    would point an `extends` child at the parent, which is not in its closure.
+    """
+    def follow(entry: str) -> str:
+        package_id, separator, target_name = entry.partition(".")
+        return f"{inheriting_id}{separator}{target_name}" if package_id == package.id else entry
+
+    return replace(package, targets={
+        name: replace(target, probe_after=tuple(follow(entry) for entry in target.probe_after))
+        if target.probe_after is not None else target
+        for name, target in (package.targets or {}).items()
+    }) if package.targets else package
+
+
 def validate_probe_after_entries(
     *, repo_name: str, package: PackageSpec, target: TargetSpec, closure: Mapping[str, PackageSpec],
+    depends_back: Collection[str],
 ) -> None:
     """Each entry must already run before the probe: its own package or the `depends` closure.
 
     `closure` maps the package's dependency closure, itself included, by package ID.
+    `depends_back` names closure packages that also depend on this package; a
+    cycle leaves their order to whichever package the run starts from.
     """
     target_label = repo_qualified_target_text(repo_name=repo_name, package_id=package.id, target_name=target.name)
     for entry in target.probe_after or ():
@@ -1030,6 +1052,11 @@ def validate_probe_after_entries(
             raise UsageError(
                 f"target '{target_label}' probe_after entry '{entry}' must name '{package.id}' "
                 "or a package in its depends closure, which run before it"
+            )
+        if package_id in depends_back:
+            raise UsageError(
+                f"target '{target_label}' probe_after entry '{entry}' names a package that depends "
+                f"back on '{package.id}', so it may run after it"
             )
         if not target_name:
             continue

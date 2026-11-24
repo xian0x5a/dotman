@@ -27,6 +27,8 @@ class ExecutionStep:
     target_plan: TargetPlan | None = None
     # Display text for steps that have neither a hook command nor a target path.
     description: str | None = None
+    # A target hook that runs only if the preceding probe step finds work.
+    probe_gated: bool = False
 
     @property
     def command(self) -> str | None:
@@ -44,6 +46,8 @@ class ExecutionStepResult:
     stdout: str = ""
     stderr: str = ""
     error: str | None = None
+    # First line of captured command output, for human output only; never in JSON.
+    output_line: str | None = None
 
 
 @dataclass(frozen=True)

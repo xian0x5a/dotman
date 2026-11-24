@@ -28,9 +28,10 @@ class AuxiliaryRow:
     guard_skip: GuardSkip | None = None
     # Package inputs whose dependency closure brought this scope in; empty when requested.
     included_via: tuple[ResolvedPackageIdentity, ...] = ()
-    # Conditional Probe Work: the probe_after entries with work in this run. The
-    # probe was not run at planning and is checked right before its own hooks.
-    checked_after: tuple[str, ...] = ()
+    # Conditional Probe Work: the probe_after entries with work in this run, as
+    # (repo, package, target or None). The probe was not run at planning and is
+    # checked right before its own hooks.
+    checked_after: tuple[tuple[str, str, str | None], ...] = ()
 
     @property
     def conditional(self) -> bool:
@@ -80,20 +81,19 @@ def retain_directional_hooks(
 _WorkKey = tuple[str, str, str | None]
 
 
-def _checked_after(target: TargetMetadata, work: set[_WorkKey]) -> tuple[str, ...]:
-    """The probe_after entries with work in this run, as repo-qualified labels.
+def _checked_after(target: TargetMetadata, work: set[_WorkKey]) -> tuple[_WorkKey, ...]:
+    """The probe_after entries with work in this run.
 
     Package instances are not told apart: any instance's work counts, which at
     worst re-checks a probe that did not need it.
     """
-    own = (target.repo_name, target.package_id, target.target_name)
-    labels = []
+    entries = []
     for entry in target.target.probe_after or ():
         package_id, _, target_name = entry.partition(".")
-        if any(key != own and key[0] == target.repo_name and key[1] == package_id
+        if any(key[0] == target.repo_name and key[1] == package_id
                and (not target_name or key[2] == target_name) for key in work):
-            labels.append(f"{target.repo_name}:{entry}")
-    return tuple(labels)
+            entries.append((target.repo_name, package_id, target_name or None))
+    return tuple(entries)
 
 
 def plan_auxiliary(
@@ -170,11 +170,14 @@ def plan_auxiliary(
         )
 
     # probe_after targets read what earlier work writes, so they are decided only
-    # once every other row of the run is known.
-    work = hook_work | {
+    # once every other row of the run is known. Their own work, itself included,
+    # is never another one's input: none of it is decided yet.
+    late = {(target.repo_name, target.package_id, target.target_name)
+            for _identity, target in probe_targets if target.target.probe_after is not None}
+    work = (hook_work | {
         (identity.repo, identity.package_id, identity.target_name)
         for identity in (*drifted, *probed_present, *root_work)
-    }
+    }) - late
     checked_after = {
         identity: after
         for identity, target in probe_targets

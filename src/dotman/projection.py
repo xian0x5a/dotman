@@ -40,6 +40,7 @@ from dotman.models import (
     repo_qualified_target_text,
     target_path_rule_matches,
 )
+from dotman.package_resolution import resolve_package_ids
 from dotman.repository import Repository
 from dotman.templates import render_template_file, render_template_string
 
@@ -142,7 +143,14 @@ def build_target_metadata(
             if not sync_policy_allows_operation(sync_policy, operation=operation):
                 continue
             if target.probe is not None:
-                validate_probe_after_entries(repo_name=repo.config.name, package=package, target=target, closure=closure)
+                if target.probe_after is not None:
+                    validate_probe_after_entries(
+                        repo_name=repo.config.name, package=package, target=target, closure=closure,
+                        depends_back={
+                            package_id for package_id in closure if package_id != package.id
+                            and package.id in resolve_package_ids(repo, package_id, "package")
+                        },
+                    )
                 probe_command = render_template_string(
                     target.probe,
                     context,
@@ -494,9 +502,10 @@ def file_is_executable(mode: int) -> bool:
 class PlanningCommandError(ValueError):
     # Command output is untrusted data, not public diagnostic metadata: the
     # message stays output-free and `output_line` is for human output only.
-    def __init__(self, message: str, *, output_line: str | None) -> None:
+    def __init__(self, message: str, *, output_line: str | None, exit_code: int | None = None) -> None:
         super().__init__(message)
         self.output_line = output_line
+        self.exit_code = exit_code
 
 
 def run_probe_command(command_runtime: CommandRuntime, metadata: TargetMetadata) -> bool:
@@ -517,6 +526,7 @@ def run_probe_command(command_runtime: CommandRuntime, metadata: TargetMetadata)
     raise PlanningCommandError(
         f"probe failed for {metadata.canonical} "
         f"with status {result.exit_code}",
+        exit_code=result.exit_code,
         output_line=first_output_line(
             result.stderr.decode("utf-8", errors="replace"),
             result.stdout.decode("utf-8", errors="replace"),

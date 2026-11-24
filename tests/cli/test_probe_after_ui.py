@@ -24,3 +24,4 @@ def test_conditional_probe_row_shows_probe_work_question_mark_and_checked_after(
                 assert any(fact.startswith("Checked after") and "main:base.conf" in fact
                            for fact in detail_facts(app))
     asyncio.run(asyncio.wait_for(interact(), timeout=5))
+

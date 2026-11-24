@@ -201,26 +201,32 @@ preset = "jinja-patch"
   - `100`: inactive/noop; the target stays out of normal selection and hooks run only if explicitly noop-eligible.
   - any other non-zero status: hard planning failure.
 - Planning runs probes concurrently, up to eight at a time (fewer on machines with fewer cores), so a probe must not depend on another probe or share scratch files with it.
-- A probe that reads what other targets write in the same run sets `probe_after`, a list of
-  `package` or `package.target` entries naming those inputs. Without it, planning probes the
-  state from before those writes: a push that adds a file the probe looks for reports nothing
-  to do. `probe_after` changes only when the probe runs; its hooks still run only on exit `0`.
-  Setting `probe_after` without `probe` is an error, checked like the fields above.
+- A probe that reads what other targets write in the same run sets `probe_after`, a non-empty
+  list of `package` or `package.target` entries naming those inputs. Without it, planning probes
+  the state from before those writes: a push that adds a file the probe looks for reports
+  nothing to do. `probe_after` changes only when the probe runs; its hooks still run only on
+  exit `0`. Setting `probe_after` without `probe`, or to `[]`, is an error, checked like the
+  fields above.
   - Each entry names the target's own package, a package in its `depends` closure, or one of
-    their targets, all of which run before it. A whole-package entry also covers targets added
-    to that package later; a target entry is narrower and must be kept in step. An entry must
-    not name a target that sets `probe_after` itself. Dotman checks entries when it plans the
-    package.
+    their targets, all of which run before it. A package that also depends back on the target's
+    package is rejected: in a cycle either may run first. A whole-package entry covers the
+    package's other targets, including ones added later; a target entry is narrower and must be
+    kept in step. Targets that set `probe_after` never count as another one's input, and an
+    entry must not name one. Dotman checks entries when it plans the package.
+  - In a package that another one `extends`, an entry naming the declaring package names the
+    inheriting package, so a parent's own-package entries follow its children.
   - Within its package the target runs after the normal targets; packages already run
     dependency-first.
   - When an entry has work in the run (a drifted file, Probe Work, Directory Root Work or Hook
     Work, in any package instance), planning skips the probe and shows the target as
-    conditional Probe Work ([Sync](sync.md#auxiliary-work)). Execution then runs the probe once,
-    right before the target's own hooks: `0` runs them, `100` skips them, and any other exit
-    fails the stage. Otherwise nothing before it changes the probe's input, so planning probes
-    it once as usual.
+    conditional Probe Work ([Sync](sync.md#auxiliary-work)). Execution runs the probe right
+    before the target's own hooks, once in each stage whose hooks wait for it: `0` runs them,
+    `100` skips them, and any other exit fails the stage. Otherwise nothing before it changes
+    the probe's input, so planning probes it once as usual.
   - It activates only its own target hooks, never package or repo hooks: by its turn their
-    pre hooks have already run or been skipped.
+    pre hooks have already run or been skipped. Its noop-eligible hooks (`run_noop`, or the
+    operation's noop option) run whatever the probe reports, as for any probe, so they never
+    wait for it.
   - An input not named in `probe_after` is not waited for. If the probe reads a package outside
     its `depends` closure, add the dependency first.
 - Probe targets do not claim repo/live paths, do not participate in target ownership conflicts, do not create snapshots, and never execute file push/pull steps.
