@@ -1060,6 +1060,8 @@ def validate_probe_after_entries(
             )
         if not target_name:
             continue
+        if package_id == package.id and target_name == target.name:
+            raise UsageError(f"target '{target_label}' probe_after entry '{entry}' names the target itself")
         entry_target = (entry_package.targets or {}).get(target_name)
         if entry_target is None or entry_target.disabled:
             raise UsageError(f"target '{target_label}' probe_after entry '{entry}' names no target")

@@ -505,3 +505,56 @@ def test_probe_after_target_naming_a_later_one_in_its_package_is_rejected(tmp_pa
     engine = DotmanEngine.from_config_path(config)
     with pytest.raises(UsageError, match=r"\bafter\b"):
         engine.open_sync_session(engine.resolve_sync_scope(), preview=True)
+
+
+# --- selector order does not change execution order --------------------------------
+
+def test_exact_selectors_in_reverse_order_still_write_before_the_probe_reads(tmp_path, monkeypatch, capsys):
+    config = build(tmp_path, monkeypatch, app_manifest(tmp_path))
+    code, document = run_cli(config, capsys, "push", "main:app.check", "main:base.conf")
+    assert code == 0
+    assert log_lines(tmp_path) == ["probe", "hook"]
+    assert step_kinds(document) == [("probe", "probe", "ok", None), ("hook", "post_push", "ok", None)]
+
+
+def test_chained_probe_after_targets_run_in_declaration_order_whatever_the_selector_order(
+        tmp_path, monkeypatch, capsys):
+    made = tmp_path / "live/made"
+    log = tmp_path / "log"
+    app = f'''[targets.first]
+sync_policy = "push-only"
+probe = "true"
+probe_after = ["app.nothing"]
+[targets.first.hooks]
+post_push = "mkdir -p {tmp_path / 'live'}; touch {made}"
+
+[targets.second]
+sync_policy = "push-only"
+probe = "if [ -f {made} ]; then exit 0; else exit 100; fi"
+probe_after = ["app.first"]
+[targets.second.hooks]
+post_push = "echo second >> {log}"
+
+[targets.nothing]
+source = "nothing"
+path = "{tmp_path}/live/nothing"
+type = "file"
+sync_policy = "push-only"
+'''
+    config = build(tmp_path, monkeypatch, app, base_files=())
+    (tmp_path / "repo/packages/app/nothing").write_bytes(b"x")
+    code, _document = run_cli(config, capsys, "push", "main:app.second", "main:app.first", "main:app.nothing")
+    assert code == 0
+    assert log_lines(tmp_path) == ["second"]
+
+
+def test_probe_after_entry_naming_the_target_itself_is_rejected_as_such(tmp_path, monkeypatch):
+    app = '''[targets.first]
+sync_policy = "push-only"
+probe = "true"
+probe_after = ["app.first"]
+'''
+    config = build(tmp_path, monkeypatch, app, base_files=())
+    engine = DotmanEngine.from_config_path(config)
+    with pytest.raises(UsageError, match="itself"):
+        engine.open_sync_session(engine.resolve_sync_scope(), preview=True)

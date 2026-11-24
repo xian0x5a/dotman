@@ -89,6 +89,8 @@ stay quiet and nothing runs "always on" (`run_noop` was rejected for that reason
 - [x] Preview honesty: a row is conditional only if a non-noop-eligible hook waits.
 - [x] Chaining: ordered planning loop, same-package declaration-order check,
   regression tests written to fail first.
+- [x] Selector-independent order (review of chaining; user chose the general fix):
+  scope resolution orders packages dependency-first and targets by declaration.
 - Landing (outside this repo): after merge, fast-forward the editable install, commit
   the dotfiles switch, close dotfiles#8.
 
@@ -97,6 +99,9 @@ stay quiet and nothing runs "always on" (`run_noop` was rejected for that reason
   iterates `package.targets`), not name order; `tracking.py` sorts only for display.
 - Review found that gating every hook skipped noop-eligible ones, that literal package
   IDs broke `extends` children, and that cyclic `depends` voided the ordering promise.
+- Exact-target and `--no-deps` inputs ran in command-line order, so an input listed
+  before its dependency ran first, against the documented dependency-first order;
+  `probe_after` then read stale state. Cycles must keep input order.
 - A probe step that gates no hook (noop-eligible only, or none in that stage) must not
   run, and preview must not promise it.
 

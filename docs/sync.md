@@ -369,7 +369,10 @@ Editor attempt preserves the session. Terminal Editors temporarily own the termi
 ### Frozen execution and partial failure
 
 Execution traverses repositories in configured order, dependency-first package
-plans, then stable target-plan order. The complete operation runs Repository
+plans, then stable target-plan order, whatever the order of the scope inputs
+([CLI](cli.md)): a package follows each selected package it depends on, packages
+in a `depends` cycle or with no dependency between them keep input order, and
+targets keep their declaration order. The complete operation runs Repository
 Apply before any Live Publication. Approved Additional Source Changes are written
 once in repository order and normalized-path order, before Primary Source work;
 Additional-only work owns no package/target hook scope.
