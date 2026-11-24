@@ -1,5 +1,5 @@
 ---
-status: open
+status: done
 ---
 
 ## Goal
@@ -55,10 +55,14 @@ re-runs at execution, so there is no conditional row, no `probe` step and no own
 - Isolated repro against a dotfiles clone with `HOME` and `XDG_*` in a temp dir.
 
 ## Progress
-- [ ] Step 1 PR (selector-independent order).
-- [ ] Plan written; tests; implementation; docs; review.
-- [ ] PR opened; #358 closed with a pointer.
-- [ ] Awaiting user approval to merge; then dotfiles switch and #8.
+- [x] Step 1 branch `fix/selector-independent-order`: dependency-first packages, declaration
+  order, configured repo order; independent tests failed first; reviewed.
+- [x] Plan written; independent tests first (29, then 32); implementation; docs; review
+  (three low findings fixed: per-stage ordering wording, vacuous shape cases, appendable list).
+- [x] Isolated dotfiles repro: add, remove, no-change, reversed inputs, `push agents` alone,
+  `push claude` alone.
+- Dotfiles switch and closing dotfiles#8 follow the merge, once the editable install has
+  the field; tracked in that issue.
 
 ## Decisions
 - Rejected `probe_after` (#358): ~460 src lines, a conditional row state, an execution
@@ -75,5 +79,13 @@ re-runs at execution, so there is no conditional row, no `probe` step and no own
   the probe reads them.
 
 ## Surprises & Discoveries
+- Repositories also ran in input order, against the documented configured order; fixed in
+  step 1 with the package order.
+- The "after the entries" guarantee holds per stage: in Sync a both-direction consumer's
+  pull hooks run in Repository Apply, before Live Publication writes.
 
 ## Outcomes & Retrospective
+- `additional_triggers` fixes dotfiles#8 at about a fifth of `probe_after`'s source size,
+  with no new row state or execution step; decisions moved to ADR 0008.
+- The cheaper shape came from asking whether the probe must re-run at all: an idempotent
+  hook makes "an input changed" enough, so planning can decide everything.
