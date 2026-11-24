@@ -93,7 +93,8 @@ package, so none of its hooks either. A selector-less run already covers the who
 tracked state, so the flag changes nothing for it.
 
 Input order does not change the run order. A package runs after every selected package
-it depends on, unrelated packages keep input order, and a package's targets keep their
+it depends on, packages in a `depends` cycle or with no dependency between them keep input
+order, and a package's targets keep their
 declaration order, so `dotman push app.check base.conf` writes `base.conf` first when
 `app` depends on `base`.
 

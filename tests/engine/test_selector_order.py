@@ -45,3 +45,15 @@ def test_unrelated_packages_keep_selector_order(tmp_path, monkeypatch, capsys):
     write_tracked_packages_state(tmp_path / "state", repo_name="main", entries=[("app", "default"), ("base", "default")])
     _code, document = push(config, capsys, "--dry-run", "main:base.conf", "main:app.x")
     assert units(document) == ["main:base.conf", "main:app.x"]
+
+
+def test_selector_less_push_runs_a_dependency_with_its_own_tracked_profile_first(tmp_path, monkeypatch, capsys):
+    # `app@p1` pulls in `base@p1` implicitly; the explicit `base@p2` replaces it and is tracked after `app`.
+    from tests.engine.test_probe_after import app_manifest
+    config = build(tmp_path, monkeypatch, app_manifest(tmp_path))
+    for profile in ("p1", "p2"):
+        (tmp_path / "repo/profiles" / f"{profile}.toml").write_text("")
+    write_tracked_packages_state(tmp_path / "state", repo_name="main", entries=[("app", "p1"), ("base", "p2")])
+    code, _document = push(config, capsys)
+    assert code == 0
+    assert log_lines(tmp_path) == ["probe", "hook"]

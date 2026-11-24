@@ -250,8 +250,8 @@ def _dependency_first(
 ) -> list[ResolvedPackageSelection]:
     """Move each selection after the selected packages it depends on.
 
-    Selector order decides only between unrelated packages. Without this, an
-    exact target or `--no-deps` input listed before its dependency runs first.
+    Input order decides only between unrelated packages. Without this, an exact
+    target or `--no-deps` input listed before its dependency runs first.
     """
     pending = {resolved_package_selection_key(selection): selection for selection in selections}
     closures = {
@@ -347,7 +347,10 @@ def resolve_sync_scope(
                 if key not in selected_keys:
                     selected_keys.add(key)
                     selected_selections.append(selection)
-        selected_selections = _dependency_first(context, selected_selections, all_selections)
+
+    # Tracked order is not dependency-first either: a dependency tracked under its own
+    # profile replaces the implicit instance and lands after its dependent.
+    selected_selections = _dependency_first(context, selected_selections, all_selections)
 
     # Static ownership and collision resolution runs against the full tracked graph
     # before narrowing to the requested identities.
