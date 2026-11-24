@@ -92,6 +92,12 @@ Target inputs never expand a closure: naming one target brings in no dependency
 package, so none of its hooks either. A selector-less run already covers the whole
 tracked state, so the flag changes nothing for it.
 
+Input order does not change the run order. Repositories run in their configured `order`;
+a package runs after every selected package it depends on, while packages in a `depends`
+cycle or with no dependency between them keep input order; and a package's targets keep
+their declaration order. So `dotman push app.conf base.conf` writes `base.conf` first when
+`app` depends on `base`.
+
 On-demand targets (`on_demand = true`) are in scope only when an input names
 them exactly, e.g. `dotman push niri-custom-git.niri_custom_git_update`.
 Package inputs, including their dependency closure, and selector-less runs
