@@ -351,6 +351,9 @@ def resolve_sync_scope(
     # Tracked order is not dependency-first either: a dependency tracked under its own
     # profile replaces the implicit instance and lands after its dependent.
     selected_selections = _dependency_first(context, selected_selections, all_selections)
+    # Execution visits repos in first-seen order; a stable sort keeps the order within each.
+    repo_position = {repo.name: index for index, repo in enumerate(context.config.ordered_repos)}
+    selected_selections.sort(key=lambda selection: repo_position[selection.identity.repo])
 
     # Static ownership and collision resolution runs against the full tracked graph
     # before narrowing to the requested identities.

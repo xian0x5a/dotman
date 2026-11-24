@@ -78,3 +78,31 @@ def test_selector_less_push_runs_a_dependency_with_its_own_tracked_profile_first
     code, _document = push(config, capsys)
     assert code == 0
     assert logged(tmp_path) == ["base", "app"]
+
+
+def test_repositories_run_in_configured_order_whatever_the_selector_order(tmp_path, monkeypatch, capsys):
+    from tests.helpers import initialize_git_repository, write_named_manager_config
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    log = tmp_path / "log"
+    repos = {}
+    for name in ("alpha", "beta"):  # configured order 10, 20
+        repo = repos[name] = tmp_path / name
+        (repo / "profiles").mkdir(parents=True)
+        (repo / "profiles/default.toml").write_text("")
+        package = repo / "packages/app"
+        package.mkdir(parents=True)
+        (package / "x").write_bytes(b"new")
+        (package / "package.toml").write_text(
+            f'[targets.x]\nsource = "x"\npath = "{tmp_path / "live" / name}"\ntype = "file"\n'
+            f'sync_policy = "push-only"\n[targets.x.hooks]\npost_push = "echo {name} >> {log}"\n')
+        initialize_git_repository(repo)
+        write_tracked_packages_state(tmp_path / "state", repo_name=name, entries=[("app", "default")])
+    (tmp_path / "live").mkdir()
+    for directory in (tmp_path / "state/dotman", tmp_path / "state/dotman/repos",
+                      *(tmp_path / f"state/dotman/repos/{name}" for name in repos)):
+        directory.chmod(0o700)
+    config = write_named_manager_config(tmp_path, repos)
+    code, document = push(config, capsys, "beta:app.x", "alpha:app.x")
+    assert code == 0
+    assert units(document) == ["alpha:app.x", "beta:app.x"]
+    assert logged(tmp_path) == ["alpha", "beta"]
