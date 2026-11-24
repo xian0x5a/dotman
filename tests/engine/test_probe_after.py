@@ -99,7 +99,6 @@ def test_probe_after_shape_errors_surface_at_package_resolution(tmp_path, monkey
     ("outside", "depends closure"),
     ("base.missing", "names no target"),
     ("base.off", "names no target"),
-    ("base.chained", "uses probe_after"),
 ])
 def test_probe_after_entries_outside_the_graph_fail_when_planning(tmp_path, monkeypatch, entry, message):
     base = '''[targets.conf]
@@ -112,9 +111,6 @@ disabled = true
 source = "conf"
 path = "%s/live/off"
 type = "file"
-[targets.chained]
-probe = "true"
-probe_after = ["base.conf"]
 ''' % (tmp_path, tmp_path)
     config = build(tmp_path, monkeypatch, target_with(f'["{entry}"]'), base_toml=base,
                    extra_packages={"outside": '[targets.t]\nprobe = "true"\n'})
@@ -425,3 +421,87 @@ def test_row_is_not_conditional_when_no_hook_waits_for_the_recheck(tmp_path, mon
     assert log_lines(tmp_path) == ["probe"]
     _code, output = run_cli(config, capsys, *args[:1], *args[1:], json_output=False)
     assert "would-check" not in output
+
+
+# --- chaining: probe_after targets decided in execution order ---------------------
+
+def mid_manifest(tmp_path, *, after='["base.conf"]'):
+    made = tmp_path / "live/made"
+    log = tmp_path / "log"
+    return f'''depends = ["base"]
+[targets.link]
+sync_policy = "push-only"
+probe = "echo midprobe >> {log}; test ! -f {made}"
+probe_after = {after}
+[targets.link.hooks]
+post_push = "echo midhook >> {log}; mkdir -p {tmp_path / 'live'}; touch {made}"
+'''
+
+
+def chain_app(tmp_path, after):
+    command = (f"echo probe >> {tmp_path / 'log'}; "
+               f"if [ -f {tmp_path / 'live/made'} ]; then exit 0; else exit 100; fi")
+    return app_manifest(tmp_path, probe_after=after, command=command, depends='["mid"]')
+
+
+IN_SYNC = [("conf", "push-only", b"same", b"same", "")]
+CHAIN_STEPS = [("main:app.check", "probe", "ok"), ("main:app.check", "post_push", "ok")]
+
+
+def chain_steps(document):
+    return [(step["scope_identity"], step["action"], step["status"]) for step in document["stages"]
+            if step["kind"] in ("probe", "hook")]
+
+
+@pytest.mark.parametrize("after", ['["mid"]', '["mid.link"]'])
+def test_planning_active_probe_after_row_makes_a_later_probe_after_target_conditional(
+        tmp_path, monkeypatch, capsys, after):
+    config = build(tmp_path, monkeypatch, chain_app(tmp_path, after), base_files=IN_SYNC,
+                   extra_packages={"mid": mid_manifest(tmp_path)})
+    code, document = run_cli(config, capsys, "push")
+    assert code == 0
+    assert probe_row(document, "main:mid.link")["conditional"] is False
+    assert probe_row(document)["conditional"] is True
+    assert chain_steps(document) == [("main:mid.link", "post_push", "ok"), *CHAIN_STEPS]
+    assert log_lines(tmp_path) == ["midprobe", "midhook", "probe", "hook"]
+
+
+def test_conditional_upstream_probe_after_row_makes_a_later_one_conditional(tmp_path, monkeypatch, capsys):
+    config = build(tmp_path, monkeypatch, chain_app(tmp_path, '["mid.link"]'),
+                   extra_packages={"mid": mid_manifest(tmp_path)})
+    code, document = run_cli(config, capsys, "push")
+    assert code == 0
+    assert probe_row(document, "main:mid.link")["conditional"] is True
+    assert probe_row(document)["conditional"] is True
+    assert chain_steps(document) == [
+        ("main:mid.link", "probe", "ok"), ("main:mid.link", "post_push", "ok"), *CHAIN_STEPS]
+    assert log_lines(tmp_path) == ["midprobe", "midhook", "probe", "hook"]
+
+
+def same_package_manifest(tmp_path, first_after, second_after):
+    # Each target needs a hook: a row is conditional only when a hook waits for its probe.
+    def target(name, after):
+        return f'''[targets.{name}]
+sync_policy = "push-only"
+probe = "true"
+probe_after = {after}
+[targets.{name}.hooks]
+post_push = "true"
+'''
+    return 'depends = ["base"]\n' + target("first", first_after) + target("second", second_after)
+
+
+def test_probe_after_target_may_name_an_earlier_one_in_its_package(tmp_path, monkeypatch, capsys):
+    app = same_package_manifest(tmp_path, '["base.conf"]', '["app.first"]')
+    config = build(tmp_path, monkeypatch, app)
+    _code, preview = run_cli(config, capsys, "push", "--dry-run")
+    assert probe_row(preview, "main:app.first")["conditional"] is True
+    assert probe_row(preview, "main:app.second")["conditional"] is True
+
+
+def test_probe_after_target_naming_a_later_one_in_its_package_is_rejected(tmp_path, monkeypatch):
+    app = same_package_manifest(tmp_path, '["app.second"]', '["base.conf"]')
+    config = build(tmp_path, monkeypatch, app)
+    engine = DotmanEngine.from_config_path(config)
+    with pytest.raises(UsageError, match=r"\bafter\b"):
+        engine.open_sync_session(engine.resolve_sync_scope(), preview=True)

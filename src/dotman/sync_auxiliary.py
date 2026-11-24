@@ -13,7 +13,7 @@ from dotman.planning import PackagePlanningInput
 from dotman.projection import TargetMetadata, run_probe_command
 from dotman.progress import ProgressSink
 from dotman.sync_observation import Diagnostic, _ResolvedInputs, _identity
-from dotman.sync_publication import PublicationMetadata
+from dotman.sync_publication import PublicationMetadata, stage_target_order
 
 
 @dataclass(frozen=True)
@@ -87,10 +87,11 @@ def _checked_after(target: TargetMetadata, work: set[_WorkKey]) -> tuple[_WorkKe
     Package instances are not told apart: any instance's work counts, which at
     worst re-checks a probe that did not need it.
     """
+    own = (target.repo_name, target.package_id, target.target_name)
     entries = []
     for entry in target.target.probe_after or ():
         package_id, _, target_name = entry.partition(".")
-        if any(key[0] == target.repo_name and key[1] == package_id
+        if any(key != own and key[0] == target.repo_name and key[1] == package_id
                and (not target_name or key[2] == target_name) for key in work):
             entries.append((target.repo_name, package_id, target_name or None))
     return tuple(entries)
@@ -169,15 +170,6 @@ def plan_auxiliary(
             for scope in scopes
         )
 
-    # probe_after targets read what earlier work writes, so they are decided only
-    # once every other row of the run is known. Their own work, itself included,
-    # is never another one's input: none of it is decided yet.
-    late = {(target.repo_name, target.package_id, target.target_name)
-            for _identity, target in probe_targets if target.target.probe_after is not None}
-    work = (hook_work | {
-        (identity.repo, identity.package_id, identity.target_name)
-        for identity in (*drifted, *probed_present, *root_work)
-    }) - late
     def waits_for_probe(identity: ResolvedSyncTarget) -> bool:
         # Noop-eligible hooks run whatever the probe reports, so only the others wait for it.
         return any(
@@ -190,17 +182,30 @@ def plan_auxiliary(
             for hooks in package.hooks.values() for hook in hooks
         )
 
-    checked_after = {
-        identity: after
-        for identity, target in probe_targets
-        if target.target.probe_after is not None and waits_for_probe(identity)
-        and (after := _checked_after(target, work))
+    # probe_after targets read what earlier work writes, so they are decided last,
+    # one at a time in execution order: each sees every row that runs before it,
+    # earlier probe_after rows included, and none that runs after it.
+    late_targets = {identity: target for identity, target in probe_targets if target.target.probe_after is not None}
+    late_keys = {(identity.repo, identity.package_id, identity.target_name) for identity in late_targets}
+    work = (hook_work - late_keys) | {
+        (identity.repo, identity.package_id, identity.target_name)
+        for identity in (*drifted, *probed_present, *root_work)
     }
-    # Without work before it, planning already sees the state its turn would.
-    probed_present |= run_probes([(identity, target) for identity, target in probe_targets
-                                  if target.target.probe_after is not None and identity not in checked_after])
-    if sink is not None and checked_after:
-        sink.update(len(checked_after))
+    stage_position = {identity: index for index, identity in enumerate(stage_target_order(metadata["push"]))}
+    checked_after = {}
+    for identity in sorted(late_targets, key=stage_position.__getitem__):
+        target = late_targets[identity]
+        after = _checked_after(target, work) if waits_for_probe(identity) else ()
+        if after:
+            checked_after[identity] = after
+            if sink is not None:
+                sink.update(1)
+        else:
+            # Without work before it, planning already sees the state its turn would.
+            probed_present |= run_probes([(identity, target)])
+        key = (identity.repo, identity.package_id, identity.target_name)
+        if identity in checked_after or identity in probed_present or key in hook_work:
+            work.add(key)
 
     rows = []
     for identity in inputs:

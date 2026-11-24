@@ -211,12 +211,15 @@ preset = "jinja-patch"
     their targets, all of which run before it. A package that also depends back on the target's
     package is rejected: in a cycle either may run first. A whole-package entry covers the
     package's other targets, including ones added later; a target entry is narrower and must be
-    kept in step. Targets that set `probe_after` never count as another one's input, and an
-    entry must not name one. Dotman checks entries when it plans the package.
+    kept in step. An entry may name another `probe_after` target in a dependency package, or
+    one declared earlier in the same package; naming one declared later in the same package is
+    an error, since it runs after the target. Dotman checks entries when it plans the package.
   - In a package that another one `extends`, an entry naming the declaring package names the
     inheriting package, so a parent's own-package entries follow its children.
-  - Within its package the target runs after the normal targets; packages already run
-    dependency-first.
+  - Within its package the target runs after the normal targets, and `probe_after` targets run
+    in declaration order; packages already run dependency-first. Planning decides these targets
+    after the other probes, one at a time in that order, so a conditional or active one counts
+    as work for any later one that names it.
   - When an entry has work in the run (a drifted file, Probe Work, Directory Root Work or Hook
     Work, in any package instance) and one of the target's hooks would wait for the probe (one
     that is not noop-eligible, below), planning skips the probe and shows the target as

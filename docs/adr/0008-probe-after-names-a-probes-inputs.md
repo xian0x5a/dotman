@@ -4,6 +4,8 @@ Probes run during planning, before any write, so a probe that reads what the sam
 
 Entries must already run before the target: its own package (whose normal targets it follows) or its `depends` closure, without a cycle back. The target activates only its own hooks, because its package's and repo's pre hooks have run by its turn.
 
+`probe_after` targets may wait for each other. Planning decides them after the other probes, one at a time in execution order, so each sees every row that runs before it, an earlier conditional row included, and none after it. Within a package they run in declaration order, so an entry naming one declared later is rejected. Without this, a chain needs a workaround that names the earlier target's own inputs instead, which goes stale when those inputs change.
+
 Rejected:
 
 - `run_noop = true` on the hook, or `--run-noop`: the hook runs on every push. That covers up the ordering instead of fixing it.
@@ -12,4 +14,3 @@ Rejected:
 - A hook-level `reprobe = true`: when planning says 100 there is no row, so the hook is never scheduled. It also cannot cover pre hooks.
 - Watched paths: blind to state written by hooks, such as skills installed through `npx skills`.
 - Rechecking every probe after writes: always-on rows and twice the probe cost.
-- `probe_after` targets as inputs of each other: they are decided last, so chaining them would need ordered, sequential planning. Revisit if a real chain appears.

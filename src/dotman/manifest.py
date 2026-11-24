@@ -1063,11 +1063,14 @@ def validate_probe_after_entries(
         entry_target = (entry_package.targets or {}).get(target_name)
         if entry_target is None or entry_target.disabled:
             raise UsageError(f"target '{target_label}' probe_after entry '{entry}' names no target")
-        if entry_target.probe_after is not None:
-            # Such targets run last in their package, so they cannot order or trigger another.
-            raise UsageError(
-                f"target '{target_label}' probe_after entry '{entry}' names a target that uses probe_after"
-            )
+        if package_id == package.id and entry_target.probe_after is not None:
+            # probe_after targets run last in their package, in declaration order.
+            names = list(package.targets or {})
+            if names.index(target_name) >= names.index(target.name):
+                raise UsageError(
+                    f"target '{target_label}' probe_after entry '{entry}' names a target that runs "
+                    f"after it; declare '{target_name}' before '{target.name}'"
+                )
 
 
 def validate_probe_target_config(*, repo_name: str, package: PackageSpec, target: TargetSpec) -> None:

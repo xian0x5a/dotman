@@ -21,10 +21,14 @@ stay quiet and nothing runs "always on" (`run_noop` was rejected for that reason
   Entries name the probe's inputs. Each must be the target's own package (or one
   of its targets) or a package (or target) in its `depends` closure, so it already
   runs earlier. Same repo only, packages only (no groups). An entry must not name
-  the target itself or another `probe_after` target. `probe_after` requires
-  `probe`. Appendable via `append`, like `depends`.
+  the target itself or a `probe_after` target declared later in its own package
+  (amended: chaining, below). `probe_after` requires `probe`. Appendable via
+  `append`, like `depends`.
 - Order: within its package a `probe_after` target runs after the normal targets;
   packages already run dependency-first.
+- Chaining (added after the user's "go"): planning decides `probe_after` targets
+  after the other probes, one at a time in execution order, so an earlier
+  conditional or active one counts as work for a later one that names it.
 - Planning: normal probes run first. A `probe_after` target is **conditional**
   when any listed entry has work in this run (a drifted unit row, Probe Work,
   Directory Root Work or Hook Work), matched by repo + package (+ target),
@@ -83,6 +87,8 @@ stay quiet and nothing runs "always on" (`run_noop` was rejected for that reason
   new minor finding (preview promised a check when every hook is noop-eligible).
 - [x] dotfiles repro in an isolated clone (step 8): repair, add, remove, no-change pass.
 - [x] Preview honesty: a row is conditional only if a non-noop-eligible hook waits.
+- [x] Chaining: ordered planning loop, same-package declaration-order check,
+  regression tests written to fail first.
 - Landing (outside this repo): after merge, fast-forward the editable install, commit
   the dotfiles switch, close dotfiles#8.
 
@@ -99,5 +105,8 @@ stay quiet and nothing runs "always on" (`run_noop` was rejected for that reason
   moved to `docs/adr/0008-probe-after-names-a-probes-inputs.md`, behavior to
   `docs/repository.md`, `docs/sync.md`, `docs/cli.md` and `GLOSSARY.md`.
 - The issue repro passes in an isolated clone of the dotfiles repo.
+- Chaining was first rejected as needing sequential planning; the loop turned out
+  small because only `probe_after` targets need ordering, and the other probes
+  still run concurrently.
 - The first design gated every hook and promised checks that never ran; asking "what
   does this step gate?" for each stage would have caught both earlier.
