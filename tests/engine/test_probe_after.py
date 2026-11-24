@@ -294,7 +294,8 @@ def run_cli(config, capsys, *args, json_output=True):
 
 @pytest.mark.parametrize("variant", ["run-noop-flag", "manifest-run-noop"])
 def test_noop_eligible_hooks_run_without_waiting_for_the_recheck(tmp_path, monkeypatch, capsys, variant):
-    # Selected Hook Work runs them whatever the probe reports, so no probe step gates them.
+    # Selected Hook Work runs them whatever the probe reports: nothing waits for a
+    # recheck, so the probe runs once at planning and no probe step gates the hook.
     log = tmp_path / "log"
     command = probe_command(tmp_path, exit_when_present=100)
     if variant == "manifest-run-noop":
@@ -306,7 +307,7 @@ def test_noop_eligible_hooks_run_without_waiting_for_the_recheck(tmp_path, monke
     config = build(tmp_path, monkeypatch, app_manifest(tmp_path, command=command, hooks=hooks))
     code, document = run_cli(config, capsys, *args)
     assert code == 0
-    assert log_lines(tmp_path) == ["hook"]
+    assert log_lines(tmp_path) == ["probe", "hook"]
     assert step_kinds(document) == [("hook", "post_push", "ok", None)]
 
 
@@ -405,3 +406,22 @@ def test_pull_recheck_probe_sees_the_repository_write_before_its_hook(tmp_path, 
     assert [(step["stage"], step["kind"], step["status"]) for step in document["stages"]
             if step["scope_identity"] == "main:app.check"] == [
         ("repository-apply", "probe", "ok"), ("repository-apply", "hook", "ok")]
+
+
+@pytest.mark.parametrize("variant", ["run-noop-flag", "manifest-run-noop"])
+def test_row_is_not_conditional_when_no_hook_waits_for_the_recheck(tmp_path, monkeypatch, capsys, variant):
+    # Every hook is noop-eligible, so nothing waits for the recheck: the probe runs at planning.
+    command = probe_command(tmp_path, exit_when_absent=0)
+    if variant == "manifest-run-noop":
+        hooks = f'post_push = {{run = "echo hook >> {tmp_path / "log"}", run_noop = true}}'
+        args = ("push", "--dry-run")
+    else:
+        hooks = None
+        args = ("push", "--dry-run", "--run-noop")
+    config = build(tmp_path, monkeypatch, app_manifest(tmp_path, command=command, hooks=hooks))
+    _code, preview = run_cli(config, capsys, *args)
+    assert preview["sync_units"], "the named entry has drift"
+    assert probe_row(preview)["conditional"] is False
+    assert log_lines(tmp_path) == ["probe"]
+    _code, output = run_cli(config, capsys, *args[:1], *args[1:], json_output=False)
+    assert "would-check" not in output

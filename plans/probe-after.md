@@ -1,5 +1,5 @@
 ---
-status: open
+status: done
 ---
 
 # Probe after upstream writes (`probe_after`)
@@ -78,12 +78,26 @@ stay quiet and nothing runs "always on" (`run_noop` was rejected for that reason
 - [x] Steps 1-6 implemented; isolated smoke run covers add, remove, no-change,
   unrelated change, inactive re-check, dry-run `would-check`, JSON `conditional`.
   Full suite green after updating two exact `probe_work` JSON assertions.
-- [ ] Independent tests (step 7).
-- [ ] Independent review (step 7).
-- [ ] dotfiles switch and repro (step 8).
+- [x] Independent tests (step 7): 28 tests, then 8 regression tests for review findings.
+- [x] Independent review (step 7): findings fixed in 8471ac2; re-review confirmed, one
+  new minor finding (preview promised a check when every hook is noop-eligible).
+- [x] dotfiles repro in an isolated clone (step 8): repair, add, remove, no-change pass.
+- [x] Preview honesty: a row is conditional only if a non-noop-eligible hook waits.
+- Landing (outside this repo): after merge, fast-forward the editable install, commit
+  the dotfiles switch, close dotfiles#8.
 
 ## Surprises & Discoveries
 - Target execution order within a package is declaration order (`build_target_metadata`
   iterates `package.targets`), not name order; `tracking.py` sorts only for display.
+- Review found that gating every hook skipped noop-eligible ones, that literal package
+  IDs broke `extends` children, and that cyclic `depends` voided the ordering promise.
+- A probe step that gates no hook (noop-eligible only, or none in that stage) must not
+  run, and preview must not promise it.
 
 ## Outcomes & Retrospective
+- Shipped `probe_after` with conditional Probe Work; the design and rejected options
+  moved to `docs/adr/0008-probe-after-names-a-probes-inputs.md`, behavior to
+  `docs/repository.md`, `docs/sync.md`, `docs/cli.md` and `GLOSSARY.md`.
+- The issue repro passes in an isolated clone of the dotfiles repo.
+- The first design gated every hook and promised checks that never ran; asking "what
+  does this step gate?" for each stage would have caught both earlier.

@@ -218,7 +218,8 @@ preset = "jinja-patch"
   - Within its package the target runs after the normal targets; packages already run
     dependency-first.
   - When an entry has work in the run (a drifted file, Probe Work, Directory Root Work or Hook
-    Work, in any package instance), planning skips the probe and shows the target as
+    Work, in any package instance) and one of the target's hooks would wait for the probe (one
+    that is not noop-eligible, below), planning skips the probe and shows the target as
     conditional Probe Work ([Sync](sync.md#auxiliary-work)). Execution runs the probe right
     before the target's own hooks, once in each stage whose hooks wait for it: `0` runs them,
     `100` skips them, and any other exit fails the stage. Otherwise nothing before it changes

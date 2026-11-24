@@ -178,10 +178,22 @@ def plan_auxiliary(
         (identity.repo, identity.package_id, identity.target_name)
         for identity in (*drifted, *probed_present, *root_work)
     }) - late
+    def waits_for_probe(identity: ResolvedSyncTarget) -> bool:
+        # Noop-eligible hooks run whatever the probe reports, so only the others wait for it.
+        return any(
+            hook.scope_kind == "target" and hook.target_name == identity.target_name
+            and hook.hook_name in (f"pre_{direction}", f"post_{direction}") and not (run_noop or hook.run_noop)
+            for direction in directions[identity]
+            for package in metadata[direction].packages
+            if (package.repo_name, package.package_id, package.bound_profile)
+            == (identity.repo, identity.package_id, identity.bound_profile)
+            for hooks in package.hooks.values() for hook in hooks
+        )
+
     checked_after = {
         identity: after
         for identity, target in probe_targets
-        if target.target.probe_after is not None and directions[identity]
+        if target.target.probe_after is not None and waits_for_probe(identity)
         and (after := _checked_after(target, work))
     }
     # Without work before it, planning already sees the state its turn would.
